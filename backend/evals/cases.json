@@ -1,0 +1,32 @@
+[
+  {
+    "name": "football-psychology",
+    "profile": "I care about the intersection of psychology and football: coaching, motivation, pressure, attention, team culture, and elite decision-making.",
+    "expected_video_id": "football-mind",
+    "candidates": [
+      {"video_id": "football-mind", "title": "The mind of a footballer", "description": "Psychology, pressure, motivation, and split-second decisions in elite football."},
+      {"video_id": "stadium-roofs", "title": "How stadium roofs are engineered", "description": "Materials and structural engineering for large venues."},
+      {"video_id": "sleep-lab", "title": "What sleep does for memory", "description": "Neuroscience experiments about memory consolidation."}
+    ]
+  },
+  {
+    "name": "music-neuroscience",
+    "profile": "I want neuroscience and music: rhythm, memory, improvisation, hearing, and how musicians' brains adapt.",
+    "expected_video_id": "brain-on-rhythm",
+    "candidates": [
+      {"video_id": "brain-on-rhythm", "title": "Your brain on rhythm", "description": "How music, memory, hearing, and improvisation reshape neural pathways."},
+      {"video_id": "record-business", "title": "The economics of record labels", "description": "Contracts, royalties, and music distribution."},
+      {"video_id": "marine-memory", "title": "Do octopuses remember?", "description": "Memory experiments with marine animals."}
+    ]
+  },
+  {
+    "name": "climate-urban-design",
+    "profile": "I follow climate adaptation and urban design, especially heat, public transit, resilient neighborhoods, and city policy.",
+    "expected_video_id": "cooler-cities",
+    "candidates": [
+      {"video_id": "cooler-cities", "title": "How to build cooler cities", "description": "Urban design, heat adaptation, transit, and resilient neighborhood policy."},
+      {"video_id": "carbon-accounting", "title": "A better carbon spreadsheet", "description": "Corporate emissions accounting methods."},
+      {"video_id": "ancient-roads", "title": "The roads of ancient Rome", "description": "Archaeology and historic construction."}
+    ]
+  }
+]

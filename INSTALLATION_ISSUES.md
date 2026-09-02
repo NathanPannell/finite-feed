@@ -125,3 +125,43 @@ The first runtime-secret preview attempted to overwrite the inherited production
 Workaround: inspect variable names without printing values and explicitly delete `TELEGRAM_PRODUCTION_BOT_TOKEN` from each preview service when present.
 
 Suggested fix: use explicit deletion for secrets that must not cross an environment boundary, and verify the resulting secret-presence matrix without printing values.
+
+## 16. Local Postgres startup collided with an existing project
+
+The first integration-test startup could not bind host port 5432 because another Docker project already owned it. The Compose file supported `POSTGRES_PORT`, but the initial setup path did not discover or select a free port.
+
+Workaround: start Finite Feed with `POSTGRES_PORT=55433` and point the local database URLs at that port.
+
+Suggested fix: have bootstrap local setup probe the default port, select an available alternative, and write the chosen non-secret port into the local environment file.
+
+## 17. The pinned frontend install emitted an unsupported ESLint warning
+
+`npm ci` completed, but npm reported that the pinned ESLint 9.39.2 package was no longer supported.
+
+Workaround: none was required for this run; lint, type checking, and the production build still passed.
+
+Suggested fix: refresh the template's pinned frontend lint dependencies and verify the generated lockfile no longer installs an unsupported release.
+
+## 18. The task opened in the static prototype instead of the deployed repository
+
+The Codex workspace initially pointed at `youtube-digest`, which contains the early static prototype, while the deployed full-stack app lives in `finite-feed`. The first local clone attempt also hit Git's safe-directory ownership protection.
+
+Workaround: identify the live repository from deployment history and clone its GitHub remote into the writable task workspace.
+
+Suggested fix: have the bootstrap open or hand off to the generated app project when creation completes, and include the final local checkout path in its completion summary.
+
+## 19. A new Railway preview had no API deployment to redeploy
+
+The PR workflow successfully created `pr-3`, then immediately called `railway redeploy` for the API. A newly copied environment did not yet have a completed API deployment, so Railway rejected the redeploy and the preview stopped before Vercel.
+
+Workaround: use `railway up` for both API and worker preview services so the checked-out PR source creates their first deployments.
+
+Suggested fix: make first preview deployment consistently source-based; reserve `redeploy` for environments with a known completed deployment.
+
+## 20. The genre-specific seed migration missed a later bootstrap profile version
+
+The first live model request still received the generic preference statement. The preview inherited a version 2 profile created during earlier dashboard verification, while migration 0004 updated only the original version 1 row by ID.
+
+Workaround: add an append-only migration that replaces every unchanged generic starter statement for the dogfood user, regardless of version.
+
+Suggested fix: avoid row-ID-only seed corrections when bootstrap verification may have created later versions; target the known placeholder value while preserving genuinely customized profiles.

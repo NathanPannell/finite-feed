@@ -9,11 +9,21 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 - Idempotent tracked-channel storage with TED and TEDx defaults.
 - Video, recommendation, interaction-event, click, and feedback records.
 - A deterministic baseline ranker combining preference overlap with age- and channel-normalized momentum.
+- A worker that resolves tracked YouTube channels, imports recent uploads, and refreshes changed metadata.
+- Reusable local feature-hash vectors for title-and-description retrieval without per-run embedding costs.
+- Recent and evergreen shortlists followed by an OpenRouter final selection and grounded rationale.
+- Scheduled Telegram delivery, one-tap feedback, tracked redirects, and conversational profile updates.
 - A mobile-friendly redirect that records `clicked` before opening YouTube.
 - A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
-- A production-safe worker that disables preview delivery and stays paused until provider keys exist.
+- A production-safe worker that ingests previews but disables preview delivery.
 
-YouTube ingestion, transcript embeddings, model reranking, Telegram webhooks, and outbound delivery are the next integration slice. Their configuration values are intentionally blank in `.env` and `.env.example`.
+Transcript ingestion, richer semantic embeddings, developer-bot preview routing, and a repeatable human-scored evaluation set remain post-baseline work.
+
+## Recommendation pipeline
+
+The worker checks TED and TEDx on a configurable interval, stores normalized video metadata, and only rebuilds a vector when a title or description changes. It retrieves up to five strong recent candidates and ten unsent evergreen candidates, then asks the configured OpenRouter model to choose one. The exact shortlist, scores, model, fallback state, and rationale are stored with every recommendation.
+
+`openrouter/free` is the initial integration model. Pin a specific model and disable fallback behavior before comparing scored evaluation runs.
 
 ## Run locally
 
@@ -38,11 +48,16 @@ Push-Location frontend; npm run dev
 
 Open `http://localhost:3000`. `/health` checks liveness; `/ready` checks migrations and reports the deployed commit.
 
+Add runtime credentials as GitHub Actions repository secrets. The deployment workflows forward them into the matching Railway production and preview services; `.env.example` contains names and safe defaults only.
+
 ## Verify
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend\tests
+.\.venv\Scripts\python.exe -m backend.evals.run_recommendation_eval
 Push-Location frontend; npm run lint; npm run typecheck; npm run build
 ```
+
+After configuring OpenRouter, add `--with-model` to exercise the live low-cost model against the same genre-specific cases.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for deployment lifecycle details and [INSTALLATION_ISSUES.md](INSTALLATION_ISSUES.md) for bootstrap problems found during initial setup.

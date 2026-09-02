@@ -103,3 +103,11 @@ class Metrics(BaseModel):
     rated_down: int
     click_through_rate: float
     thumbs_up_share: float
+
+
+class PipelineStatus(BaseModel):
+    videos: int
+    embedded_videos: int
+    last_ingestion_status: str | None
+    last_ingestion_at: datetime | None
+    last_ingestion_videos_seen: int

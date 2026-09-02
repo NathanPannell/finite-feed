@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from psycopg import Connection
@@ -9,9 +9,10 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from backend.app.db import close_pool, connection, open_pool
-from backend.app.ranking import Candidate, rank_candidate
-from backend.app.schemas import Channel, ChannelCreate, FeedbackCreate, Metrics, Profile, ProfileUpdate, Recommendation
+from backend.app.recommendations import generate_recommendation as create_recommendation
+from backend.app.schemas import Channel, ChannelCreate, FeedbackCreate, Metrics, PipelineStatus, Profile, ProfileUpdate, Recommendation
 from backend.app.settings import get_settings
+from backend.app.telegram import TelegramBot
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -151,34 +152,10 @@ def list_recommendations(conn: Connection = Depends(connection)):
 
 @app.post("/api/recommendations/generate", response_model=Recommendation, status_code=status.HTTP_201_CREATED)
 def generate_recommendation(conn: Connection = Depends(connection)):
-    profile = profile_row(conn)
-    rows = conn.execute(
-        """
-        SELECT id, title, description, view_count, channel_baseline_views, published_at
-        FROM videos
-        WHERE published_at IS NOT NULL
-          AND id NOT IN (SELECT video_id FROM recommendations WHERE user_id = %s)
-        ORDER BY published_at DESC LIMIT 50
-        """,
-        (USER_ID,),
-    ).fetchall()
-    if not rows:
-        raise HTTPException(status_code=409, detail="No unsent videos are available. Configure YouTube ingestion first.")
-    scored = []
-    for row in rows:
-        candidate = Candidate(
-            str(row["id"]), row["title"], row["description"], row["view_count"],
-            row["channel_baseline_views"], row["published_at"],
-        )
-        score, evidence = rank_candidate(candidate, profile["preference_statement"])
-        scored.append((score, evidence, row))
-    score, evidence, selected = max(scored, key=lambda item: item[0])
-    rationale = f"This talk best matches your current preferences, with a baseline relevance score of {score:.2f}."
-    conn.execute(
-        "INSERT INTO recommendations (id, user_id, video_id, rationale, evidence) VALUES (%s, %s, %s, %s, %s)",
-        (uuid4(), USER_ID, selected["id"], rationale, Jsonb(evidence)),
-    )
-    conn.commit()
+    try:
+        create_recommendation(conn, settings, USER_ID)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return conn.execute(RECOMMENDATION_SELECT + " LIMIT 1", (USER_ID,)).fetchone()
 
 
@@ -236,3 +213,113 @@ def get_metrics(conn: Connection = Depends(connection)):
         "click_through_rate": round(clicked / delivered, 4) if delivered else 0,
         "thumbs_up_share": round(row["rated_up"] / rated, 4) if rated else 0,
     }
+
+
+@app.get("/api/pipeline/status", response_model=PipelineStatus)
+def pipeline_status(conn: Connection = Depends(connection)):
+    videos = conn.execute(
+        "SELECT COUNT(*) AS videos, COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS embedded_videos FROM videos"
+    ).fetchone()
+    ingestion = conn.execute(
+        "SELECT status, completed_at, videos_seen FROM ingestion_runs ORDER BY started_at DESC LIMIT 1"
+    ).fetchone()
+    return {
+        **videos,
+        "last_ingestion_status": ingestion["status"] if ingestion else None,
+        "last_ingestion_at": ingestion["completed_at"] if ingestion else None,
+        "last_ingestion_videos_seen": ingestion["videos_seen"] if ingestion else 0,
+    }
+
+
+def _telegram_user(conn: Connection, chat_id: int, developer: bool):
+    row = conn.execute("SELECT id FROM app_users WHERE telegram_user_id = %s", (chat_id,)).fetchone()
+    if row:
+        return row["id"]
+    allowed = {value.strip() for value in settings.developer_telegram_user_ids.split(",") if value.strip()}
+    may_claim_dogfood_profile = str(chat_id) in allowed if developer else str(chat_id) == settings.telegram_production_chat_id
+    if not may_claim_dogfood_profile:
+        return None
+    row = conn.execute(
+        "UPDATE app_users SET telegram_user_id = %s, updated_at = NOW() WHERE id = %s AND telegram_user_id IS NULL RETURNING id",
+        (chat_id, USER_ID),
+    ).fetchone()
+    conn.commit()
+    return row["id"] if row else None
+
+
+@app.post("/telegram/webhook/{bot_kind}")
+def telegram_webhook(
+    bot_kind: str,
+    update: dict,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+    conn: Connection = Depends(connection),
+):
+    if bot_kind not in {"production", "developer"}:
+        raise HTTPException(status_code=404, detail="Unknown bot")
+    if not settings.telegram_webhook_secret or x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
+        raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret")
+    token = settings.telegram_production_bot_token if bot_kind == "production" else settings.telegram_developer_bot_token
+    if not token:
+        raise HTTPException(status_code=503, detail="Telegram bot is not configured")
+    inserted = conn.execute(
+        "INSERT INTO telegram_updates (bot_kind, update_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING update_id",
+        (bot_kind, update.get("update_id")),
+    ).fetchone()
+    conn.commit()
+    if not inserted:
+        return {"ok": True, "duplicate": True}
+    bot = TelegramBot(token)
+    callback = update.get("callback_query")
+    message = update.get("message") or (callback or {}).get("message") or {}
+    chat_id = (message.get("chat") or {}).get("id")
+    if chat_id is None:
+        return {"ok": True}
+    user_id = _telegram_user(conn, int(chat_id), bot_kind == "developer")
+    if not user_id:
+        raise HTTPException(status_code=403, detail="Telegram user is not authorized")
+    if callback:
+        parts = str(callback.get("data", "")).split(":")
+        if len(parts) == 3 and parts[0] == "feedback" and parts[1] in {"up", "down"}:
+            recommendation_id = UUID(parts[2])
+            updated = conn.execute(
+                "UPDATE recommendations SET rating = %s WHERE id = %s AND user_id = %s RETURNING id",
+                (parts[1], recommendation_id, user_id),
+            ).fetchone()
+            if updated:
+                conn.execute(
+                    "INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source) VALUES (%s, %s, %s, %s, 'telegram')",
+                    (uuid4(), user_id, recommendation_id, f"feedback_{parts[1]}"),
+                )
+                conn.commit()
+                bot.answer_callback(callback["id"], "Saved — more like this." if parts[1] == "up" else "Saved — less like this.")
+        return {"ok": True}
+    text = str(message.get("text", "")).strip()
+    if text == "/recommend":
+        recommendation_id = create_recommendation(conn, settings, user_id, require_model=True)
+        bot.send_recommendation(conn, recommendation_id, chat_id, settings.public_app_url)
+    elif text == "/preferences":
+        current = conn.execute(
+            "SELECT preference_statement FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        bot.send_text(chat_id, current["preference_statement"])
+    elif text.startswith("/"):
+        bot.send_text(chat_id, "Use /recommend for a new pick, or /preferences to inspect your current profile.")
+    elif len(text) >= 10:
+        current = conn.execute(
+            "SELECT version, rendered_markdown FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        version = current["version"] + 1
+        rendered = f"# Current preferences\n\n{text}\n\n## History\n\n- Version {version} applied from Telegram."
+        conn.execute(
+            "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'telegram', %s)",
+            (uuid4(), user_id, version, text, rendered, text),
+        )
+        conn.execute(
+            "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'telegram', %s)",
+            (uuid4(), user_id, Jsonb({"version": version})),
+        )
+        conn.commit()
+        bot.send_text(chat_id, "Updated your preference profile. I’ll use that on the next recommendation.")
+    return {"ok": True}
