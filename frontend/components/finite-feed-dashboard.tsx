@@ -42,6 +42,13 @@ type Metrics = {
   thumbs_up_share: number;
 };
 
+type PipelineStatus = {
+  videos: number;
+  embedded_videos: number;
+  last_ingestion_status: string | null;
+  last_ingestion_at: string | null;
+};
+
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function durationLabel(seconds: number | null) {
@@ -54,6 +61,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
   const [channelName, setChannelName] = useState("");
   const [channelUrl, setChannelUrl] = useState("");
   const [notice, setNotice] = useState("");
@@ -67,15 +75,17 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
         fetch(`${apiBaseUrl}/api/channels`, { cache: "no-store" }),
         fetch(`${apiBaseUrl}/api/recommendations`, { cache: "no-store" }),
         fetch(`${apiBaseUrl}/api/metrics`, { cache: "no-store" }),
+        fetch(`${apiBaseUrl}/api/pipeline/status`, { cache: "no-store" }),
       ]);
       if (responses.some((response) => !response.ok)) throw new Error("The API is not ready yet.");
-      const [nextProfile, nextChannels, nextRecommendations, nextMetrics] = await Promise.all(
+      const [nextProfile, nextChannels, nextRecommendations, nextMetrics, nextPipeline] = await Promise.all(
         responses.map((response) => response.json()),
       );
       setProfile(nextProfile);
       setChannels(nextChannels);
       setRecommendations(nextRecommendations);
       setMetrics(nextMetrics);
+      setPipeline(nextPipeline);
       setNotice("");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not load Finite Feed.");
@@ -207,7 +217,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
               </div>
             </article>
           ) : (
-            <div className="empty-card"><span>◎</span><h3>Your first pick is waiting.</h3><p>Add provider keys to ingest talks, then ask Finite Feed to choose one.</p></div>
+            <div className="empty-card"><span>◎</span><h3>Your first pick is waiting.</h3><p>{pipeline?.embedded_videos ? `${pipeline.embedded_videos} talks are indexed and ready to compare.` : "The worker is preparing the first TED and TEDx candidates."}</p></div>
           )}
         </section>
 
@@ -234,6 +244,8 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
               <div><strong>{metrics ? `${Math.round(metrics.click_through_rate * 100)}%` : "—"}</strong><span>unique clicks</span></div>
               <div><strong>{metrics?.delivered ?? "—"}</strong><span>delivered</span></div>
               <div><strong>{metrics ? metrics.rated_up + metrics.rated_down : "—"}</strong><span>rated</span></div>
+              <div><strong>{pipeline?.embedded_videos ?? "—"}</strong><span>talks indexed</span></div>
+              <div><strong>{pipeline?.last_ingestion_status ?? "waiting"}</strong><span>worker sync</span></div>
             </div>
             <p className="metric-note">Goals: 2:1 positive feedback and more than 50% unique clicks.</p>
           </section>
