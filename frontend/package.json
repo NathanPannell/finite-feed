@@ -1,5 +1,5 @@
 {
-  "name": "__APP_SLUG__-frontend",
+  "name": "finite-feed-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {

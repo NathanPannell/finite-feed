@@ -37,8 +37,9 @@ Get-ChildItem -LiteralPath $repositoryRoot -Recurse -File | Where-Object {
     }
 }
 
-$remaining = rg --hidden --glob '!.git/**' --glob '!node_modules/**' --glob '!scripts/customize-template.ps1' '__APP_(NAME|SLUG)__|__GITHUB_REPOSITORY__' $repositoryRoot 2>$null
-if ($LASTEXITCODE -eq 0) {
+$remaining = rg --hidden --glob '!.git/**' --glob '!node_modules/**' '__APP_(NAME|SLUG)__|__GITHUB_REPOSITORY__' $repositoryRoot 2>$null |
+    Where-Object { $_ -notmatch '[\\/]scripts[\\/]customize-template\.ps1:' }
+if ($LASTEXITCODE -eq 0 -and $remaining) {
     throw "Unresolved template tokens remain:`n$remaining"
 }
 if ($LASTEXITCODE -gt 1) {
