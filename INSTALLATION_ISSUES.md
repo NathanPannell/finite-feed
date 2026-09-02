@@ -149,3 +149,11 @@ The Codex workspace initially pointed at `youtube-digest`, which contains the ea
 Workaround: identify the live repository from deployment history and clone its GitHub remote into the writable task workspace.
 
 Suggested fix: have the bootstrap open or hand off to the generated app project when creation completes, and include the final local checkout path in its completion summary.
+
+## 19. A new Railway preview had no API deployment to redeploy
+
+The PR workflow successfully created `pr-3`, then immediately called `railway redeploy` for the API. A newly copied environment did not yet have a completed API deployment, so Railway rejected the redeploy and the preview stopped before Vercel.
+
+Workaround: use `railway up` for both API and worker preview services so the checked-out PR source creates their first deployments.
+
+Suggested fix: make first preview deployment consistently source-based; reserve `redeploy` for environments with a known completed deployment.
