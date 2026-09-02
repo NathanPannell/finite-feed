@@ -77,3 +77,35 @@ Invoking Railway as a child of Linux `env` caused the IaC package to inspect `en
 Workaround: export variables in Bash and invoke the Railway binary directly.
 
 Suggested fix: have the IaC compatibility check use an explicit CLI-provided version instead of the shell `_` variable.
+
+## 10. A Railway failure prevented the Vercel project from being created
+
+The bootstrap stopped at Railway and never reached its Vercel creation, linking, GitHub secret, or `BOOTSTRAP_COMPLETE` steps. The repository therefore had passing CI but no production frontend, without a prominent end-of-run inventory showing that Vercel was still missing.
+
+Workaround: manually wire the Neon URLs into Railway, create and link the Vercel project, install the provider secrets and IDs in GitHub Actions, set `BOOTSTRAP_COMPLETE=true`, and dispatch the production workflow.
+
+Suggested fix: make each provider stage independently resumable, persist Railway and Vercel IDs immediately, and print a final provider checklist that clearly marks incomplete resources after any failure.
+
+## 11. Manual Railway recovery depended on the WSL user's install path
+
+The first recovery command stored the Railway executable in a temporary shell variable that arrived empty across the PowerShell-to-WSL command boundary. A second attempt assumed the CLI was under `/root`, while the existing installation was actually `/home/nathan/.railway/bin/railway`.
+
+Workaround: discover the existing Linux binary first and invoke `/home/nathan/.railway/bin/railway` directly.
+
+Suggested fix: have the Windows fallback discover and validate the WSL user and Railway binary path before provider operations, then reuse that resolved path consistently.
+
+## 12. Railway skipped recovery deployment after an earlier failure
+
+After the database variables were fixed, the production workflow ran `railway up` for the same source commit. Railway marked the deployment `SKIPPED` because no watched files had changed, even though the previous deployment of that commit had failed, so the workflow waited for readiness without a running API.
+
+Workaround: run `railway redeploy --from-source --yes` for both services.
+
+Suggested fix: detect a skipped deployment when no healthy deployment exists and automatically retry with `railway redeploy --from-source` before entering the readiness loop.
+
+## 13. Vercel project creation selected the wrong output directory
+
+The Vercel project was created before being linked to `frontend/`, so its framework settings expected a `public` output directory. The Next.js build completed successfully, but deployment then failed because Vercel looked for that nonexistent directory.
+
+Workaround: explicitly set `framework` to `nextjs` and `outputDirectory` to `null` in `frontend/vercel.json`, allowing Vercel to use the framework build output.
+
+Suggested fix: create or configure the Vercel project from the frontend working directory and explicitly apply the intended framework settings before the first deployment.
