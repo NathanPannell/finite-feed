@@ -235,8 +235,7 @@ def _telegram_user(conn: Connection, chat_id: int, developer: bool):
     row = conn.execute("SELECT id FROM app_users WHERE telegram_user_id = %s", (chat_id,)).fetchone()
     if row:
         return row["id"]
-    allowed = {value.strip() for value in settings.developer_telegram_user_ids.split(",") if value.strip()}
-    may_claim_dogfood_profile = str(chat_id) in allowed if developer else str(chat_id) == settings.telegram_production_chat_id
+    may_claim_dogfood_profile = chat_id in settings.developer_user_ids if developer else chat_id == settings.production_chat_id
     if not may_claim_dogfood_profile:
         return None
     row = conn.execute(
