@@ -117,3 +117,11 @@ The preview workflow created `preview/pr-1`, then `neondatabase/create-branch-ac
 Workaround: pass `database: app` and `role: app_owner` explicitly to the branch action.
 
 Suggested fix: keep the database and role names in shared template variables or emit them from bootstrap so production and preview workflows cannot diverge.
+
+## 15. Railway rejected an empty value used to isolate preview secrets
+
+The first runtime-secret preview attempted to overwrite the inherited production Telegram token with an empty value. Railway's CLI rejects empty stdin values, so preview provisioning stopped before deployment.
+
+Workaround: inspect variable names without printing values and explicitly delete `TELEGRAM_PRODUCTION_BOT_TOKEN` from each preview service when present.
+
+Suggested fix: use explicit deletion for secrets that must not cross an environment boundary, and verify the resulting secret-presence matrix without printing values.
