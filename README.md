@@ -1,57 +1,48 @@
 # Finite Feed
 
-A reusable full-stack starter: Next.js on Vercel, FastAPI API and worker on Railway, Neon Postgres, and GitHub Actions-managed production and per-PR environments.
+Finite Feed reduces fire-hose YouTube channels to one unusually valuable recommendation at a time. The first dogfood release targets TED and TEDx, learns from explicit preferences and feedback, and makes every recommendation decision inspectable.
 
-The included uptime monitor is a small vertical slice to prove browser → API → database → worker behavior. Replace that feature while keeping the deployment contract.
+## What is implemented
 
-## First-time bootstrap
+- Versioned preference profiles with an auditable Markdown view.
+- Editable delivery cadence, time, timezone, and recommendation volume.
+- Idempotent tracked-channel storage with TED and TEDx defaults.
+- Video, recommendation, interaction-event, click, and feedback records.
+- A deterministic baseline ranker combining preference overlap with age- and channel-normalized momentum.
+- A mobile-friendly redirect that records `clicked` before opening YouTube.
+- A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
+- A production-safe worker that disables preview delivery and stays paused until provider keys exist.
 
-This repository is designed to be created by the `full-stack-bootstrap` Codex skill. Until the bootstrap sets the GitHub variable `BOOTSTRAP_COMPLETE=true`, CI runs but no cloud deployment occurs.
-
-The bootstrap creates a separate GitHub repository, Neon project, Railway project, and Vercel project; installs provider IDs as GitHub variables; installs automation tokens as GitHub secrets; configures production database URLs directly in Railway; and performs the first deploy.
-
-Never commit provider tokens, `.env`, `.env.local`, `.neon`, or `.vercel`. Application database URLs belong in Railway, not GitHub.
+YouTube ingestion, transcript embeddings, model reranking, Telegram webhooks, and outbound delivery are the next integration slice. Their configuration values are intentionally blank in `.env` and `.env.example`.
 
 ## Run locally
 
 Requirements: Docker, Python 3.13+, and Node 22+.
 
-```bash
+```powershell
 docker compose up -d postgres
-cp .env.example .env.local
-cp frontend/.env.example frontend/.env.local
 python -m venv .venv
-# Activate .venv, then:
-python -m pip install -r backend/requirements-dev.txt
-python -m backend.app.migrate
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt
+.\.venv\Scripts\python.exe -m backend.app.migrate
+npm ci
+Push-Location frontend; npm ci; Pop-Location
 ```
 
-Run these in separate terminals:
+Run the API, worker, and frontend in separate terminals:
 
-```bash
-python -m uvicorn backend.app.main:app --reload --port 8000
-python -m backend.worker.main
-cd frontend && npm install && npm run dev
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m backend.worker.main
+Push-Location frontend; npm run dev
 ```
 
-Open `http://localhost:3000`. `/health` is liveness-only; `/ready` proves the database schema is readable and reports the deployed commit.
+Open `http://localhost:3000`. `/health` checks liveness; `/ready` checks migrations and reports the deployed commit.
 
-## Test
+## Verify
 
-```bash
-python -m pytest backend/tests
-cd frontend
-npm run lint
-npm run typecheck
-npm run build
+```powershell
+.\.venv\Scripts\python.exe -m pytest backend\tests
+Push-Location frontend; npm run lint; npm run typecheck; npm run build
 ```
 
-## Deployment contract
-
-Production deploys run after CI on `main`. PRs authored and run by the GitHub user that bootstrapped the repository receive one Neon branch, one duplicated Railway environment containing API and worker services, and one Vercel deployment. Closing the PR removes all three preview resources. This trusted-actor gate prevents another collaborator's branch from receiving the repository's broad deployment secrets.
-
-Runtime connections are pooled. Migrations use direct Neon URLs because advisory locks and other session behavior must not pass through transaction pooling. Preview readiness waits for the exact Git commit and a readable migrated database, preventing an old restarted Railway container from being mistaken for the new deployment.
-
-After each Vercel deployment, the workflow replaces Railway's CORS allowlist with the exact frontend URL, adds that URL to the matching Neon Auth branch, and redeploys the API. Neon Auth is provisioned and URL-aware; the sample uptime feature does not include sign-in UI or session enforcement.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the lifecycle and recovery rules.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for deployment lifecycle details and [INSTALLATION_ISSUES.md](INSTALLATION_ISSUES.md) for bootstrap problems found during initial setup.

@@ -1,14 +1,17 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas import MonitorCreate
+from backend.app.schemas import ChannelCreate, ProfileUpdate
 
 
-def test_monitor_name_is_trimmed() -> None:
-    monitor = MonitorCreate(name="  Marketing site  ", url="https://example.com")
-    assert monitor.name == "Marketing site"
+def test_profile_normalizes_schedule() -> None:
+    profile = ProfileUpdate(
+        preference_statement="  practical AI systems  ", cadence_days=[4, 1, 4]
+    )
+    assert profile.preference_statement == "practical AI systems"
+    assert profile.cadence_days == [1, 4]
 
 
-def test_monitor_name_cannot_be_blank() -> None:
-    with pytest.raises(ValidationError):
-        MonitorCreate(name="   ", url="https://example.com")
+def test_channel_requires_youtube_url() -> None:
+    with pytest.raises(ValidationError, match="youtube.com"):
+        ChannelCreate(name="Not YouTube", url="https://example.com/channel")

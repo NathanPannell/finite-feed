@@ -5,8 +5,37 @@ from uuid import UUID
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 
-class MonitorCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
+class ProfileUpdate(BaseModel):
+    preference_statement: str = Field(min_length=1, max_length=5000)
+    timezone: str = Field(default="America/Los_Angeles", min_length=1, max_length=80)
+    cadence_days: list[int] = Field(default=[1, 4], min_length=1, max_length=7)
+    delivery_hour: int = Field(default=9, ge=0, le=23)
+    recommendation_count: int = Field(default=1, ge=1, le=10)
+
+    @field_validator("preference_statement", "timezone")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Value cannot be blank")
+        return normalized
+
+    @field_validator("cadence_days")
+    @classmethod
+    def validate_days(cls, value: list[int]) -> list[int]:
+        if any(day < 0 or day > 6 for day in value):
+            raise ValueError("Cadence days must be between 0 and 6")
+        return sorted(set(value))
+
+
+class Profile(ProfileUpdate):
+    version: int
+    rendered_markdown: str
+    updated_at: datetime
+
+
+class ChannelCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
     url: AnyHttpUrl = Field(max_length=2048)
 
     @field_validator("name")
@@ -17,15 +46,60 @@ class MonitorCreate(BaseModel):
             raise ValueError("Name cannot be blank")
         return normalized
 
+    @field_validator("url")
+    @classmethod
+    def require_youtube(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        if value.host not in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+            raise ValueError("Use a youtube.com channel URL")
+        return value
 
-class Monitor(BaseModel):
+
+class Channel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
     url: str
-    status: Literal["UNKNOWN", "UP", "DOWN"]
-    http_status: int | None
-    response_time_ms: int | None
-    checked_at: datetime | None
+    is_default: bool
     created_at: datetime
+
+
+class FeedbackCreate(BaseModel):
+    rating: Literal["up", "down"]
+    detail: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("detail")
+    @classmethod
+    def normalize_detail(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class Recommendation(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    video_id: UUID
+    title: str
+    speaker: str | None
+    channel_name: str
+    youtube_url: str
+    thumbnail_url: str | None
+    published_at: datetime | None
+    duration_seconds: int | None
+    rationale: str
+    evidence: dict
+    rating: Literal["up", "down"] | None
+    clicked_at: datetime | None
+    delivered_at: datetime | None
+    created_at: datetime
+
+
+class Metrics(BaseModel):
+    delivered: int
+    clicked: int
+    rated_up: int
+    rated_down: int
+    click_through_rate: float
+    thumbs_up_share: float

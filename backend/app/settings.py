@@ -15,24 +15,21 @@ class Settings(BaseSettings):
     )
 
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
-    database_url_unpooled: str | None = Field(
-        default=None, alias="DATABASE_URL_UNPOOLED"
-    )
-    preview_database_url: str | None = Field(
-        default=None, alias="PREVIEW_DATABASE_URL"
-    )
-    preview_database_url_unpooled: str | None = Field(
-        default=None, alias="PREVIEW_DATABASE_URL_UNPOOLED"
-    )
-    railway_environment_name: str | None = Field(
-        default=None, alias="RAILWAY_ENVIRONMENT_NAME"
-    )
-    frontend_origins: str = Field(
-        default="http://localhost:3000", alias="FRONTEND_ORIGINS"
-    )
-    check_interval_seconds: int = Field(default=180, alias="CHECK_INTERVAL_SECONDS")
-    request_timeout_seconds: float = Field(default=10, alias="REQUEST_TIMEOUT_SECONDS")
+    database_url_unpooled: str | None = Field(default=None, alias="DATABASE_URL_UNPOOLED")
+    preview_database_url: str | None = Field(default=None, alias="PREVIEW_DATABASE_URL")
+    preview_database_url_unpooled: str | None = Field(default=None, alias="PREVIEW_DATABASE_URL_UNPOOLED")
+    railway_environment_name: str | None = Field(default=None, alias="RAILWAY_ENVIRONMENT_NAME")
+    frontend_origins: str = Field(default="http://localhost:3000", alias="FRONTEND_ORIGINS")
     app_commit_sha: str = Field(default="local", alias="APP_COMMIT_SHA")
+    worker_poll_seconds: int = Field(default=60, ge=15, alias="WORKER_POLL_SECONDS")
+    youtube_api_key: str = Field(default="", alias="YOUTUBE_API_KEY")
+    model_api_key: str = Field(default="", alias="MODEL_API_KEY")
+    model_name: str = Field(default="", alias="MODEL_NAME")
+    telegram_production_bot_token: str = Field(default="", alias="TELEGRAM_PRODUCTION_BOT_TOKEN")
+    telegram_developer_bot_token: str = Field(default="", alias="TELEGRAM_DEVELOPER_BOT_TOKEN")
+    telegram_webhook_secret: str = Field(default="", alias="TELEGRAM_WEBHOOK_SECRET")
+    developer_telegram_user_ids: str = Field(default="", alias="DEVELOPER_TELEGRAM_USER_IDS")
+    public_app_url: str = Field(default="http://localhost:8000", alias="PUBLIC_APP_URL")
 
     @property
     def is_preview(self) -> bool:
@@ -43,10 +40,7 @@ class Settings(BaseSettings):
     def effective_database_url(self) -> str:
         if self.is_preview:
             if not self.preview_database_url:
-                raise RuntimeError(
-                    "Railway preview environments require PREVIEW_DATABASE_URL; "
-                    "DATABASE_URL is intentionally ignored."
-                )
+                raise RuntimeError("Railway preview environments require PREVIEW_DATABASE_URL; DATABASE_URL is intentionally ignored.")
             return self.preview_database_url
         if not self.database_url:
             raise RuntimeError("DATABASE_URL is required outside preview environments")
@@ -54,17 +48,12 @@ class Settings(BaseSettings):
 
     @property
     def effective_migration_database_url(self) -> str:
-        """Require a direct Neon connection in every Railway environment."""
         if self.is_preview:
             if not self.preview_database_url_unpooled:
-                raise RuntimeError(
-                    "Railway preview migrations require PREVIEW_DATABASE_URL_UNPOOLED."
-                )
+                raise RuntimeError("Railway preview migrations require PREVIEW_DATABASE_URL_UNPOOLED.")
             return self.preview_database_url_unpooled
         if self.railway_environment_name and not self.database_url_unpooled:
-            raise RuntimeError(
-                "Railway production migrations require DATABASE_URL_UNPOOLED."
-            )
+            raise RuntimeError("Railway production migrations require DATABASE_URL_UNPOOLED.")
         return self.database_url_unpooled or self.effective_database_url
 
     @property

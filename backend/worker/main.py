@@ -6,7 +6,6 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from backend.app.settings import get_settings
-from backend.worker.checker import check_url
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -17,31 +16,20 @@ def request_stop(*_: object) -> None:
     stop_event.set()
 
 
-def run_checks(pool: ConnectionPool) -> None:
+def run_delivery_pass(pool: ConnectionPool) -> None:
     settings = get_settings()
+    if settings.is_preview:
+        logger.info("Preview environment: scheduled Telegram delivery is disabled")
+        return
+    if not settings.youtube_api_key or not settings.telegram_production_bot_token:
+        logger.info("Delivery paused until YOUTUBE_API_KEY and TELEGRAM_PRODUCTION_BOT_TOKEN are configured")
+        return
     with pool.connection() as conn:
-        monitors = conn.execute("SELECT id, url FROM monitors ORDER BY created_at").fetchall()
-    logger.info("Checking %d monitor(s)", len(monitors))
-    for monitor in monitors:
-        if stop_event.is_set():
-            return
-        result = check_url(monitor["url"], settings.request_timeout_seconds)
-        with pool.connection() as conn:
-            conn.execute(
-                """
-                UPDATE monitors
-                SET status = %s, http_status = %s, response_time_ms = %s, checked_at = %s
-                WHERE id = %s
-                """,
-                (
-                    result.status,
-                    result.http_status,
-                    result.response_time_ms,
-                    result.checked_at,
-                    monitor["id"],
-                ),
-            )
-            conn.commit()
+        users = conn.execute(
+            "SELECT id, timezone, cadence_days, delivery_hour FROM app_users WHERE telegram_user_id IS NOT NULL"
+        ).fetchall()
+    logger.info("Found %d configured delivery recipient(s)", len(users))
+    # Ingestion, model reranking, and Telegram delivery attach here after keys are supplied.
 
 
 def main() -> None:
@@ -56,12 +44,11 @@ def main() -> None:
     ) as pool:
         while not stop_event.is_set():
             try:
-                run_checks(pool)
+                run_delivery_pass(pool)
             except Exception:
-                logger.exception("Monitor pass failed")
-            stop_event.wait(settings.check_interval_seconds)
+                logger.exception("Delivery pass failed")
+            stop_event.wait(settings.worker_poll_seconds)
 
 
 if __name__ == "__main__":
     main()
-
