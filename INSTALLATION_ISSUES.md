@@ -109,3 +109,11 @@ The Vercel project was created before being linked to `frontend/`, so its framew
 Workaround: explicitly set `framework` to `nextjs` and `outputDirectory` to `null` in `frontend/vercel.json`, allowing Vercel to use the framework build output.
 
 Suggested fix: create or configure the Vercel project from the frontend working directory and explicitly apply the intended framework settings before the first deployment.
+
+## 14. Neon PR preview used database and role defaults that do not exist
+
+The preview workflow created `preview/pr-1`, then `neondatabase/create-branch-action@v6` tried to fetch connection information for its defaults, database `neondb` and role `neondb_owner`. The template's Neon project instead creates database `app` and role `app_owner`, so the action failed with HTTP 404.
+
+Workaround: pass `database: app` and `role: app_owner` explicitly to the branch action.
+
+Suggested fix: keep the database and role names in shared template variables or emit them from bootstrap so production and preview workflows cannot diverge.
