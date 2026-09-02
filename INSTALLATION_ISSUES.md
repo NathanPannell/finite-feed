@@ -165,3 +165,11 @@ The first live model request still received the generic preference statement. Th
 Workaround: add an append-only migration that replaces every unchanged generic starter statement for the dogfood user, regardless of version.
 
 Suggested fix: avoid row-ID-only seed corrections when bootstrap verification may have created later versions; target the known placeholder value while preserving genuinely customized profiles.
+
+## 21. Secret-shaped values were accepted as Telegram IDs and HTTP logs exposed bot tokens
+
+The Telegram ID variables were populated with a non-numeric API key, which made the worker fail while converting the value and caused developer-bot authorization to return 403. Separately, httpx INFO logging included Telegram's token-bearing request URL when webhooks were registered.
+
+Workaround: remove the invalid values from GitHub and Railway, rotate the exposed provider credentials, suppress httpx/httpcore request logging for Telegram, and reject non-numeric IDs with an error that never repeats the supplied value.
+
+Suggested fix: validate secret and variable shapes before forwarding them, treat Telegram token-bearing URLs as sensitive log data, and delete stale Railway variables when their GitHub source is unset.

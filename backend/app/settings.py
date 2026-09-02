@@ -65,6 +65,21 @@ class Settings(BaseSettings):
     def allowed_origins(self) -> list[str]:
         return [value.strip() for value in self.frontend_origins.split(",") if value.strip()]
 
+    @property
+    def production_chat_id(self) -> int | None:
+        if not self.telegram_production_chat_id:
+            return None
+        if not self.telegram_production_chat_id.lstrip("-").isdigit():
+            raise RuntimeError("TELEGRAM_PRODUCTION_CHAT_ID must be a numeric Telegram ID")
+        return int(self.telegram_production_chat_id)
+
+    @property
+    def developer_user_ids(self) -> set[int]:
+        values = [value.strip() for value in self.developer_telegram_user_ids.split(",") if value.strip()]
+        if any(not value.lstrip("-").isdigit() for value in values):
+            raise RuntimeError("DEVELOPER_TELEGRAM_USER_IDS must contain only numeric Telegram IDs")
+        return {int(value) for value in values}
+
 
 @lru_cache
 def get_settings() -> Settings:

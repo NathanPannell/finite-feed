@@ -1,9 +1,15 @@
 import html
+import logging
 from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
 from psycopg import Connection
+
+# Telegram authenticates in the request URL. httpx logs full URLs at INFO, so
+# suppress request logging before any bot call can expose a token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 @dataclass(frozen=True)

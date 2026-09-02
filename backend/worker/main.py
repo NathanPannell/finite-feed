@@ -71,10 +71,10 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
         return
     bot = TelegramBot(settings.telegram_production_bot_token)
     with pool.connection() as conn:
-        if settings.telegram_production_chat_id:
+        if settings.production_chat_id is not None:
             conn.execute(
                 "UPDATE app_users SET telegram_user_id = %s WHERE id = '00000000-0000-0000-0000-000000000001' AND telegram_user_id IS NULL",
-                (int(settings.telegram_production_chat_id),),
+                (settings.production_chat_id,),
             )
             conn.commit()
         users = conn.execute(

@@ -55,3 +55,15 @@ def test_local_migrations_may_use_local_database_url() -> None:
         DATABASE_URL_UNPOOLED=None,
     )
     assert settings.effective_migration_database_url == "postgresql://localhost/app"
+
+
+def test_telegram_ids_must_be_numeric_without_echoing_bad_value() -> None:
+    settings = Settings(TELEGRAM_PRODUCTION_CHAT_ID="not-a-telegram-id")
+    with pytest.raises(RuntimeError, match="must be a numeric Telegram ID") as error:
+        _ = settings.production_chat_id
+    assert "not-a-telegram-id" not in str(error.value)
+
+
+def test_developer_ids_support_a_comma_separated_allowlist() -> None:
+    settings = Settings(DEVELOPER_TELEGRAM_USER_IDS="123, -456")
+    assert settings.developer_user_ids == {123, -456}
