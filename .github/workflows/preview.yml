@@ -81,7 +81,9 @@ jobs:
             printf '%s' "$EXPECTED_COMMIT_SHA" | railway variable set APP_COMMIT_SHA --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             printf '%s' "$YOUTUBE_API_KEY" | railway variable set YOUTUBE_API_KEY --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             printf '%s' "$TELEGRAM_DEVELOPER_BOT_TOKEN" | railway variable set TELEGRAM_DEVELOPER_BOT_TOKEN --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '' | railway variable set TELEGRAM_PRODUCTION_BOT_TOKEN --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            if railway variable list --json --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID" | jq -e 'has("TELEGRAM_PRODUCTION_BOT_TOKEN")' >/dev/null; then
+              railway variable delete TELEGRAM_PRODUCTION_BOT_TOKEN --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            fi
           done
           printf '%s' "$PREVIEW_DATABASE_URL_UNPOOLED" | railway variable set PREVIEW_DATABASE_URL_UNPOOLED --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
 
