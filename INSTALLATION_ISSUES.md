@@ -157,3 +157,11 @@ The PR workflow successfully created `pr-3`, then immediately called `railway re
 Workaround: use `railway up` for both API and worker preview services so the checked-out PR source creates their first deployments.
 
 Suggested fix: make first preview deployment consistently source-based; reserve `redeploy` for environments with a known completed deployment.
+
+## 20. The genre-specific seed migration missed a later bootstrap profile version
+
+The first live model request still received the generic preference statement. The preview inherited a version 2 profile created during earlier dashboard verification, while migration 0004 updated only the original version 1 row by ID.
+
+Workaround: add an append-only migration that replaces every unchanged generic starter statement for the dogfood user, regardless of version.
+
+Suggested fix: avoid row-ID-only seed corrections when bootstrap verification may have created later versions; target the known placeholder value while preserving genuinely customized profiles.
