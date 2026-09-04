@@ -55,7 +55,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
         working-directory: frontend
       - run: npm run lint
         working-directory: frontend
@@ -65,6 +65,11 @@ jobs:
         working-directory: frontend
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          RAILWAY_API_BASE_URL: http://localhost:8000
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
 
   deploy-production:
     if: vars.BOOTSTRAP_COMPLETE == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -84,6 +89,9 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ADMIN_PROTECTION_CONFIRMED: ${{ vars.VERCEL_ADMIN_PROTECTION_CONFIRMED }}
+      VERCEL_OIDC_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
+      VERCEL_OIDC_PROJECT_NAME: ${{ vars.VERCEL_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -91,6 +99,14 @@ jobs:
           node-version: 22
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
+      - name: Require private production deployment protection
+        run: |
+          [[ "$VERCEL_ADMIN_PROTECTION_CONFIRMED" == "true" ]] || {
+            echo 'Set VERCEL_ADMIN_PROTECTION_CONFIRMED=true only after Vercel Authentication protects All Deployments.' >&2
+            exit 1
+          }
+          : "${VERCEL_OIDC_TEAM_SLUG:?VERCEL_TEAM_SLUG repository variable is required}"
+          : "${VERCEL_OIDC_PROJECT_NAME:?VERCEL_PROJECT_NAME repository variable is required}"
       - name: Stamp and deploy Railway services
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -127,6 +143,9 @@ jobs:
             printf '%s' 'true' | railway variable set EMBEDDING_OFFLINE --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
             printf '%s' '/opt/huggingface' | railway variable set EMBEDDING_CACHE_DIR --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
           done
+          printf '%s' "$VERCEL_OIDC_TEAM_SLUG" | railway variable set VERCEL_OIDC_TEAM_SLUG --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' "$VERCEL_OIDC_PROJECT_NAME" | railway variable set VERCEL_OIDC_PROJECT_NAME --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' 'production' | railway variable set VERCEL_OIDC_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
       - name: Wait for the exact migrated API commit
@@ -137,7 +156,11 @@ jobs:
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
         run: |
-          deployment_url="$(vercel deploy --prod --yes --cwd frontend --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          deployment_url="$(vercel deploy --prod --yes --cwd frontend \
+            --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
+            --build-env RAILWAY_API_BASE_URL="$API_URL" \
+            --env RAILWAY_API_BASE_URL="$API_URL" \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           production_url=""
           for _ in $(seq 1 12); do
             production_url="$(vercel project list --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r --arg id "$VERCEL_PROJECT_ID" '.projects[] | select(.id == $id) | .latestProductionUrl // empty')"

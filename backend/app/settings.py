@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     telegram_production_chat_id: str = Field(default="", alias="TELEGRAM_PRODUCTION_CHAT_ID")
     developer_telegram_user_ids: str = Field(default="", alias="DEVELOPER_TELEGRAM_USER_IDS")
     public_app_url: str = Field(default="http://localhost:8000", alias="PUBLIC_APP_URL")
+    vercel_oidc_team_slug: str = Field(default="", alias="VERCEL_OIDC_TEAM_SLUG")
+    vercel_oidc_project_name: str = Field(default="", alias="VERCEL_OIDC_PROJECT_NAME")
+    vercel_oidc_environment: str = Field(default="", alias="VERCEL_OIDC_ENVIRONMENT")
+    vercel_oidc_issuer_mode: str = Field(default="team", alias="VERCEL_OIDC_ISSUER_MODE")
 
     @property
     def is_preview(self) -> bool:

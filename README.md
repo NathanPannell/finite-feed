@@ -53,6 +53,13 @@ Open `http://localhost:3000`. `/health` checks liveness; `/ready` checks migrati
 
 Add runtime credentials as GitHub Actions repository secrets. The deployment workflows forward them into the matching Railway production and preview services; `.env.example` contains names and safe defaults only.
 
+The private admin dashboard also requires the `VERCEL_TEAM_SLUG` and
+`VERCEL_PROJECT_NAME` repository variables. Enable Vercel Authentication for
+preview deployments before testing it. Production deployment is intentionally
+blocked until Vercel Authentication protects **All Deployments** and
+`VERCEL_ADMIN_PROTECTION_CONFIRMED=true` is set; Vercel OIDC secures the
+Railway hop but does not identify the individual administrator.
+
 ## Verify
 
 ```powershell

@@ -8,6 +8,7 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
+from backend.app.admin import router as admin_router
 from backend.app.db import close_pool, connection, open_pool
 from backend.app.annotations import annotation_stats, next_annotation, record_annotation
 from backend.app.recommendations import (
@@ -33,6 +34,7 @@ async def lifespan(_: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title="Finite Feed API", version="0.1.0", lifespan=lifespan)
+app.include_router(admin_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -132,7 +134,7 @@ def update_profile(payload: ProfileUpdate, conn: Connection = Depends(connection
 @app.get("/api/channels", response_model=list[Channel])
 def list_channels(conn: Connection = Depends(connection)):
     return conn.execute(
-        "SELECT id, name, url, is_default, created_at FROM tracked_channels WHERE user_id = %s ORDER BY is_default DESC, name",
+        "SELECT id, name, url, is_default, created_at FROM tracked_channels WHERE user_id = %s AND is_active ORDER BY is_default DESC, name",
         (USER_ID,),
     ).fetchall()
 
@@ -141,9 +143,18 @@ def list_channels(conn: Connection = Depends(connection)):
 def add_channel(payload: ChannelCreate, conn: Connection = Depends(connection)):
     try:
         row = conn.execute(
-            "INSERT INTO tracked_channels (id, user_id, name, url) VALUES (%s, %s, %s, %s) RETURNING id, name, url, is_default, created_at",
+            """
+            INSERT INTO tracked_channels (id, user_id, name, url) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, url) DO UPDATE
+                SET is_active = TRUE, name = EXCLUDED.name
+                WHERE NOT tracked_channels.is_active
+            RETURNING id, name, url, is_default, created_at
+            """,
             (uuid4(), USER_ID, payload.name, str(payload.url)),
         ).fetchone()
+        if not row:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail="That channel is already tracked")
         conn.execute(
             "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'channel_add', 'dashboard', %s)",
             (uuid4(), USER_ID, Jsonb({"url": str(payload.url)})),
@@ -158,7 +169,7 @@ def add_channel(payload: ChannelCreate, conn: Connection = Depends(connection)):
 @app.delete("/api/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_channel(channel_id: UUID, conn: Connection = Depends(connection)) -> Response:
     row = conn.execute(
-        "DELETE FROM tracked_channels WHERE id = %s AND user_id = %s RETURNING url",
+        "UPDATE tracked_channels SET is_active = FALSE WHERE id = %s AND user_id = %s RETURNING url",
         (channel_id, USER_ID),
     ).fetchone()
     if not row:
@@ -211,7 +222,11 @@ def record_feedback(recommendation_id: UUID, payload: FeedbackCreate, conn: Conn
         (uuid4(), USER_ID, recommendation_id, event_type, Jsonb({"detail": payload.detail})),
     )
     conn.commit()
-    return conn.execute(RECOMMENDATION_SELECT + " LIMIT 1", (USER_ID,)).fetchone()
+    recommendation_query = RECOMMENDATION_SELECT.replace(
+        "WHERE r.user_id = %s",
+        "WHERE r.user_id = %s AND r.id = %s",
+    )
+    return conn.execute(recommendation_query + " LIMIT 1", (USER_ID, recommendation_id)).fetchone()
 
 
 @app.get("/r/{recommendation_id}")
