@@ -1,20 +1,10 @@
-import html
 import re
-import unicodedata
 from uuid import UUID, uuid4
 
 from psycopg import Connection
 
 
-_MOJIBAKE = {
-    "\u00e2\u20ac\u2122": "’",
-    "\u00e2\u20ac\u0153": "“",
-    "\u00e2\u20ac\u009d": "”",
-    "\u00e2\u20ac\u201c": "–",
-    "\u00e2\u20ac\u201d": "—",
-    "\u00c2": "",
-    "\ufffd": "",
-}
+from backend.app.description_processing import clean_description, is_english_metadata, normalize_display_text
 
 
 class AnnotationConflict(RuntimeError):
@@ -22,19 +12,23 @@ class AnnotationConflict(RuntimeError):
 
 
 def clean_display_text(value: str) -> str:
-    text = html.unescape(value or "")
-    for broken, replacement in _MOJIBAKE.items():
-        text = text.replace(broken, replacement)
-    text = unicodedata.normalize("NFKC", text)
-    text = "".join(
-        character
-        for character in text
-        if character in {"\n", "\t"} or not unicodedata.category(character).startswith("C")
-    )
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", normalize_display_text(value)).strip()
+
+
+def _eligible_video_ids(conn: Connection) -> list[UUID]:
+    # Classify each video once, never the profiles-by-videos cross product.
+    rows = conn.execute("""SELECT DISTINCT v.video_id, v.title, v.description,
+        v.default_language, v.default_audio_language
+        FROM annotation_videos v
+        JOIN annotation_pair_scores score ON score.video_id = v.video_id AND score.curated
+        """).fetchall()
+    return [row["video_id"] for row in rows if is_english_metadata(
+        row["title"], row["description"], row["default_language"], row["default_audio_language"]
+    )]
 
 
 def next_annotation(conn: Connection, annotator_id: UUID):
+    eligible_ids = _eligible_video_ids(conn)
     row = conn.execute(
         """
         SELECT score.profile_id, score.video_id, p.summary, p.topics,
@@ -56,6 +50,7 @@ def next_annotation(conn: Connection, annotator_id: UUID):
           AND score.queue_status = 'open'
           AND mine.id IS NULL
           AND coverage.label_count < 3
+          AND score.video_id = ANY(%s::uuid[])
         ORDER BY
             coverage.label_count,
             score.last_served_at NULLS FIRST,
@@ -63,7 +58,7 @@ def next_annotation(conn: Connection, annotator_id: UUID):
         FOR UPDATE OF score SKIP LOCKED
         LIMIT 1
         """,
-        (annotator_id,),
+        (annotator_id, eligible_ids),
     ).fetchone()
     if not row:
         conn.rollback()
@@ -82,7 +77,7 @@ def next_annotation(conn: Connection, annotator_id: UUID):
         "summary": clean_display_text(row["summary"]),
         "topics": [clean_display_text(topic) for topic in row["topics"]],
         "title": clean_display_text(row["title"]),
-        "description": clean_display_text(row["description"]),
+        "description": clean_description(row["description"]),
     }
 
 
@@ -96,6 +91,12 @@ def record_annotation(
     rationale: str | None,
     annotator_kind: str = "anonymous",
 ):
+    video = conn.execute("""SELECT title, description, default_language, default_audio_language
+        FROM annotation_videos WHERE video_id = %s""", (video_id,)).fetchone()
+    if not video or not is_english_metadata(video["title"], video["description"],
+                                            video["default_language"], video["default_audio_language"]):
+        conn.rollback()
+        return None
     pair = conn.execute(
         """
         SELECT predicted_fit, close_call, decision_summary, queue_status
@@ -197,6 +198,7 @@ def record_annotation(
 
 
 def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
+    eligible_ids = _eligible_video_ids(conn)
     row = conn.execute(
         """
         SELECT
@@ -206,6 +208,8 @@ def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
                 FROM annotation_pair_scores score
                 WHERE score.curated
                   AND score.queue_status = 'open'
+                  AND score.video_id = ANY(%s::uuid[])
+                  AND EXISTS (SELECT 1 FROM annotation_profiles p WHERE p.id = score.profile_id AND p.active)
                   AND NOT EXISTS (
                       SELECT 1 FROM annotation_labels mine
                       WHERE mine.profile_id = score.profile_id
@@ -214,6 +218,6 @@ def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
                   )
             ) AS remaining
         """,
-        (annotator_id, annotator_id),
+        (annotator_id, eligible_ids, annotator_id),
     ).fetchone()
     return {"completed": row["completed"], "remaining": row["remaining"]}

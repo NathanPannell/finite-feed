@@ -49,6 +49,26 @@ function localTime(candidate: unknown, fallback = "Not recorded") {
   return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+function compactDateTime(candidate: unknown, fallback = "Not recorded") {
+  if (!candidate) return fallback;
+  const parsed = new Date(String(candidate));
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function compactDay(candidate: unknown) {
+  if (!candidate) return "—";
+  const parsed = new Date(`${String(candidate)}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(parsed);
+}
+
 function duration(candidate: unknown) {
   const seconds = Number(candidate);
   if (!Number.isFinite(seconds) || seconds <= 0) return "—";
@@ -75,12 +95,14 @@ function Status({ children }: { children: ReactNode }) {
   return <span className={`admin-status ${statusTone(label)}`}><i aria-hidden="true" />{label}</span>;
 }
 
-function Icon({ name }: { name: "refresh" | "close" | "arrow" | "search" }) {
+function Icon({ name }: { name: "refresh" | "close" | "arrow" | "search" | "minus" | "plus" }) {
   const paths = {
     refresh: <><path d="M20 11a8 8 0 1 0-2.34 5.66" /><path d="M20 4v7h-7" /></>,
     close: <><path d="m6 6 12 12" /><path d="m18 6-12 12" /></>,
     arrow: <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
     search: <><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></>,
+    minus: <path d="M6 12h12" />,
+    plus: <><path d="M6 12h12" /><path d="M12 6v12" /></>,
   };
   return <svg aria-hidden="true" className="admin-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -150,7 +172,7 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
           <button ref={closeRef} className="admin-icon-button" onClick={close} aria-label="Close details"><Icon name="close" /></button>
         </header>
         <div className="admin-detail-list">
-          {Object.entries(state.item).map(([key, data]) => (
+          {Object.entries(state.item).filter(([key]) => state.kind !== "channels" || !["user_id", "owner_name"].includes(key)).map(([key, data]) => (
             <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd><DetailsValue data={data} /></dd></div>
           ))}
         </div>
@@ -181,17 +203,95 @@ function ChannelAgeControl({ item, save }: { item: JsonRecord; save: (item: Json
   const initial = numberValue(item, "max_video_age_days") || 7;
   const [age, setAge] = useState(initial);
   return <form className="admin-age-form" onSubmit={(event) => { event.preventDefault(); save(item, { max_video_age_days: age }); }}>
-    <label className="admin-inline-number"><span className="sr-only">Maximum video age for {text(item, "name")}</span><input type="number" min="1" max="365" value={age} onChange={(event) => setAge(Math.min(365, Math.max(1, Number(event.target.value))))} /><i>days</i></label>
-    {age !== initial && <button>Save</button>}
+    <NumberStepper label={`Video window for ${text(item, "name")}`} value={age} setValue={setAge} min={1} max={365} unit="days" compact />
+    <button disabled={age === initial}>Save</button>
   </form>;
+}
+
+function NumberStepper({ label, value, setValue, min, max, unit, compact = false }: { label: string; value: number; setValue: (value: number) => void; min: number; max: number; unit: string; compact?: boolean }) {
+  const clamp = (next: number) => setValue(Math.min(max, Math.max(min, next)));
+  return <div className={`admin-number-stepper ${compact ? "compact" : ""}`}>
+    <button type="button" aria-label={`Decrease ${label}`} onClick={() => clamp(value - 1)} disabled={value <= min}><Icon name="minus" /></button>
+    <label><span className="sr-only">{label}</span><input type="number" inputMode="numeric" min={min} max={max} value={value} onChange={(event) => clamp(Number(event.target.value))} /></label>
+    <span aria-hidden="true">{unit}</span>
+    <button type="button" aria-label={`Increase ${label}`} onClick={() => clamp(value + 1)} disabled={value >= max}><Icon name="plus" /></button>
+  </div>;
+}
+
+function chartPoints(values: number[], maximum: number) {
+  const denominator = Math.max(values.length - 1, 1);
+  return values.map((item, index) => {
+    const x = 18 + (index / denominator) * 564;
+    const y = 154 - (item / Math.max(maximum, 1)) * 132;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+}
+
+function PerformanceChart({ data }: { data: JsonRecord[] }) {
+  if (!data.length) return <EmptyState title="No performance data" message="Delivered recommendations will establish the trend." />;
+  const up = data.map((item) => numberValue(item, "up_count"));
+  const down = data.map((item) => numberValue(item, "down_count"));
+  const share = data.map((item) => numberValue(item, "up_share") * 100);
+  const countMaximum = Math.max(...up, ...down, 1);
+  const firstDay = compactDay(value(data[0], "day"));
+  const lastDay = compactDay(value(data[data.length - 1], "day"));
+  return <div className="admin-performance-grid">
+    <figure>
+      <figcaption><strong>Feedback</strong><span><i className="up" />Useful <i className="down" />Not useful</span></figcaption>
+      <svg viewBox="0 0 600 176" role="img" aria-labelledby="feedback-chart-title feedback-chart-description">
+        <title id="feedback-chart-title">Useful and not useful feedback over time</title>
+        <desc id="feedback-chart-description">Daily feedback counts from {firstDay} through {lastDay}.</desc>
+        <path className="chart-grid" d="M18 22H582M18 88H582M18 154H582" />
+        <polyline className="chart-line up" points={chartPoints(up, countMaximum)} />
+        <polyline className="chart-line down" points={chartPoints(down, countMaximum)} />
+      </svg>
+      <div className="chart-axis"><span>{firstDay}</span><span>{lastDay}</span></div>
+    </figure>
+    <figure>
+      <figcaption><strong>Useful share</strong><span>of recommendations sent</span></figcaption>
+      <svg viewBox="0 0 600 176" role="img" aria-labelledby="share-chart-title share-chart-description">
+        <title id="share-chart-title">Useful feedback as a share of recommendations sent</title>
+        <desc id="share-chart-description">Daily percentage from {firstDay} through {lastDay}.</desc>
+        <path className="chart-grid" d="M18 22H582M18 88H582M18 154H582" />
+        <polyline className="chart-line share" points={chartPoints(share, 100)} />
+      </svg>
+      <div className="chart-axis"><span>{firstDay}</span><span>{lastDay}</span></div>
+    </figure>
+  </div>;
+}
+
+function RecommendationTimeline({ item }: { item: JsonRecord }) {
+  const lastInteractionType = text(item, "last_interaction_type");
+  const lastInteractionAt = value(item, "last_interacted_at");
+  const events = [
+    { label: "Created", at: value(item, "created_at") },
+    { label: "Delivered", at: value(item, "delivered_at") },
+    { label: "Clicked", at: value(item, "clicked_at") },
+    { label: lastInteractionType, at: lastInteractionType === "clicked" ? null : lastInteractionAt },
+  ].filter((event) => event.at);
+  return <ol className="admin-timeline" aria-label="Recommendation timeline">
+    {events.map((event) => <li key={`${event.label}-${event.at}`}><span>{event.label.replaceAll("_", " ")}</span><time title={String(event.at)}>{compactDateTime(event.at)}</time></li>)}
+  </ol>;
+}
+
+function LatestActivity({ item, loading }: { item: JsonRecord | null; loading: boolean }) {
+  const eventType = text(item, "event_type", "action", "type").replaceAll("_", " ") || "No activity yet";
+  const source = text(item, "source") || "System";
+  const status = text(item, "result", "status") || "Recorded";
+  const occurredAt = value(item, "created_at", "occurred_at", "timestamp", "started_at");
+  return <article className="admin-latest-activity" aria-label="Latest activity">
+    <span>Latest activity</span>
+    <strong>{loading ? "Loading…" : eventType}</strong>
+    {!loading && item && <p><time title={String(occurredAt || "")}>{compactDateTime(occurredAt)}</time><span aria-hidden="true"> · </span>{source}</p>}
+    {!loading && item && <Status>{status}</Status>}
+  </article>;
 }
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<Tab>("channels");
   const [summary, setSummary] = useState<JsonRecord | null>(null);
-  const [ownerOptions, setOwnerOptions] = useState<JsonRecord[]>([]);
-  const [ownerId, setOwnerId] = useState("");
-  const [activity, setActivity] = useState<JsonRecord[]>([]);
+  const [latestActivity, setLatestActivity] = useState<JsonRecord | null>(null);
+  const [performance, setPerformance] = useState<JsonRecord[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState("");
   const [list, setList] = useState<PageResult>(emptyPage);
@@ -237,20 +337,14 @@ export function AdminDashboard() {
     setOverviewLoading(true);
     setOverviewError("");
     try {
-      const [nextSummary, activityPayload] = await Promise.all([
+      const [nextSummary, activityPayload, performancePayload] = await Promise.all([
         adminRequest<JsonRecord>("summary"),
-        adminRequest<unknown>("activity?limit=12"),
+        adminRequest<unknown>("activity?limit=1"),
+        adminRequest<unknown>("performance?days=30"),
       ]);
       setSummary(nextSummary);
-      const nextOwners = Array.isArray(nextSummary.owner_options)
-        ? nextSummary.owner_options as JsonRecord[]
-        : [];
-      setOwnerOptions(nextOwners);
-      setOwnerId((current) => {
-        if (nextOwners.length === 1) return text(nextOwners[0], "id");
-        return nextOwners.some((owner) => text(owner, "id") === current) ? current : "";
-      });
-      setActivity(pageResult<JsonRecord>(activityPayload, 1, 12).items);
+      setLatestActivity(pageResult<JsonRecord>(activityPayload, 1, 1).items[0] || null);
+      setPerformance(Array.isArray(performancePayload) ? performancePayload as JsonRecord[] : pageResult<JsonRecord>(performancePayload, 1, 30).items);
     } catch (error) {
       setOverviewError(requestMessage(error, "The operations summary is unavailable."));
     } finally {
@@ -374,14 +468,10 @@ export function AdminDashboard() {
   async function addChannel(event: FormEvent) {
     event.preventDefault();
     if (!resolvedChannel) return;
-    if (ownerOptions.length > 1 && !ownerId) {
-      setNotice("Select the channel owner before adding it.");
-      return;
-    }
     setMutationId("add");
     setNotice("");
     try {
-      const result = await adminRequest<JsonRecord>("channels", { method: "POST", body: JSON.stringify({ url: channelUrl, max_video_age_days: maxAge, ...(ownerId ? { user_id: ownerId } : {}) }) });
+      const result = await adminRequest<JsonRecord>("channels", { method: "POST", body: JSON.stringify({ url: channelUrl, max_video_age_days: maxAge }) });
       setNotice(booleanValue(result, "reactivated") ? "Channel restored and tracking resumed." : "Channel added. Recent uploads will be checked first.");
       setChannelUrl("");
       setResolvedChannel(null);
@@ -418,9 +508,6 @@ export function AdminDashboard() {
     { id: "videos", label: "Videos" },
     { id: "recommendations", label: "Recommendations" },
   ];
-  const latestStatus = text(summary, "latest_ingestion_status", "ingestion_status") || "Waiting";
-  const latestError = text(summary, "latest_ingestion_error", "ingestion_error");
-
   function onChannelUrlChange(nextUrl: string) {
     setChannelUrl(nextUrl);
     setResolvedChannel(null);
@@ -439,14 +526,14 @@ export function AdminDashboard() {
 
       <main className="admin-main">
         <header className="admin-header">
-          <div><h1>Control room</h1><p>Inspect the pipeline, find records, and make narrow audited changes.</p></div>
+          <h1>Control room</h1>
           <button className="admin-refresh" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </header>
 
         {notice && <p className="admin-notice" role="status">{notice}</p>}
 
         <section className="admin-overview" aria-labelledby="health-heading">
-          <div className="admin-section-heading"><div><h2 id="health-heading">System health</h2><p>Current database and queue totals</p></div><time title={text(summary, "latest_ingestion_at", "latest_ingestion_time")}>Last sync {localTime(value(summary, "latest_ingestion_at", "latest_ingestion_time"), "not recorded")}</time></div>
+          <div className="admin-section-heading"><h2 id="health-heading">System health</h2></div>
           {overviewError ? <ErrorState message={overviewError} retry={() => void loadOverview()} /> : (
             <div className="admin-summary-strip" aria-busy={overviewLoading}>
               {[
@@ -456,22 +543,14 @@ export function AdminDashboard() {
                 ["Queued", "queued_recommendation_count", "queued_recommendations"],
                 ["Delivered", "delivered_recommendation_count", "delivered_recommendations"],
               ].map(([label, ...keys]) => <div key={label}><span>{label}</span><strong>{overviewLoading ? "—" : compactNumber(value(summary, ...keys))}</strong></div>)}
-              <div className="admin-ingestion-summary"><span>Latest ingestion</span><Status>{overviewLoading ? "Loading" : latestStatus}</Status>{latestError && <small title={latestError}>Error recorded</small>}</div>
+              <LatestActivity item={latestActivity} loading={overviewLoading} />
             </div>
           )}
         </section>
 
-        <section className="admin-activity" aria-labelledby="activity-heading">
-          <div className="admin-section-heading"><div><h2 id="activity-heading">Recent activity</h2><p>Ingestion, user signals, and administrator changes</p></div></div>
-          {!overviewError && !overviewLoading && !activity.length ? <EmptyState title="No activity yet" message="Worker runs and channel changes will appear here." /> : (
-            <div className="admin-activity-list" aria-busy={overviewLoading}>
-              {overviewLoading ? [0, 1, 2].map((item) => <div className="admin-activity-skeleton" key={item} />) : activity.map((item, index) => {
-                const status = text(item, "status", "result") || "Recorded";
-                const error = text(item, "error", "error_message");
-                return <article key={text(item, "id", "target_id") || index}><span className={`admin-activity-mark ${statusTone(status)}`} aria-hidden="true" /><div><strong>{text(item, "event_type", "action", "type") || "Activity"}</strong><p>{text(item, "target", "affected_record", "description", "channel_name", "target_id") || "System record"}</p>{error && <small>{error}</small>}</div><div><Status>{status}</Status><time title={text(item, "occurred_at", "created_at", "timestamp", "started_at")}>{localTime(value(item, "occurred_at", "created_at", "timestamp", "started_at"))}</time></div></article>;
-              })}
-            </div>
-          )}
+        <section className="admin-performance" aria-labelledby="performance-heading">
+          <div className="admin-section-heading"><h2 id="performance-heading">Performance</h2></div>
+          {!overviewError && <PerformanceChart data={performance} />}
         </section>
 
         <section className="admin-records" aria-labelledby="records-heading">
@@ -480,11 +559,11 @@ export function AdminDashboard() {
           </div>
 
           <div className="admin-tab-panel" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-            <div className="admin-records-heading"><div><h2 id="records-heading">{tabs.find((item) => item.id === tab)?.label}</h2><p>{tab === "channels" ? "Tracking state, age windows, and sync progress" : tab === "videos" ? "Immutable ingestion records and retrieval vectors" : "Immutable queue, delivery, and feedback records"}</p></div><span>{list.total.toLocaleString()} records</span></div>
+          <div className="admin-records-heading"><h2 id="records-heading">{tabs.find((item) => item.id === tab)?.label}</h2><span>{list.total.toLocaleString()} records</span></div>
 
-            {tab === "channels" && <ChannelResolver url={channelUrl} setUrl={onChannelUrlChange} maxAge={maxAge} setMaxAge={setMaxAge} ownerOptions={ownerOptions} ownerId={ownerId} setOwnerId={setOwnerId} state={resolveState} error={resolveError} resolved={resolvedChannel} submit={addChannel} busy={mutationId === "add"} />}
+            {tab === "channels" && <ChannelResolver url={channelUrl} setUrl={onChannelUrlChange} maxAge={maxAge} setMaxAge={setMaxAge} state={resolveState} error={resolveError} resolved={resolvedChannel} submit={addChannel} busy={mutationId === "add"} />}
 
-            <div className="admin-controls">
+            <div className="admin-controls" key={tab}>
               {tab === "videos" && <label className="admin-control compact-control"><span>Search mode</span><select value={videoSearchMode} onChange={(event) => { setVideoSearchMode(event.target.value as "text" | "vector"); setList(emptyPage); }}>{/* options are intentionally explicit */}<option value="text">Text</option><option value="vector">Meaning</option></select></label>}
               <form className="admin-search" onSubmit={videoSearchMode === "vector" && tab === "videos" ? vectorSearch : applySearch}>
                 <Icon name="search" /><label className="sr-only" htmlFor="admin-search">Search {tab}</label><input id="admin-search" value={tab === "videos" && videoSearchMode === "vector" ? vectorPhrase : searchDraft} onChange={(event) => tab === "videos" && videoSearchMode === "vector" ? setVectorPhrase(event.target.value) : setSearchDraft(event.target.value)} placeholder={tab === "videos" && videoSearchMode === "vector" ? "Describe an idea to retrieve" : `Search ${tab}`} /><button>{tab === "videos" && videoSearchMode === "vector" ? "Search meaning" : "Search"}</button>
@@ -506,16 +585,16 @@ export function AdminDashboard() {
   );
 }
 
-function ChannelResolver({ url, setUrl, maxAge, setMaxAge, ownerOptions, ownerId, setOwnerId, state, error, resolved, submit, busy }: { url: string; setUrl: (value: string) => void; maxAge: number; setMaxAge: (value: number) => void; ownerOptions: JsonRecord[]; ownerId: string; setOwnerId: (value: string) => void; state: string; error: string; resolved: JsonRecord | null; submit: (event: FormEvent) => void; busy: boolean }) {
+function ChannelResolver({ url, setUrl, maxAge, setMaxAge, state, error, resolved, submit, busy }: { url: string; setUrl: (value: string) => void; maxAge: number; setMaxAge: (value: number) => void; state: string; error: string; resolved: JsonRecord | null; submit: (event: FormEvent) => void; busy: boolean }) {
   const existing = booleanValue(resolved, "already_tracked", "exists");
   const active = booleanValue(resolved, "is_active", "active");
   return <form className="admin-resolver" onSubmit={submit}>
-    <div className="admin-resolver-fields"><label><span>YouTube channel URL</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://youtube.com/@handle" required aria-describedby="resolver-help" /></label>{ownerOptions.length > 0 && <label><span>Owner</span><select value={ownerId} onChange={(event) => setOwnerId(event.target.value)} required disabled={ownerOptions.length === 1}><option value="">Select owner</option>{ownerOptions.map((owner) => <option key={text(owner, "id")} value={text(owner, "id")}>{text(owner, "name", "display_name") || text(owner, "id")}</option>)}</select></label>}<label><span>Maximum video age</span><span className="admin-number-input"><input type="number" min="1" max="365" value={maxAge} onChange={(event) => setMaxAge(Math.min(365, Math.max(1, Number(event.target.value))))} required /><i>days</i></span></label></div>
-    <p id="resolver-help" className={`admin-resolver-help ${state === "error" ? "error" : ""}`} role={state === "error" ? "alert" : undefined}>{state === "loading" ? "Resolving channel…" : error || "Paste an exact @handle or /channel/ URL. Generic name search is intentionally unavailable."}</p>
+    <div className="admin-resolver-fields"><label><span>YouTube channel URL</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://youtube.com/@handle" required aria-describedby="resolver-help" /></label><label><span>Video window</span><NumberStepper label="New channel video window" value={maxAge} setValue={setMaxAge} min={1} max={365} unit="days" /></label></div>
+    <p id="resolver-help" className={`admin-resolver-help ${state === "error" ? "error" : ""}`} role={state === "error" ? "alert" : undefined}>{state === "loading" ? "Resolving channel…" : error || "Paste a channel, handle, video, or youtu.be URL."}</p>
     {resolved && <div className="admin-resolved">
       {text(resolved, "thumbnail_url", "thumbnail") ? <img src={text(resolved, "thumbnail_url", "thumbnail")} alt="" /> : <span className="admin-thumbnail-fallback">{text(resolved, "name", "title").slice(0, 1)}</span>}
       <div><strong>{text(resolved, "name", "title") || "Resolved channel"}</strong><p>{text(resolved, "description") || "No public description supplied."}</p><small>{compactNumber(value(resolved, "subscriber_count"))} subscribers · {compactNumber(value(resolved, "public_video_count", "video_count"))} public videos</small></div>
-      <button className="admin-primary" disabled={busy || (existing && active) || (ownerOptions.length > 1 && !ownerId)}>{busy ? "Saving…" : existing && !active ? "Reactivate" : existing ? "Already active" : "Add channel"}<Icon name="arrow" /></button>
+      <button className="admin-primary" disabled={busy || (existing && active)}>{busy ? "Saving…" : existing && !active ? "Reactivate" : existing ? "Already active" : "Add channel"}<Icon name="arrow" /></button>
     </div>}
   </form>;
 }
@@ -551,9 +630,9 @@ function ColumnChooser({ tab, hidden, setHidden }: { tab: Tab; hidden: string[];
   </details>;
 }
 function RecordTable({ tab, data, loading, mutationId, open, patchChannel, hiddenColumns }: { tab: Tab; data: PageResult; loading: boolean; mutationId: string; open: (kind: Tab, item: JsonRecord, trigger: HTMLElement) => void; patchChannel: (item: JsonRecord, patch: JsonRecord) => void; hiddenColumns: string[] }) {
-  const columns = tab === "channels" ? 7 : tab === "videos" ? 8 : 7;
+  const columns = tab === "channels" ? 6 : tab === "videos" ? 8 : 7;
   return <div className="admin-table-wrap" tabIndex={0} aria-label={tab + " records table, scroll for more columns"}><table className={["admin-table", tab, ...hiddenColumns.map((column) => "hide-" + column)].join(" ")}><thead><tr>
-    {tab === "channels" && <><th>Channel</th><th>Owner</th><th>Tracking</th><th>Video window</th><th className="optional-column col-channel-videos">Videos</th><th>Sync & backfill</th><th><span className="sr-only">Actions</span></th></>}
+    {tab === "channels" && <><th>Channel</th><th>Tracking</th><th>Video window</th><th className="optional-column col-channel-videos">Videos</th><th>Last sync</th><th><span className="sr-only">Actions</span></th></>}
     {tab === "videos" && <><th>Video</th><th>Channel</th><th>Published</th><th className="optional-column col-video-ingested">Ingested</th><th className="optional-column col-video-duration">Duration</th><th className="optional-column col-video-views">Views</th><th>Embedding</th><th><span className="sr-only">Actions</span></th></>}
     {tab === "recommendations" && <><th>Recipient</th><th>Video</th><th className="optional-column col-recommendation-rationale">Rationale</th><th>Delivery</th><th>Rating</th><th className="optional-column col-recommendation-timeline">Timeline</th><th><span className="sr-only">Actions</span></th></>}
   </tr></thead><tbody>{loading ? <LoadingRows columns={columns} /> : data.items.map((item) => <RecordRow key={text(item, "id")} tab={tab} item={item} busy={mutationId === text(item, "id")} open={open} patchChannel={patchChannel} />)}</tbody></table></div>;
@@ -563,14 +642,20 @@ function RecordRow({ tab, item, busy, open, patchChannel }: { tab: Tab; item: Js
   const active = value(item, "is_active", "active") !== false;
   if (tab === "channels") return <tr className={!active ? "inactive-row" : ""}>
     <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span>{text(item, "name").slice(0, 1)}</span>}<div><strong>{text(item, "name")}</strong><a href={text(item, "url", "canonical_url")} target="_blank" rel="noreferrer">Open YouTube</a></div></div></td>
-    <td>{text(item, "owner_name", "user_display_name", "user_id") || "Default user"}</td><td><Status>{active ? "Active" : "Stopped"}</Status></td>
-    <td><ChannelAgeControl item={item} save={patchChannel} /></td>
-    <td className="optional-column col-channel-videos">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td><strong>{text(item, "sync_status", "last_sync_status") || "Waiting"}</strong><small>Last sync {localTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "not recorded")}</small><small>{text(item, "backfill_status", "backfill_progress") || "Backfill not started"}</small>{text(item, "sync_error", "last_sync_error") && <small className="error-text">{text(item, "sync_error", "last_sync_error")}</small>}</td>
-    <td className="admin-row-actions"><button className="admin-text-button" disabled={busy} onClick={() => void patchChannel(item, { is_active: !active })}>{busy ? "Saving…" : active ? "Stop" : "Restore"}</button><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
+    <td><Status>{active ? "Active" : "Stopped"}</Status></td>
+    <td><ChannelAgeControl key={`${text(item, "id")}:${numberValue(item, "max_video_age_days")}`} item={item} save={patchChannel} /></td>
+    <td className="optional-column col-channel-videos">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td className="admin-last-sync"><time title={text(item, "last_sync_completed_at", "last_ingestion_at")}>{compactDateTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "Not recorded")}</time>{text(item, "sync_error", "last_sync_error") && <small className="error-text">Sync issue</small>}</td>
+    <td className="admin-row-actions"><button className={`admin-text-button ${active ? "stop" : "restore"}`} disabled={busy} onClick={() => void patchChannel(item, { is_active: !active })}>{busy ? "Saving…" : active ? "Stop" : "Restore"}</button><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   if (tab === "videos") return <tr>
     <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span /> }<div><strong>{text(item, "title")}</strong><a href={text(item, "youtube_url", "url")} target="_blank" rel="noreferrer">Watch video</a></div></div></td><td>{text(item, "channel_name")}</td><td><time title={text(item, "published_at")}>{localTime(value(item, "published_at"), "—")}</time></td><td className="optional-column col-video-ingested"><time title={text(item, "created_at", "ingested_at")}>{localTime(value(item, "ingested_at", "created_at"), "—")}</time></td><td className="optional-column col-video-duration">{duration(value(item, "duration_seconds"))}</td><td className="optional-column col-video-views">{compactNumber(value(item, "view_count", "views"))}</td><td>{value(item, "similarity") !== null && <strong>{numberValue(item, "similarity").toFixed(3) + " semantic similarity"}</strong>}<Status>{booleanValue(item, "has_embedding") || Boolean(value(item, "embedding_model")) ? text(item, "embedding_model") || "Embedded" : "Missing"}</Status><small>{numberValue(item, "recommendation_count")} recommendations</small></td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   const delivered = Boolean(value(item, "delivered_at"));
-  return <tr><td><strong>{text(item, "recipient_name", "user_display_name", "display_name") || "Recipient"}</strong><small>{text(item, "telegram_user_id", "telegram_id")}</small></td><td><strong>{text(item, "video_title", "title")}</strong><small>{text(item, "channel_name")}</small></td><td className="optional-column col-recommendation-rationale"><span className="admin-clamp">{text(item, "rationale")}</span></td><td><Status>{delivered ? "Delivered" : "Queued"}</Status></td><td><Status>{text(item, "rating") || "Unrated"}</Status></td><td className="optional-column col-recommendation-timeline"><small>Created {localTime(value(item, "created_at"))}</small><small>{delivered ? `Delivered ${localTime(value(item, "delivered_at"))}` : "Awaiting delivery"}</small>{value(item, "clicked_at") && <small>Clicked {localTime(value(item, "clicked_at"))}</small>}</td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td></tr>;
+  const videoDetails = [
+    text(item, "channel_name"),
+    compactDateTime(value(item, "video_published_at"), ""),
+    duration(value(item, "video_duration_seconds")),
+    `${compactNumber(value(item, "video_view_count"))} views`,
+  ].filter((detail) => detail && detail !== "—");
+  return <tr><td className="recommendation-recipient"><strong>{text(item, "recipient_name", "user_display_name", "display_name") || "Recipient"}</strong><small>{text(item, "telegram_user_id", "telegram_id")}</small></td><td className="recommendation-video"><div className="admin-record-title admin-recommendation-video">{text(item, "thumbnail_url") ? <img src={text(item, "thumbnail_url")} alt="" /> : <span /> }<div><strong>{text(item, "video_title", "title")}</strong><a href={text(item, "youtube_url")} target="_blank" rel="noreferrer">Watch video</a><small>{videoDetails.join(" · ")}</small></div></div></td><td className="recommendation-rationale optional-column col-recommendation-rationale"><details className="admin-rationale"><summary>Why this matched</summary><p>{text(item, "rationale") || "No rationale recorded."}</p></details></td><td className="recommendation-delivery"><Status>{delivered ? "Delivered" : "Queued"}</Status></td><td className="recommendation-rating"><Status>{text(item, "rating") || "Unrated"}</Status></td><td className="recommendation-timeline optional-column col-recommendation-timeline"><RecommendationTimeline item={item} /></td><td className="recommendation-actions"><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td></tr>;
 }

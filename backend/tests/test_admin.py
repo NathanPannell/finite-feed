@@ -15,6 +15,7 @@ from backend.app.admin import (
     parse_channel_reference,
     patch_channel,
     resolve_admin_owner,
+    resolve_youtube_channel,
     router,
     upsert_admin_channel,
     vector_search,
@@ -82,8 +83,39 @@ def test_channel_url_parser_only_accepts_unambiguous_forms() -> None:
     assert parse_channel_reference("https://youtube.com/@FiniteFeed") == ("forHandle", "FiniteFeed")
     channel_id = "UC" + "a" * 22
     assert parse_channel_reference(f"https://www.youtube.com/channel/{channel_id}") == ("id", channel_id)
-    with pytest.raises(ValueError, match="unambiguous"):
+    assert parse_channel_reference("https://www.youtube.com/watch?v=video123") == ("video", "video123")
+    assert parse_channel_reference("https://youtu.be/video123") == ("video", "video123")
+    assert parse_channel_reference("https://www.youtube.com/shorts/video123") == ("video", "video123")
+    with pytest.raises(ValueError, match="channel, handle, video"):
         parse_channel_reference("https://youtube.com/results?search_query=finite")
+
+
+def test_video_url_resolves_its_owning_channel(monkeypatch) -> None:
+    calls = []
+
+    class FakeYouTubeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+
+        def _get(self, path, **params):
+            calls.append((path, params))
+            if path == "/videos":
+                return {"items": [{"snippet": {"channelId": "UC" + "a" * 22}}]}
+            return {"items": [{
+                "id": "UC" + "a" * 22,
+                "snippet": {"title": "Owning channel", "thumbnails": {"high": {"url": "https://example.test/avatar.jpg"}}},
+                "contentDetails": {"relatedPlaylists": {"uploads": "UU" + "a" * 22}},
+                "statistics": {"subscriberCount": "42", "videoCount": "7"},
+            }]}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(admin_module, "YouTubeClient", FakeYouTubeClient)
+    result = resolve_youtube_channel("https://youtu.be/video123", Settings(_env_file=None, YOUTUBE_API_KEY="test-key"))
+    assert result["name"] == "Owning channel"
+    assert calls[0] == ("/videos", {"part": "snippet", "id": "video123"})
+    assert calls[1][1]["id"] == "UC" + "a" * 22
 
 
 def test_max_age_is_bounded_and_patch_is_narrow() -> None:
@@ -99,16 +131,29 @@ class OwnersConnection:
         self.owners = owners
 
     def execute(self, query, _params=None):
-        assert "FROM app_users" in str(query)
-        return Result(rows=self.owners)
+        sql = str(query)
+        assert "FROM app_users" in sql
+        assert "ORDER BY created_at, id LIMIT 1" in sql
+        return Result(row=self.owners[0] if self.owners else None)
 
 
-def test_omitted_owner_auto_selects_only_a_single_app_user() -> None:
-    assert resolve_admin_owner(OwnersConnection([{"id": USER_ID}]), None) == USER_ID
-    with pytest.raises(HTTPException) as error:
-        resolve_admin_owner(OwnersConnection([{"id": USER_ID}, {"id": uuid4()}]), None)
-    assert error.value.status_code == 409
-    assert "Select an owner" in error.value.detail
+def test_omitted_owner_deterministically_selects_earliest_app_user() -> None:
+    later_user = uuid4()
+    assert resolve_admin_owner(OwnersConnection([{"id": USER_ID}, {"id": later_user}]), None) == USER_ID
+
+
+def test_omitted_owner_preserves_existing_canonical_owner_for_reactivation() -> None:
+    canonical_owner = uuid4()
+    channel_id = uuid4()
+    existing = {"id": channel_id, "user_id": canonical_owner, "is_active": False, "max_video_age_days": 7}
+    conn = ChannelConnection(existing)
+    row, reactivated = upsert_admin_channel(
+        conn, user_id=None, details=channel_details(), max_video_age_days=30, actor="verified-subject",
+    )
+    assert reactivated is True
+    assert row["user_id"] == canonical_owner
+    assert conn.audit_params[3] == canonical_owner
+    assert not any("SELECT id FROM app_users" in query for query in conn.queries)
 
 
 def test_active_duplicate_is_rejected_by_canonical_channel_id() -> None:
@@ -190,6 +235,7 @@ def test_soft_stop_is_audited_without_delete() -> None:
     conn = PatchConnection(channel_id)
     row = patch_channel(channel_id, ChannelPatch(is_active=False), {"sub": "verified-subject"}, conn)
     assert row["is_active"] is False
+    assert "user_id" not in row
     assert conn.audit_params[1] == "stop"
     assert not any("DELETE" in query for query in conn.queries)
 
@@ -199,28 +245,38 @@ class LegacyChannelConnection:
         self.channel_id = uuid4()
         self.active = True
         self.queries = []
+        self.row = {
+            "id": self.channel_id,
+            "user_id": USER_ID,
+            "youtube_channel_id": "UC" + "a" * 22,
+            "name": "Finite Feed",
+            "url": "https://www.youtube.com/channel/UC" + "a" * 22,
+            "thumbnail_url": None,
+            "is_default": True,
+            "is_active": True,
+            "max_video_age_days": 7,
+            "created_at": datetime.now(timezone.utc),
+        }
 
-    def execute(self, query, _params=None):
+    def execute(self, query, params=None):
         sql = str(query)
         self.queries.append(sql)
         if "UPDATE tracked_channels SET is_active = FALSE" in sql:
             self.active = False
-            return Result({"url": "https://youtube.com/@FiniteFeed"})
-        if "INSERT INTO tracked_channels" in sql:
-            if self.active:
-                return Result(None)
+            self.row["is_active"] = False
+            return Result({"url": self.row["url"]})
+        if "SELECT id FROM app_users" in sql:
+            return Result({"id": USER_ID})
+        if "SELECT * FROM tracked_channels" in sql:
+            return Result(dict(self.row))
+        if "UPDATE tracked_channels" in sql:
             self.active = True
-            return Result({
-                "id": self.channel_id, "name": "Finite Feed", "url": "https://youtube.com/@FiniteFeed",
-                "is_default": False, "created_at": datetime.now(timezone.utc),
-            })
-        if "INSERT INTO interaction_events" in sql:
+            self.row.update({"is_active": True, "name": params[1], "url": params[2], "thumbnail_url": params[3]})
+            return Result(dict(self.row))
+        if "INSERT INTO interaction_events" in sql or "INSERT INTO admin_audit_events" in sql:
             return Result()
         if "FROM tracked_channels WHERE" in sql:
-            rows = [{
-                "id": self.channel_id, "name": "Finite Feed", "url": "https://youtube.com/@FiniteFeed",
-                "is_default": False, "created_at": datetime.now(timezone.utc),
-            }] if self.active else []
+            rows = [dict(self.row)] if self.active else []
             return Result(rows=rows)
         raise AssertionError(sql)
 
@@ -231,18 +287,18 @@ class LegacyChannelConnection:
         pass
 
 
-def test_public_stop_then_readd_restores_same_channel_without_delete() -> None:
-    from backend.app.main import add_channel, list_channels, remove_channel
+def test_public_stop_then_readd_restores_same_channel_without_delete(monkeypatch) -> None:
+    import backend.app.main as main_module
     from backend.app.schemas import ChannelCreate as PublicChannelCreate
 
     conn = LegacyChannelConnection()
-    remove_channel(conn.channel_id, conn)
-    assert list_channels(conn) == []
-    restored = add_channel(
-        PublicChannelCreate(name="Finite Feed", url="https://youtube.com/@FiniteFeed"), conn,
-    )
+    monkeypatch.setattr(main_module, "settings", Settings(_env_file=None, YOUTUBE_API_KEY="test-key"))
+    monkeypatch.setattr(main_module, "resolve_youtube_channel", lambda _url, _settings: channel_details())
+    main_module.remove_channel(conn.channel_id, conn)
+    assert main_module.list_channels(conn) == []
+    restored = main_module.add_channel(PublicChannelCreate(url="https://youtube.com/@FiniteFeed"), conn)
     assert restored["id"] == conn.channel_id
-    assert list_channels(conn)[0]["id"] == conn.channel_id
+    assert main_module.list_channels(conn)[0]["id"] == conn.channel_id
     assert not any("DELETE" in query for query in conn.queries)
 
 
@@ -273,6 +329,7 @@ class VectorConnection:
             return Result(rows=[])
         assert "semantic_embedding <=>" in sql
         assert params[2:5] == ("semantic-test", "revision-test", 384)
+        assert params[5] == "description-v4"
         assert params[-1] == 20
         return Result(rows=self.rows)
 
@@ -331,6 +388,22 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     client = TestClient(app)
     assert client.get("/api/admin/videos?sort=drop_table").status_code == 422
     assert client.get("/api/admin/recommendations?page_size=101").status_code == 422
+    assert client.get("/api/admin/performance?days=6").status_code == 422
+    assert client.get("/api/admin/performance?days=30").status_code == 200
+    performance_sql, performance_params = conn.calls[-1]
+    assert "generate_series" in performance_sql
+    assert "FROM interaction_events" in performance_sql
+    assert "created_at::date AS day" in performance_sql
+    assert "delivered_at::date AS day" in performance_sql
+    assert "cohort_up_count" in performance_sql
+    assert "up_count" in performance_sql and "down_count" in performance_sql
+    assert "up_share" in performance_sql
+    assert performance_params == (30, 30, 30)
+    assert client.get("/api/admin/activity?limit=1").status_code == 200
+    activity_sql, activity_params = conn.calls[-1]
+    assert "event_type, source, result" in activity_sql
+    assert "target_id" not in activity_sql and "affected_record" not in activity_sql
+    assert activity_params == (1,)
     assert client.get("/api/admin/channels?sort=last_ingestion_at_desc").status_code == 200
     assert client.get("/api/admin/videos?sort=published_at&direction=desc&published_from=2026-09-01&ingested_from=2026-09-02").status_code == 200
     video_sql, video_params = conn.calls[-1]
@@ -339,3 +412,7 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     assert client.get("/api/admin/recommendations?sort=created_at&direction=desc&delivery=queued").status_code == 200
     recommendation_sql, _ = conn.calls[-1]
     assert "r.delivered_at IS NULL" in recommendation_sql
+    assert "v.published_at AS video_published_at" in recommendation_sql
+    assert "v.duration_seconds AS video_duration_seconds" in recommendation_sql
+    assert "v.view_count AS video_view_count" in recommendation_sql
+    assert recommendation_sql.count("e.event_type <> 'delivery'") == 2

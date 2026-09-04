@@ -1,7 +1,7 @@
 "use client";
-/* eslint-disable @next/next/no-img-element -- thumbnail hosts are supplied by the runtime API. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { SignalShell } from "@/components/signal-shell";
 
 type MatchCard = {
@@ -14,7 +14,6 @@ type MatchCard = {
   thumbnail_url?: string | null;
 };
 
-type Stats = { completed: number; remaining: number };
 type Label = "yes" | "no" | "unsure";
 type Assessment = { predicted_fit: Label; close_call: boolean; decision_summary: string };
 type AnnotationResult = { assessment: Assessment | null };
@@ -23,7 +22,6 @@ const matchApiBase = "/api/match/annotations";
 
 export function MatchGame() {
   const [card, setCard] = useState<MatchCard | null>(null);
-  const [stats, setStats] = useState<Stats>({ completed: 0, remaining: 0 });
   const [selected, setSelected] = useState<Label | null>(null);
   const [rationale, setRationale] = useState("");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -38,20 +36,13 @@ export function MatchGame() {
     setError("");
     setNotice("");
     try {
-      // Fetch sequentially on first visit so the server-issued identity cookie from
-      // the card request is present before stats are calculated.
       const cardResponse = await fetch(`${matchApiBase}/next`, {
         cache: "no-store",
         credentials: "same-origin",
       });
-      const statsResponse = await fetch(`${matchApiBase}/stats`, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (!cardResponse.ok || !statsResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
+      if (!cardResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
       const nextCard: MatchCard | null = await cardResponse.json();
       setCard(nextCard);
-      setStats(await statsResponse.json());
       setSelected(null);
       setDescriptionExpanded(false);
       return nextCard;
@@ -121,7 +112,7 @@ export function MatchGame() {
   }
 
   return (
-    <SignalShell className="match-page" mastheadTitle="Does this belong?">
+    <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
       <main className="match-main">
         {notice && <p className="signal-notice match-notice" role="status">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}
@@ -151,10 +142,14 @@ export function MatchGame() {
                 <p>The candidate the system is considering.</p>
               </header>
               {card.thumbnail_url ? (
-                <img className="match-video-thumbnail" src={card.thumbnail_url} alt="" />
-              ) : (
-                <div className="match-video-thumbnail match-video-thumbnail-fallback" aria-hidden="true">F/</div>
-              )}
+                <Image
+                  className="match-video-thumbnail"
+                  src={card.thumbnail_url}
+                  alt=""
+                  width={640}
+                  height={360}
+                />
+              ) : <div className="match-video-thumbnail match-video-thumbnail-fallback" aria-label="No video thumbnail">FF</div>}
               <div className="match-video-copy">
                 <h3>{card.title}</h3>
                 <p className={`video-description${descriptionExpanded ? " is-expanded" : ""}`}>{card.description}</p>
@@ -193,7 +188,6 @@ export function MatchGame() {
               <button className="match-save" data-state={busy ? "saving" : selected ? "ready" : "idle"} onClick={() => void submit()} disabled={busy || !selected}>
                 {busy ? "Saving judgment…" : "Save judgment"}
               </button>
-              <p className="match-progress" aria-live="polite"><strong>{stats.completed}</strong> reviewed <span aria-hidden="true">/</span> <strong>{stats.remaining}</strong> left</p>
             </aside>
           </section>
         ) : busy ? (
