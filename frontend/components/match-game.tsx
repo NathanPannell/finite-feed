@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { SignalShell } from "@/components/signal-shell";
 
 type MatchCard = {
   profile_id: string;
@@ -21,24 +21,31 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [annotatorId, setAnnotatorId] = useState("");
   const [card, setCard] = useState<MatchCard | null>(null);
   const [stats, setStats] = useState<Stats>({ completed: 0, remaining: 0 });
+  const [selected, setSelected] = useState<Label | null>(null);
   const [rationale, setRationale] = useState("");
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
 
   const load = useCallback(async (id: string) => {
     setBusy(true);
+    setError("");
+    setNotice("");
     try {
       const query = new URLSearchParams({ annotator_id: id });
       const [cardResponse, statsResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/api/annotations/next?${query}`, { cache: "no-store" }),
         fetch(`${apiBaseUrl}/api/annotations/stats?${query}`, { cache: "no-store" }),
       ]);
-      if (!cardResponse.ok || !statsResponse.ok) throw new Error("Could not load the next pair.");
-      setCard(await cardResponse.json());
+      if (!cardResponse.ok || !statsResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
+      const nextCard: MatchCard | null = await cardResponse.json();
+      setCard(nextCard);
       setStats(await statsResponse.json());
-      setNotice("");
+      setSelected(null);
+      return nextCard;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not load the next pair.");
+      setError(error instanceof Error ? error.message : "The next pair could not be loaded. Try again.");
+      return undefined;
     } finally {
       setBusy(false);
     }
@@ -58,9 +65,11 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
     return () => window.clearTimeout(task);
   }, [apiBaseUrl, load]);
 
-  async function submit(label: Label) {
-    if (!card || !annotatorId || busy) return;
+  async function submit() {
+    if (!card || !annotatorId || !selected || busy) return;
     setBusy(true);
+    setError("");
+    setNotice("");
     try {
       const response = await fetch(`${apiBaseUrl}/api/annotations`, {
         method: "POST",
@@ -69,15 +78,19 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
           annotator_id: annotatorId,
           profile_id: card.profile_id,
           video_id: card.video_id,
-          label,
+          label: selected,
           rationale: rationale.trim() || null,
         }),
       });
-      if (!response.ok) throw new Error("Your answer was not saved.");
+      if (!response.ok) throw new Error("Your answer was not saved. Try again.");
       setRationale("");
-      await load(annotatorId);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Your answer was not saved.");
+      setCard(null);
+      const nextCard = await load(annotatorId);
+      if (nextCard !== undefined) {
+        setNotice(nextCard ? "Answer saved. The next pair is ready." : "Answer saved. Every available pair has a judgment.");
+      }
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Your answer was not saved. Try again.");
       setBusy(false);
     }
   }
@@ -87,66 +100,80 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <main className="match-shell">
-      <header className="match-header">
-        <Link href="/" className="match-brand" aria-label="Finite Feed home">
-          <span className="brand-mark">F</span>
-          <span>Finite Feed</span>
-        </Link>
-        <div className="match-progress" aria-live="polite">
-          <strong>{stats.completed}</strong> reviewed
-          {stats.remaining > 0 && <span> · {stats.remaining} available</span>}
-        </div>
-      </header>
-
-      <section className="match-intro">
-        <p className="kicker">Match lab</p>
-        <h1>Would this person want this video?</h1>
-        <p>Judge the content fit. There are no trick answers.</p>
-      </section>
-
-      {notice && <p className="match-notice" role="alert">{notice}</p>}
-
-      {card ? (
-        <section className="match-workspace" aria-busy={busy}>
-          <article className="match-profile">
-            <p className="match-label">Viewer</p>
-            <div className="topic-list" aria-label="Viewer topics">
-              {card.topics.map((topic) => <span key={topic}>{topic}</span>)}
-            </div>
-            <p className="profile-summary">{card.summary}</p>
-          </article>
-
-          <article className="match-video">
-            <p className="match-label">Video</p>
-            <h2>{card.title}</h2>
-            <p className="video-description">{card.description}</p>
-          </article>
-
-          <div className="match-response">
-            <label htmlFor="match-reason">Why? <span>Optional</span></label>
-            <textarea
-              id="match-reason"
-              value={rationale}
-              onChange={(event) => setRationale(event.target.value)}
-              maxLength={1000}
-              placeholder="A short reason helps when the answer is close."
-            />
-            <div className="match-actions">
-              <button className="match-no" onClick={() => void submit("no")} disabled={busy}>No</button>
-              <button className="match-unsure" onClick={() => void submit("unsure")} disabled={busy}>Unsure</button>
-              <button className="match-yes" onClick={() => void submit("yes")} disabled={busy}>Yes</button>
-            </div>
+    <SignalShell className="match-page">
+      <main className="match-main">
+        <header className="match-intro">
+          <h1>Does this<br /><span>belong?</span></h1>
+          <div className="match-progress" aria-live="polite">
+            <strong>{stats.completed}</strong>
+            <span>reviewed</span>
+            <i aria-hidden="true" />
+            <strong>{stats.remaining}</strong>
+            <span>left</span>
           </div>
-        </section>
-      ) : busy ? (
-        <section className="match-empty"><p>Loading a pair…</p></section>
-      ) : (
-        <section className="match-empty">
-          <h2>You’re caught up.</h2>
-          <p>Thanks for helping sharpen the recommendations.</p>
-        </section>
-      )}
-    </main>
+        </header>
+
+        {notice && <p className="signal-notice match-notice" role="status">{notice}</p>}
+        {error && <p className="signal-error match-notice" role="alert">{error}</p>}
+
+        {card ? (
+          <section className="match-workspace" aria-busy={busy} aria-labelledby="match-question">
+            <div className="match-comparison">
+              <article className="match-profile">
+                <h2>Viewer</h2>
+                <p className="profile-summary">{card.summary}</p>
+                <ul className="topic-list" aria-label="Viewer topics">
+                  {card.topics.map((topic) => <li key={topic}>{topic}</li>)}
+                </ul>
+              </article>
+
+              <article className="match-video">
+                <h2>Candidate video</h2>
+                <h3 id="match-question">{card.title}</h3>
+                <p className="video-description">{card.description}</p>
+              </article>
+            </div>
+
+            <div className="match-response">
+              <fieldset>
+                <legend>Choose the fit</legend>
+                <div className="match-choices">
+                  <button type="button" aria-pressed={selected === "no"} onClick={() => setSelected("no")} disabled={busy}>No</button>
+                  <button type="button" aria-pressed={selected === "unsure"} onClick={() => setSelected("unsure")} disabled={busy}>Unsure</button>
+                  <button type="button" aria-pressed={selected === "yes"} onClick={() => setSelected("yes")} disabled={busy}>Yes</button>
+                </div>
+              </fieldset>
+              <label htmlFor="match-reason">Reason <span>Optional, but useful when it is close.</span></label>
+              <textarea
+                id="match-reason"
+                value={rationale}
+                onChange={(event) => setRationale(event.target.value)}
+                maxLength={1000}
+                placeholder="What made the fit clear?"
+              />
+              <button className="match-save" onClick={() => void submit()} disabled={busy || !selected}>
+                {busy ? "Saving…" : "Save judgment"}
+              </button>
+            </div>
+          </section>
+        ) : busy ? (
+          <section className="signal-empty match-empty" aria-live="polite">
+            <h2>Loading the next pair.</h2>
+            <p>Keeping the comparison clean and anonymous.</p>
+          </section>
+        ) : error ? (
+          <section className="signal-empty match-empty">
+            <h2>The lab lost its signal.</h2>
+            <p>Retry the same anonymous session; no judgment has been lost.</p>
+            <button className="signal-action" onClick={() => void load(annotatorId)}>Try again</button>
+          </section>
+        ) : (
+          <section className="signal-empty match-empty">
+            <h2>You’re caught up.</h2>
+            <p>Every available pair has a judgment. Thank you.</p>
+          </section>
+        )}
+      </main>
+    </SignalShell>
   );
 }

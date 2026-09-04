@@ -66,7 +66,7 @@ test("operates the private admin dashboard through its server API contract", asy
         channel_name: "Existing Channel",
         youtube_url: "https://youtube.com/watch?v=semantic",
         similarity: 0.875,
-        embedding_model: "local-feature-hash-v1",
+        embedding_model: "Snowflake/snowflake-arctic-embed-xs",
       }], total: 1, page: 1, page_size: 20 } });
       return;
     }
@@ -78,7 +78,7 @@ test("operates the private admin dashboard through its server API contract", asy
         youtube_url: "https://youtube.com/watch?v=recent",
         published_at: "2026-09-03T12:00:00Z",
         has_embedding: true,
-        embedding_model: "local-feature-hash-v1",
+        embedding_model: "Snowflake/snowflake-arctic-embed-xs",
       }], total: 1, page: 1, page_size: 25 } });
       return;
     }
@@ -102,7 +102,7 @@ test("operates the private admin dashboard through its server API contract", asy
   });
 
   await page.goto("/admin");
-  await expect(page.getByRole("heading", { name: "Operations", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Control room", level: 1 })).toBeVisible();
   await expect(page.getByText("Existing Channel", { exact: true }).first()).toBeVisible();
 
   await page.getByLabel("Owner").selectOption("owner-2");
@@ -130,13 +130,21 @@ test("operates the private admin dashboard through its server API contract", asy
   )).toBe(true);
 
   await page.getByLabel("Search mode").selectOption("vector");
-  await page.getByPlaceholder("Describe the idea to retrieve").fill("systems thinking");
-  await page.getByRole("button", { name: "Find similar" }).click();
+  await page.getByPlaceholder("Describe an idea to retrieve").fill("systems thinking");
+  await page.getByRole("button", { name: "Search meaning" }).click();
   await expect(page.getByText("Semantic Video", { exact: true })).toBeVisible();
-  await expect(page.getByText("0.875", { exact: true })).toBeVisible();
+  await expect(page.getByText("0.875 semantic similarity", { exact: true })).toBeVisible();
+
+  await page.getByText("Choose columns").click();
+  await page.getByLabel("Views").uncheck();
+  await expect(page.getByRole("columnheader", { name: "Views" })).toBeHidden();
 
   await page.getByRole("tab", { name: "Recommendations" }).click();
   await page.getByLabel("State").selectOption("delivered");
   await expect.poll(() => requestedUrls.some((url) => url.includes("delivery_state=delivered"))).toBe(true);
   await expect(page.getByText("Matches current interests", { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
+  expect(width.scroll).toBeLessThanOrEqual(width.inner);
 });
