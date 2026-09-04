@@ -5,11 +5,14 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from backend.app.ingestion import ingest_tracked_channels
-from backend.app.recommendations import generate_recommendation
+from backend.app.recommendations import (
+    get_or_create_pending_recommendation,
+    lock_recommendation_for_delivery,
+    mark_recommendation_delivered,
+)
 from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
 from backend.app.youtube import YouTubeClient
@@ -57,6 +60,20 @@ def delivery_is_due(user: dict, last_delivery: datetime | None, now: datetime) -
     return not last_delivery or last_delivery.astimezone(ZoneInfo(user["timezone"])).date() < local_now.date()
 
 
+def claim_delivery_attempt(conn, user_id, now: datetime, retry_minutes: int) -> bool:
+    claimed = conn.execute(
+        """
+        UPDATE app_users SET last_delivery_attempt_at = %s
+        WHERE id = %s
+          AND (last_delivery_attempt_at IS NULL OR last_delivery_attempt_at <= %s)
+        RETURNING id
+        """,
+        (now, user_id, now - timedelta(minutes=retry_minutes)),
+    ).fetchone()
+    conn.commit()
+    return bool(claimed)
+
+
 def run_delivery_pass(pool: ConnectionPool) -> None:
     settings = get_settings()
     if settings.is_preview:
@@ -90,15 +107,13 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
         for user in users:
             if not delivery_is_due(user, user["last_delivery"], now):
                 continue
-            recommendation_id = generate_recommendation(conn, settings, user["id"], require_model=True)
-            bot.send_recommendation(conn, recommendation_id, user["telegram_user_id"], settings.public_app_url)
-            conn.execute("UPDATE recommendations SET delivered_at = NOW() WHERE id = %s", (recommendation_id,))
-            conn.execute(
-                "INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source, metadata) VALUES (gen_random_uuid(), %s, %s, 'delivery', 'telegram', %s)",
-                (user["id"], recommendation_id, Jsonb({"scheduled": True})),
-            )
-            conn.commit()
-            logger.info("Delivered recommendation %s", recommendation_id)
+            if not claim_delivery_attempt(conn, user["id"], now, settings.delivery_retry_minutes):
+                continue
+            recommendation_id = get_or_create_pending_recommendation(conn, settings, user["id"], require_model=True)
+            if lock_recommendation_for_delivery(conn, user["id"], recommendation_id):
+                bot.send_recommendation(conn, recommendation_id, user["telegram_user_id"], settings.public_app_url)
+                mark_recommendation_delivered(conn, user["id"], recommendation_id, scheduled=True)
+                logger.info("Delivered recommendation %s", recommendation_id)
 
 
 def configure_webhooks() -> None:

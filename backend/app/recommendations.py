@@ -126,3 +126,44 @@ def generate_recommendation(conn: Connection, settings: Settings, user_id: UUID,
     )
     conn.commit()
     return recommendation_id
+
+
+def get_or_create_pending_recommendation(
+    conn: Connection, settings: Settings, user_id: UUID, require_model: bool = False,
+) -> UUID:
+    pending = conn.execute(
+        """
+        SELECT id FROM recommendations
+        WHERE user_id = %s AND delivered_at IS NULL
+          AND (NOT %s OR evidence->>'reranker_fallback' = 'false')
+        ORDER BY created_at LIMIT 1
+        """,
+        (user_id, require_model),
+    ).fetchone()
+    if pending:
+        return pending["id"]
+    return generate_recommendation(conn, settings, user_id, require_model)
+
+
+def lock_recommendation_for_delivery(conn: Connection, user_id: UUID, recommendation_id: UUID) -> bool:
+    row = conn.execute(
+        "SELECT delivered_at FROM recommendations WHERE id = %s AND user_id = %s FOR UPDATE",
+        (recommendation_id, user_id),
+    ).fetchone()
+    return bool(row and row["delivered_at"] is None)
+
+
+def mark_recommendation_delivered(conn: Connection, user_id: UUID, recommendation_id: UUID, scheduled: bool) -> None:
+    conn.execute(
+        "UPDATE recommendations SET delivered_at = COALESCE(delivered_at, NOW()) WHERE id = %s AND user_id = %s",
+        (recommendation_id, user_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source, metadata)
+        VALUES (gen_random_uuid(), %s, %s, 'delivery', 'telegram', %s)
+        ON CONFLICT DO NOTHING
+        """,
+        (user_id, recommendation_id, Jsonb({"scheduled": scheduled})),
+    )
+    conn.commit()

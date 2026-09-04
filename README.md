@@ -23,7 +23,9 @@ Transcript ingestion, richer semantic embeddings, developer-bot preview routing,
 
 The worker checks TED and TEDx on a configurable interval, stores normalized video metadata, and only rebuilds a vector when a title or description changes. It retrieves up to five strong recent candidates and ten unsent evergreen candidates, then asks the configured OpenRouter model to choose one. The exact shortlist, scores, model, fallback state, and rationale are stored with every recommendation.
 
-`openrouter/free` is the initial integration model. Pin a specific model and disable fallback behavior before comparing scored evaluation runs.
+The initial integration pins `google/gemma-4-31b-it:free` instead of using OpenRouter's changing free-model router. Revisit the pin deliberately when model quality, availability, or evaluation results justify it.
+
+Scheduled model failures use a persisted one-hour retry backoff, and undelivered model-backed recommendations are reused rather than regenerated. Delivery is serialized per recommendation and DB events are idempotent; the Telegram send itself remains at-least-once in the rare case that Telegram accepts a message but the following database commit fails.
 
 ## Run locally
 

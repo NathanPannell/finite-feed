@@ -173,3 +173,11 @@ The Telegram ID variables were populated with a non-numeric API key, which made 
 Workaround: remove the invalid values from GitHub and Railway, rotate the exposed provider credentials, suppress httpx/httpcore request logging for Telegram, and reject non-numeric IDs with an error that never repeats the supplied value.
 
 Suggested fix: validate secret and variable shapes before forwarding them, treat Telegram token-bearing URLs as sensitive log data, and delete stale Railway variables when their GitHub source is unset.
+
+## 22. The free-model router selected an unsuitable model and retries could spend quota twice
+
+The first production recommendation succeeded, but the generic free-model router selected a coding model for a prose ranking task. A failed Telegram send would also cause the worker to generate a fresh recommendation on its next pass, consuming another scarce model request.
+
+Workaround: pin a known general-purpose free model, reuse the oldest eligible undelivered recommendation, serialize delivery, and persist a one-hour model-attempt backoff.
+
+Suggested fix: make the generated app choose an explicit task-appropriate model, propagate it as a deployment variable, and make model-backed delivery retry-safe and quota-aware by default.

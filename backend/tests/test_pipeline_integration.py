@@ -3,12 +3,19 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
 from backend.app.ingestion import ingest_tracked_channels
-from backend.app.recommendations import generate_recommendation
+from backend.app.recommendations import (
+    generate_recommendation,
+    get_or_create_pending_recommendation,
+    lock_recommendation_for_delivery,
+    mark_recommendation_delivered,
+)
 from backend.app.settings import Settings
 from backend.app.youtube import ChannelDetails, YouTubeVideo
+from backend.worker.main import claim_delivery_attempt
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -34,10 +41,11 @@ class FakeYouTube:
 def test_ingest_retrieve_and_persist_recommendation() -> None:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
-        return
+        pytest.skip("DATABASE_URL is required for the PostgreSQL integration test")
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
         conn.execute("DELETE FROM recommendations")
         conn.execute("DELETE FROM videos WHERE youtube_video_id LIKE 'test-%'")
+        conn.execute("UPDATE app_users SET last_delivery_attempt_at = NULL WHERE id = %s", (USER_ID,))
         conn.commit()
         summary = ingest_tracked_channels(conn, FakeYouTube(), page_limit=1)
         assert summary.channels_scanned == 2
@@ -49,3 +57,19 @@ def test_ingest_retrieve_and_persist_recommendation() -> None:
         ).fetchone()
         assert "football" in row["title"].lower()
         assert row["evidence"]["pipeline"] == "vector-retrieval-openrouter-rerank-v1"
+        settings = Settings(DATABASE_URL=database_url)
+        assert get_or_create_pending_recommendation(conn, settings, USER_ID) == recommendation_id
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            get_or_create_pending_recommendation(conn, settings, USER_ID, require_model=True)
+        assert lock_recommendation_for_delivery(conn, USER_ID, recommendation_id)
+        mark_recommendation_delivered(conn, USER_ID, recommendation_id, scheduled=True)
+        assert not lock_recommendation_for_delivery(conn, USER_ID, recommendation_id)
+        mark_recommendation_delivered(conn, USER_ID, recommendation_id, scheduled=True)
+        delivery = conn.execute(
+            "SELECT COUNT(*) AS count FROM interaction_events WHERE recommendation_id = %s AND event_type = 'delivery'",
+            (recommendation_id,),
+        ).fetchone()
+        assert delivery["count"] == 1
+        now = datetime.now(UTC)
+        assert claim_delivery_attempt(conn, USER_ID, now, retry_minutes=60)
+        assert not claim_delivery_attempt(conn, USER_ID, now, retry_minutes=60)
