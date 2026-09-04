@@ -573,3 +573,77 @@ def vector_search(
         "dimensions": encoder.dimensions,
         "items": rows,
     }
+
+
+@router.get("/recommendations")
+def recommendations(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    search: str | None = Query(default=None, max_length=200),
+    delivery: Literal["queued", "delivered"] | None = None,
+    delivery_state: Literal["queued", "delivered"] | None = None,
+    rating: Literal["up", "down", "unrated"] | None = None,
+    sort: Literal[
+        "created_at", "created_at_desc", "created_at_asc", "delivered_at",
+        "delivered_at_desc", "clicked_at", "rating"
+    ] = "created_at",
+    direction: Literal["asc", "desc"] = "desc",
+    conn: Connection = Depends(connection),
+):
+    if delivery and delivery_state and delivery != delivery_state:
+        raise HTTPException(status_code=422, detail="Use only one delivery-state filter")
+    effective_delivery = delivery or delivery_state
+    filters: list[str] = []
+    params: list[Any] = []
+    if search and search.strip():
+        filters.append("(v.title ILIKE %s OR v.channel_name ILIKE %s OR r.rationale ILIKE %s OR u.display_name ILIKE %s)")
+        term = f"%{search.strip()}%"
+        params.extend([term, term, term, term])
+    if effective_delivery:
+        filters.append(f"r.delivered_at IS {'NOT ' if effective_delivery == 'delivered' else ''}NULL")
+    if rating:
+        if rating == "unrated":
+            filters.append("r.rating IS NULL")
+        else:
+            filters.append("r.rating = %s")
+            params.append(rating)
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    joins = "FROM recommendations r JOIN videos v ON v.id = r.video_id JOIN app_users u ON u.id = r.user_id"
+    total = conn.execute(f"SELECT COUNT(*) AS count {joins} {where}", params).fetchone()["count"]
+    sort_sql = {
+        "created_at": "r.created_at", "created_at_desc": "r.created_at", "created_at_asc": "r.created_at",
+        "delivered_at": "r.delivered_at", "delivered_at_desc": "r.delivered_at",
+        "clicked_at": "r.clicked_at", "rating": "r.rating",
+    }[sort]
+    effective_direction = "asc" if sort.endswith("_asc") else "desc" if sort.endswith("_desc") else direction
+    rows = conn.execute(
+        f"""
+        SELECT r.id, r.user_id, u.display_name AS recipient_name,
+               u.telegram_user_id, r.video_id, v.title AS video_title, v.channel_name,
+               v.youtube_url, v.thumbnail_url, r.rationale, r.rating, r.clicked_at,
+               r.delivered_at, r.created_at,
+               CASE WHEN r.delivered_at IS NULL THEN 'queued' ELSE 'delivered' END AS delivery_state
+        {joins} {where}
+        ORDER BY {sort_sql} {effective_direction.upper()} NULLS LAST, r.id ASC LIMIT %s OFFSET %s
+        """,
+        [*params, page_size, (page - 1) * page_size],
+    ).fetchall()
+    return _page(rows, total, page, page_size)
+
+
+@router.get("/recommendations/{recommendation_id}")
+def recommendation_detail(recommendation_id: UUID, conn: Connection = Depends(connection)):
+    row = conn.execute(
+        """
+        SELECT r.*, CASE WHEN r.delivered_at IS NULL THEN 'queued' ELSE 'delivered' END AS delivery_state,
+               to_jsonb(v) AS video, to_jsonb(u) - 'created_at' - 'updated_at' AS recipient,
+               COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.created_at)
+                         FROM interaction_events e WHERE e.recommendation_id = r.id), '[]'::jsonb) AS events
+        FROM recommendations r JOIN videos v ON v.id = r.video_id
+        JOIN app_users u ON u.id = r.user_id WHERE r.id = %s
+        """,
+        (recommendation_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    return row
