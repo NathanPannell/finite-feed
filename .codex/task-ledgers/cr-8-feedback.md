@@ -26,13 +26,17 @@ Update the human match-labeling PR so Google-authenticated annotators are identi
 - Rebuilt the match page as a single-viewport choose-then-explain flow with prominent topics and large vote targets.
 - Wired production and preview deployment environments to Neon Auth and configured the encrypted repository cookie secret.
 - Addressed independent review findings for Neon issuer/audience claims, JWKS outages, cleaner false positives, and zoom accessibility.
+- Normalized both direct-token and session-cache token responses from the Neon client.
+- Hardened the preview smoke test to bypass Vercel protection and assert real app/auth content.
 
 ## Verification
 
 - Backend: 32 passed, 2 database-dependent tests skipped locally.
 - Frontend: clean `npm ci`, lint, typecheck, and production build passed; npm reported 0 vulnerabilities.
 - Workflow YAML and diff checks passed; the required UI detector reported only pre-existing global-style warnings.
+- GitHub backend, frontend, and isolated preview checks passed for `a2f6f5c`.
+- Browser interaction checks passed at 1440×900, 390×844, 320×568, and a 200%-zoom equivalent, with no application console or network errors.
 
 ## Next action
 
-Commit and push to PR #8, wait for CI and preview deployment, then verify the deployed match surface and auth route.
+Commit and push the final token-cache and preview-verification follow-up, then confirm rerun checks.

@@ -179,9 +179,13 @@ jobs:
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          curl --fail --silent --show-error "$FRONTEND_URL/match" >/dev/null
-          curl --fail --silent --show-error "$FRONTEND_URL/api/auth/get-session" >/dev/null
+          vercel link --yes --cwd frontend --project "${{ vars.VERCEL_PROJECT_NAME }}" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          match_html="$(vercel curl /match --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          grep -Fq '<title>Match Lab · Finite Feed</title>' <<< "$match_html"
+          session_body="$(vercel curl /api/auth/get-session --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          jq -e '. == null' <<< "$session_body" >/dev/null
           headers_file="$(mktemp)"
           curl --fail --silent --show-error \
             -X OPTIONS -D "$headers_file" -o /dev/null \
