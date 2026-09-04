@@ -33,15 +33,18 @@ if [[ -z "$domain" ]]; then
 fi
 
 api_url="https://${domain}"
+last_status=""
+last_commit=""
 for _ in $(seq 1 60); do
   response="$(curl --fail --silent --show-error --max-time 10 "${api_url}/ready" 2>/dev/null || true)"
-  if [[ "$(jq -r '.status // empty' <<<"$response" 2>/dev/null)" == "ready" ]] && \
-     [[ "$(jq -r '.commit // empty' <<<"$response" 2>/dev/null)" == "$EXPECTED_COMMIT_SHA" ]]; then
+  last_status="$(jq -r '.status // empty' <<<"$response" 2>/dev/null)"
+  last_commit="$(jq -r '.commit // empty' <<<"$response" 2>/dev/null)"
+  if [[ "$last_status" == "ready" ]] && [[ "$last_commit" == "$EXPECTED_COMMIT_SHA" ]]; then
     echo "api_url=${api_url}" >> "$GITHUB_OUTPUT"
     exit 0
   fi
   sleep 10
 done
 
-echo "Railway API never reported ready for commit ${EXPECTED_COMMIT_SHA} at ${api_url}" >&2
+echo "Railway API never reported ready for commit ${EXPECTED_COMMIT_SHA} at ${api_url}; last status=${last_status:-unavailable}, last commit=${last_commit:-unavailable}" >&2
 exit 1
