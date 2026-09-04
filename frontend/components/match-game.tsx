@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type MatchCard = {
@@ -45,13 +46,16 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   useEffect(() => {
     if (!apiBaseUrl) return;
-    let id = window.localStorage.getItem(storageKey);
-    if (!id) {
-      id = window.crypto.randomUUID();
-      window.localStorage.setItem(storageKey, id);
-    }
-    setAnnotatorId(id);
-    void load(id);
+    const task = window.setTimeout(() => {
+      let id = window.localStorage.getItem(storageKey);
+      if (!id) {
+        id = window.crypto.randomUUID();
+        window.localStorage.setItem(storageKey, id);
+      }
+      setAnnotatorId(id);
+      void load(id);
+    }, 0);
+    return () => window.clearTimeout(task);
   }, [apiBaseUrl, load]);
 
   async function submit(label: Label) {
@@ -85,10 +89,10 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   return (
     <main className="match-shell">
       <header className="match-header">
-        <a href="/" className="match-brand" aria-label="Finite Feed home">
+        <Link href="/" className="match-brand" aria-label="Finite Feed home">
           <span className="brand-mark">F</span>
           <span>Finite Feed</span>
-        </a>
+        </Link>
         <div className="match-progress" aria-live="polite">
           <strong>{stats.completed}</strong> reviewed
           {stats.remaining > 0 && <span> · {stats.remaining} available</span>}
