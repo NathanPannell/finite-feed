@@ -258,23 +258,56 @@ def summary(conn: Connection = Depends(connection)):
 def activity(limit: int = Query(default=30, ge=1, le=100), conn: Connection = Depends(connection)):
     return conn.execute(
         """
-        SELECT * FROM (
-            SELECT started_at AS created_at, 'ingestion' AS event_type, id AS target_id,
-                   status AS result, error_message AS error, NULL::jsonb AS details,
-                   id::text AS affected_record
+        SELECT created_at, event_type, source, result, error FROM (
+            SELECT started_at AS created_at, 'ingestion' AS event_type, 'Worker' AS source,
+                   status AS result, error_message AS error
             FROM ingestion_runs
             UNION ALL
-            SELECT created_at, action, target_id, outcome, error_message,
-                   jsonb_build_object('before', before_values, 'after', after_values) AS details,
-                   target_id::text
+            SELECT created_at, action, 'Control room', outcome, error_message
             FROM admin_audit_events
             UNION ALL
-            SELECT created_at, event_type, COALESCE(recommendation_id, user_id), source, NULL,
-                   metadata AS details, COALESCE(recommendation_id, user_id)::text
+            SELECT created_at, event_type, source, 'recorded', NULL
             FROM interaction_events
         ) events ORDER BY created_at DESC LIMIT %s
         """,
         (limit,),
+    ).fetchall()
+
+
+@router.get("/performance")
+def performance(
+    days: int = Query(default=30, ge=7, le=180),
+    conn: Connection = Depends(connection),
+):
+    return conn.execute(
+        """
+        WITH dates AS (
+            SELECT generate_series(
+                CURRENT_DATE - (%s - 1) * INTERVAL '1 day',
+                CURRENT_DATE,
+                INTERVAL '1 day'
+            )::date AS day
+        ), daily AS (
+            SELECT delivered_at::date AS day,
+                   COUNT(*) FILTER (WHERE rating = 'up') AS up_count,
+                   COUNT(*) FILTER (WHERE rating = 'down') AS down_count,
+                   COUNT(*) AS sent_count
+            FROM recommendations
+            WHERE delivered_at IS NOT NULL
+              AND delivered_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
+            GROUP BY delivered_at::date
+        )
+        SELECT dates.day,
+               COALESCE(daily.up_count, 0) AS up_count,
+               COALESCE(daily.down_count, 0) AS down_count,
+               COALESCE(daily.sent_count, 0) AS sent_count,
+               CASE WHEN daily.sent_count > 0
+                    THEN ROUND(daily.up_count::numeric / daily.sent_count, 4)
+                    ELSE NULL END AS up_share
+        FROM dates LEFT JOIN daily USING (day)
+        ORDER BY dates.day
+        """,
+        (days, days),
     ).fetchall()
 
 
@@ -626,7 +659,14 @@ def recommendations(
         SELECT r.id, r.user_id, u.display_name AS recipient_name,
                u.telegram_user_id, r.video_id, v.title AS video_title, v.channel_name,
                v.youtube_url, v.thumbnail_url, r.rationale, r.rating, r.clicked_at,
-               r.delivered_at, r.created_at,
+               r.delivered_at, r.created_at, v.published_at AS video_published_at,
+               v.duration_seconds AS video_duration_seconds, v.view_count AS video_view_count,
+               (SELECT e.created_at FROM interaction_events e
+                WHERE e.recommendation_id = r.id AND e.event_type <> 'delivery'
+                ORDER BY e.created_at DESC LIMIT 1) AS last_interacted_at,
+               (SELECT e.event_type FROM interaction_events e
+                WHERE e.recommendation_id = r.id AND e.event_type <> 'delivery'
+                ORDER BY e.created_at DESC LIMIT 1) AS last_interaction_type,
                CASE WHEN r.delivered_at IS NULL THEN 'queued' ELSE 'delivered' END AS delivery_state
         {joins} {where}
         ORDER BY {sort_sql} {effective_direction.upper()} NULLS LAST, r.id ASC LIMIT %s OFFSET %s

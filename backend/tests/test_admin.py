@@ -331,6 +331,19 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     client = TestClient(app)
     assert client.get("/api/admin/videos?sort=drop_table").status_code == 422
     assert client.get("/api/admin/recommendations?page_size=101").status_code == 422
+    assert client.get("/api/admin/performance?days=6").status_code == 422
+    assert client.get("/api/admin/performance?days=30").status_code == 200
+    performance_sql, performance_params = conn.calls[-1]
+    assert "generate_series" in performance_sql
+    assert "delivered_at::date AS day" in performance_sql
+    assert "up_count" in performance_sql and "down_count" in performance_sql
+    assert "up_share" in performance_sql
+    assert performance_params == (30, 30)
+    assert client.get("/api/admin/activity?limit=1").status_code == 200
+    activity_sql, activity_params = conn.calls[-1]
+    assert "event_type, source, result" in activity_sql
+    assert "target_id" not in activity_sql and "affected_record" not in activity_sql
+    assert activity_params == (1,)
     assert client.get("/api/admin/channels?sort=last_ingestion_at_desc").status_code == 200
     assert client.get("/api/admin/videos?sort=published_at&direction=desc&published_from=2026-09-01&ingested_from=2026-09-02").status_code == 200
     video_sql, video_params = conn.calls[-1]
@@ -339,3 +352,7 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     assert client.get("/api/admin/recommendations?sort=created_at&direction=desc&delivery=queued").status_code == 200
     recommendation_sql, _ = conn.calls[-1]
     assert "r.delivered_at IS NULL" in recommendation_sql
+    assert "v.published_at AS video_published_at" in recommendation_sql
+    assert "v.duration_seconds AS video_duration_seconds" in recommendation_sql
+    assert "v.view_count AS video_view_count" in recommendation_sql
+    assert recommendation_sql.count("e.event_type <> 'delivery'") == 2
