@@ -9,6 +9,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from backend.app.db import close_pool, connection, open_pool
+from backend.app.annotations import annotation_stats, next_annotation, record_annotation
 from backend.app.recommendations import (
     generate_recommendation as create_recommendation,
     get_or_create_pending_recommendation,
@@ -16,6 +17,7 @@ from backend.app.recommendations import (
     mark_recommendation_delivered,
 )
 from backend.app.schemas import Channel, ChannelCreate, FeedbackCreate, Metrics, PipelineStatus, Profile, ProfileUpdate, Recommendation
+from backend.app.schemas import AnnotationCard, AnnotationCreate, AnnotationResult, AnnotationStats
 from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
 
@@ -48,6 +50,31 @@ async def health() -> dict[str, str]:
 def ready(conn: Connection = Depends(connection)) -> dict[str, str | int]:
     migration_count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()
     return {"status": "ready", "commit": settings.app_commit_sha, "migrations": migration_count["count"]}
+
+
+@app.get("/api/annotations/next", response_model=AnnotationCard | None)
+def get_next_annotation(annotator_id: UUID, conn: Connection = Depends(connection)):
+    return next_annotation(conn, annotator_id)
+
+
+@app.get("/api/annotations/stats", response_model=AnnotationStats)
+def get_annotation_stats(annotator_id: UUID, conn: Connection = Depends(connection)):
+    return annotation_stats(conn, annotator_id)
+
+
+@app.post("/api/annotations", response_model=AnnotationResult, status_code=status.HTTP_201_CREATED)
+def create_annotation(payload: AnnotationCreate, conn: Connection = Depends(connection)):
+    row = record_annotation(
+        conn,
+        annotator_id=payload.annotator_id,
+        profile_id=payload.profile_id,
+        video_id=payload.video_id,
+        label=payload.label,
+        rationale=payload.rationale,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Annotation pair not found")
+    return row
 
 
 def profile_row(conn: Connection):

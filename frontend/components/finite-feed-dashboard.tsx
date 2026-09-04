@@ -178,6 +178,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
           <a href="#preferences">Preferences</a>
           <a href="#channels">Sources</a>
           <a href="#signals">Signals</a>
+          <a href="/match">Match lab</a>
         </nav>
         <div className="sidebar-note">
           <span className="live-dot" />
