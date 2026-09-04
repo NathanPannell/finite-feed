@@ -7,6 +7,7 @@ type RouteContext = { params: Promise<{ path: string[] }> };
 const allowedRequests = new Map<string, Set<string>>([
   ["summary", new Set(["GET"])],
   ["activity", new Set(["GET"])],
+  ["performance", new Set(["GET"])],
   ["channels", new Set(["GET", "POST"])],
   ["channels/resolve", new Set(["POST"])],
   ["videos", new Set(["GET"])],

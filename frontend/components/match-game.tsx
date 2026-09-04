@@ -1,7 +1,7 @@
 "use client";
-/* eslint-disable @next/next/no-img-element -- thumbnail hosts are supplied by the runtime API. */
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { SignalShell } from "@/components/signal-shell";
 
 type MatchCard = {
@@ -11,10 +11,9 @@ type MatchCard = {
   topics: string[];
   title: string;
   description: string;
-  thumbnail_url?: string | null;
+  thumbnail_url: string | null;
 };
 
-type Stats = { completed: number; remaining: number };
 type Label = "yes" | "no" | "unsure";
 
 const storageKey = "finite-feed-annotator-id";
@@ -22,7 +21,6 @@ const storageKey = "finite-feed-annotator-id";
 export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [annotatorId, setAnnotatorId] = useState("");
   const [card, setCard] = useState<MatchCard | null>(null);
-  const [stats, setStats] = useState<Stats>({ completed: 0, remaining: 0 });
   const [selected, setSelected] = useState<Label | null>(null);
   const [rationale, setRationale] = useState("");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -36,14 +34,10 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
     setNotice("");
     try {
       const query = new URLSearchParams({ annotator_id: id });
-      const [cardResponse, statsResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/api/annotations/next?${query}`, { cache: "no-store" }),
-        fetch(`${apiBaseUrl}/api/annotations/stats?${query}`, { cache: "no-store" }),
-      ]);
-      if (!cardResponse.ok || !statsResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
+      const cardResponse = await fetch(`${apiBaseUrl}/api/annotations/next?${query}`, { cache: "no-store" });
+      if (!cardResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
       const nextCard: MatchCard | null = await cardResponse.json();
       setCard(nextCard);
-      setStats(await statsResponse.json());
       setSelected(null);
       setDescriptionExpanded(false);
       return nextCard;
@@ -104,7 +98,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <SignalShell className="match-page" mastheadTitle="Does this belong?">
+    <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
       <main className="match-main">
         {notice && <p className="signal-notice match-notice" role="status">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}
@@ -128,15 +122,24 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
                 <p>The candidate the system is considering.</p>
               </header>
               {card.thumbnail_url ? (
-                <img className="match-video-thumbnail" src={card.thumbnail_url} alt="" />
-              ) : (
-                <div className="match-video-thumbnail match-video-thumbnail-fallback" aria-hidden="true">F/</div>
-              )}
+                <Image
+                  className="match-video-thumbnail"
+                  src={card.thumbnail_url}
+                  alt=""
+                  width={640}
+                  height={360}
+                />
+              ) : <div className="match-video-thumbnail match-video-thumbnail-fallback" aria-label="No video thumbnail">FF</div>}
               <div className="match-video-copy">
                 <h3>{card.title}</h3>
                 <p className={`video-description${descriptionExpanded ? " is-expanded" : ""}`}>{card.description}</p>
                 {card.description.length > 420 && (
-                  <button className="video-description-toggle" type="button" aria-expanded={descriptionExpanded} onClick={() => setDescriptionExpanded((expanded) => !expanded)}>
+                  <button
+                    className="video-description-toggle"
+                    type="button"
+                    aria-expanded={descriptionExpanded}
+                    onClick={() => setDescriptionExpanded((expanded) => !expanded)}
+                  >
                     {descriptionExpanded ? "Show less" : "Show full description"}
                   </button>
                 )}
@@ -165,7 +168,6 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
               <button className="match-save" data-state={busy ? "saving" : selected ? "ready" : "idle"} onClick={() => void submit()} disabled={busy || !selected}>
                 {busy ? "Saving judgment…" : "Save judgment"}
               </button>
-              <p className="match-progress" aria-live="polite"><strong>{stats.completed}</strong> reviewed <span aria-hidden="true">/</span> <strong>{stats.remaining}</strong> left</p>
             </aside>
           </section>
         ) : busy ? (

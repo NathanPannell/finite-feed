@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import httpx
@@ -64,22 +64,39 @@ class VectorSearch(BaseModel):
 
 def parse_channel_reference(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").lower() not in {
-        "youtube.com", "www.youtube.com", "m.youtube.com"
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"} or hostname not in {
+        "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"
     }:
-        raise ValueError("Use a youtube.com channel URL")
+        raise ValueError("Use a YouTube channel or video URL")
     parts = [part for part in parsed.path.split("/") if part]
+    if hostname == "youtu.be" and len(parts) == 1:
+        return "video", parts[0]
     if len(parts) == 2 and parts[0] == "channel" and parts[1].startswith("UC") and len(parts[1]) == 24:
         return "id", parts[1]
     if len(parts) == 1 and parts[0].startswith("@") and len(parts[0]) > 1:
         return "forHandle", parts[0][1:]
-    raise ValueError("Use an unambiguous youtube.com/channel/... or youtube.com/@handle URL")
+    if parsed.path == "/watch":
+        video_ids = parse_qs(parsed.query).get("v", [])
+        if len(video_ids) == 1 and video_ids[0]:
+            return "video", video_ids[0]
+    if len(parts) == 2 and parts[0] in {"embed", "live", "shorts"}:
+        return "video", parts[1]
+    raise ValueError("Use a YouTube channel, handle, video, or youtu.be URL")
 
 
 def resolve_youtube_channel(url: str, settings: Settings) -> dict[str, Any]:
     filter_name, filter_value = parse_channel_reference(url)
     client = YouTubeClient(settings.youtube_api_key)
     try:
+        if filter_name == "video":
+            videos = client._get("/videos", part="snippet", id=filter_value).get("items", [])
+            if not videos:
+                raise ValueError("YouTube video was not found")
+            channel_id = videos[0].get("snippet", {}).get("channelId")
+            if not channel_id:
+                raise ValueError("The video's channel could not be identified")
+            filter_name, filter_value = "id", channel_id
         data = client._get(
             "/channels",
             part="snippet,contentDetails,statistics",
@@ -146,12 +163,13 @@ def upsert_admin_channel(
     details: dict[str, Any],
     max_video_age_days: int,
     actor: str | None,
+    commit: bool = True,
 ) -> tuple[dict[str, Any], bool]:
-    user_id = resolve_admin_owner(conn, user_id)
     existing = conn.execute(
         "SELECT * FROM tracked_channels WHERE youtube_channel_id = %s FOR UPDATE",
         (details["youtube_channel_id"],),
     ).fetchone()
+    user_id = resolve_admin_owner(conn, user_id, existing_owner_id=existing["user_id"] if existing else None)
     if existing and existing["user_id"] != user_id:
         raise HTTPException(
             status_code=409,
@@ -181,7 +199,8 @@ def upsert_admin_channel(
             conn, action="reactivate", target_id=existing["id"], user_id=user_id, actor=actor,
             before=before, after={"is_active": True, "max_video_age_days": max_video_age_days},
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return row, True
     channel_id = uuid4()
     row = conn.execute(
@@ -203,22 +222,33 @@ def upsert_admin_channel(
         conn, action="add", target_id=channel_id, user_id=user_id, actor=actor,
         before=None, after={"is_active": True, "max_video_age_days": max_video_age_days},
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return row, False
 
 
-def resolve_admin_owner(conn: Connection, requested_user_id: UUID | None) -> UUID:
+def resolve_admin_owner(
+    conn: Connection,
+    requested_user_id: UUID | None,
+    *,
+    existing_owner_id: UUID | None = None,
+) -> UUID:
+    """Resolve the one server-side owner required by global channel ownership.
+
+    Existing canonical channels retain their owner. New ownerless admin requests
+    use the earliest-created app user, with the UUID as a stable tie-breaker.
+    """
     if requested_user_id is not None:
         owner = conn.execute("SELECT id FROM app_users WHERE id = %s", (requested_user_id,)).fetchone()
         if not owner:
             raise HTTPException(status_code=404, detail="Owner not found")
         return owner["id"]
-    owners = conn.execute("SELECT id FROM app_users ORDER BY created_at, id LIMIT 2").fetchall()
-    if not owners:
+    if existing_owner_id is not None:
+        return existing_owner_id
+    owner = conn.execute("SELECT id FROM app_users ORDER BY created_at, id LIMIT 1").fetchone()
+    if not owner:
         raise HTTPException(status_code=404, detail="No owner is configured")
-    if len(owners) > 1:
-        raise HTTPException(status_code=409, detail="Select an owner when multiple app users exist")
-    return owners[0]["id"]
+    return owner["id"]
 
 
 def delivery_state(delivered_at: datetime | None) -> Literal["queued", "delivered"]:
@@ -227,6 +257,11 @@ def delivery_state(delivered_at: datetime | None) -> Literal["queued", "delivere
 
 def _page(items: list[dict[str, Any]], total: int, page: int, page_size: int) -> dict[str, Any]:
     return {"items": items, "page": page, "page_size": page_size, "total": total}
+
+
+def _channel_response(row: dict[str, Any]) -> dict[str, Any]:
+    """Keep internal channel ownership out of Control Room payloads."""
+    return {key: value for key, value in row.items() if key not in {"user_id", "owner_name"}}
 
 
 @router.get("/summary")
@@ -242,9 +277,6 @@ def summary(conn: Connection = Depends(connection)):
             latest.status AS latest_ingestion_status,
             COALESCE(latest.completed_at, latest.started_at) AS latest_ingestion_at,
             latest.error_message AS latest_ingestion_error
-            ,(SELECT COALESCE(jsonb_agg(jsonb_build_object('id', u.id, 'name', u.display_name)
-                                        ORDER BY u.display_name), '[]'::jsonb)
-              FROM app_users u) AS owner_options
             ,(SELECT COALESCE(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name)
                                         ORDER BY c.name), '[]'::jsonb)
               FROM tracked_channels c WHERE c.is_active) AS channels
@@ -259,23 +291,65 @@ def summary(conn: Connection = Depends(connection)):
 def activity(limit: int = Query(default=30, ge=1, le=100), conn: Connection = Depends(connection)):
     return conn.execute(
         """
-        SELECT * FROM (
-            SELECT started_at AS created_at, 'ingestion' AS event_type, id AS target_id,
-                   status AS result, error_message AS error, NULL::jsonb AS details,
-                   id::text AS affected_record
+        SELECT created_at, event_type, source, result, error FROM (
+            SELECT started_at AS created_at, 'ingestion' AS event_type, 'Worker' AS source,
+                   status AS result, error_message AS error
             FROM ingestion_runs
             UNION ALL
-            SELECT created_at, action, target_id, outcome, error_message,
-                   jsonb_build_object('before', before_values, 'after', after_values) AS details,
-                   target_id::text
+            SELECT created_at, action, 'Control room', outcome, error_message
             FROM admin_audit_events
             UNION ALL
-            SELECT created_at, event_type, COALESCE(recommendation_id, user_id), source, NULL,
-                   metadata AS details, COALESCE(recommendation_id, user_id)::text
+            SELECT created_at, event_type, source, 'recorded', NULL
             FROM interaction_events
         ) events ORDER BY created_at DESC LIMIT %s
         """,
         (limit,),
+    ).fetchall()
+
+
+@router.get("/performance")
+def performance(
+    days: int = Query(default=30, ge=7, le=180),
+    conn: Connection = Depends(connection),
+):
+    return conn.execute(
+        """
+        WITH dates AS (
+            SELECT generate_series(
+                CURRENT_DATE - (%s - 1) * INTERVAL '1 day',
+                CURRENT_DATE,
+                INTERVAL '1 day'
+            )::date AS day
+        ), feedback_daily AS (
+            SELECT created_at::date AS day,
+                   COUNT(*) FILTER (WHERE event_type = 'feedback_up') AS up_count,
+                   COUNT(*) FILTER (WHERE event_type = 'feedback_down') AS down_count
+            FROM interaction_events
+            WHERE event_type IN ('feedback_up', 'feedback_down')
+              AND created_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
+            GROUP BY created_at::date
+        ), sent_daily AS (
+            SELECT delivered_at::date AS day,
+                   COUNT(*) AS sent_count,
+                   COUNT(*) FILTER (WHERE rating = 'up') AS cohort_up_count
+            FROM recommendations
+            WHERE delivered_at IS NOT NULL
+              AND delivered_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
+            GROUP BY delivered_at::date
+        )
+        SELECT dates.day,
+               COALESCE(feedback_daily.up_count, 0) AS up_count,
+               COALESCE(feedback_daily.down_count, 0) AS down_count,
+               COALESCE(sent_daily.sent_count, 0) AS sent_count,
+               CASE WHEN sent_daily.sent_count > 0
+                    THEN ROUND(sent_daily.cohort_up_count::numeric / sent_daily.sent_count, 4)
+                    ELSE NULL END AS up_share
+        FROM dates
+        LEFT JOIN feedback_daily USING (day)
+        LEFT JOIN sent_daily USING (day)
+        ORDER BY dates.day
+        """,
+        (days, days, days),
     ).fetchall()
 
 
@@ -295,12 +369,12 @@ def channels(
     filters: list[str] = [] if include_inactive else ["c.is_active"]
     params: list[Any] = []
     if search and search.strip():
-        filters.append("(c.name ILIKE %s OR u.display_name ILIKE %s OR c.youtube_channel_id ILIKE %s)")
+        filters.append("(c.name ILIKE %s OR c.youtube_channel_id ILIKE %s)")
         term = f"%{search.strip()}%"
-        params.extend([term, term, term])
+        params.extend([term, term])
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     total = conn.execute(
-        f"SELECT COUNT(*) AS count FROM tracked_channels c JOIN app_users u ON u.id = c.user_id {where}",
+        f"SELECT COUNT(*) AS count FROM tracked_channels c {where}",
         params,
     ).fetchone()["count"]
     sort_sql = {
@@ -311,20 +385,19 @@ def channels(
     effective_direction = "desc" if sort.endswith("_desc") else direction
     rows = conn.execute(
         f"""
-        SELECT c.*, u.display_name AS owner_name, COUNT(v.id) AS ingested_video_count,
+        SELECT c.*, COUNT(v.id) AS ingested_video_count,
                MAX(v.published_at) AS latest_video_published_at, COUNT(v.id) AS video_count,
                MAX(v.ingested_at) AS latest_video_ingested_at
         FROM tracked_channels c
-        JOIN app_users u ON u.id = c.user_id
         LEFT JOIN videos v ON v.tracked_channel_id = c.id
         {where}
-        GROUP BY c.id, u.display_name
+        GROUP BY c.id
         ORDER BY {sort_sql} {effective_direction.upper()} NULLS LAST, c.id ASC
         LIMIT %s OFFSET %s
         """,
         [*params, page_size, (page - 1) * page_size],
     ).fetchall()
-    return _page(rows, total, page, page_size)
+    return _page([_channel_response(row) for row in rows], total, page, page_size)
 
 
 @router.post("/channels/resolve")
@@ -366,25 +439,25 @@ def add_channel(
     except httpx.HTTPError as exc:
         conn.rollback()
         raise HTTPException(status_code=502, detail="YouTube channel resolution failed") from exc
-    return {**row, "reactivated": reactivated}
+    return {**_channel_response(row), "reactivated": reactivated}
 
 
 @router.get("/channels/{channel_id}")
 def channel_detail(channel_id: UUID, conn: Connection = Depends(connection)):
     row = conn.execute(
         """
-        SELECT c.*, u.display_name AS owner_name, COUNT(v.id) AS video_count,
+        SELECT c.*, COUNT(v.id) AS video_count,
                MAX(v.published_at) AS latest_video_published_at,
                MAX(v.ingested_at) AS latest_video_ingested_at
-        FROM tracked_channels c JOIN app_users u ON u.id = c.user_id
+        FROM tracked_channels c
         LEFT JOIN videos v ON v.tracked_channel_id = c.id
-        WHERE c.id = %s GROUP BY c.id, u.display_name
+        WHERE c.id = %s GROUP BY c.id
         """,
         (channel_id,),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Channel not found")
-    return row
+    return _channel_response(row)
 
 
 @router.patch("/channels/{channel_id}")
@@ -401,7 +474,7 @@ def patch_channel(
     if payload.is_active is not None:
         if current["is_active"] == payload.is_active:
             conn.rollback()
-            return current
+            return _channel_response(current)
         field, value = "is_active", payload.is_active
         action = "restore" if value else "stop"
         extra = ""
@@ -422,7 +495,7 @@ def patch_channel(
         before={field: current[field]}, after={field: value},
     )
     conn.commit()
-    return row
+    return _channel_response(row)
 
 
 @router.get("/videos")
@@ -628,7 +701,14 @@ def recommendations(
         SELECT r.id, r.user_id, u.display_name AS recipient_name,
                u.telegram_user_id, r.video_id, v.title AS video_title, v.channel_name,
                v.youtube_url, v.thumbnail_url, r.rationale, r.rating, r.clicked_at,
-               r.delivered_at, r.created_at,
+               r.delivered_at, r.created_at, v.published_at AS video_published_at,
+               v.duration_seconds AS video_duration_seconds, v.view_count AS video_view_count,
+               (SELECT e.created_at FROM interaction_events e
+                WHERE e.recommendation_id = r.id AND e.event_type <> 'delivery'
+                ORDER BY e.created_at DESC LIMIT 1) AS last_interacted_at,
+               (SELECT e.event_type FROM interaction_events e
+                WHERE e.recommendation_id = r.id AND e.event_type <> 'delivery'
+                ORDER BY e.created_at DESC LIMIT 1) AS last_interaction_type,
                CASE WHEN r.delivered_at IS NULL THEN 'queued' ELSE 'delivered' END AS delivery_state
         {joins} {where}
         ORDER BY {sort_sql} {effective_direction.upper()} NULLS LAST, r.id ASC LIMIT %s OFFSET %s
