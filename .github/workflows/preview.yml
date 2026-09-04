@@ -54,16 +54,6 @@ jobs:
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
 
-      - name: Resolve preview Neon Auth
-        id: auth
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-        run: |
-          auth_config="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color)"
-          auth_base_url="$(jq -r '.base_url // empty' <<< "$auth_config")"
-          [[ -n "$auth_base_url" ]] || { echo 'Neon Auth base URL was not available.' >&2; exit 1; }
-          echo "base_url=$auth_base_url" >> "$GITHUB_OUTPUT"
-
       - name: Create or update isolated Railway environment
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -76,7 +66,9 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
-          NEON_AUTH_BASE_URL: ${{ steps.auth.outputs.base_url }}
+          EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
+          EMBEDDING_MODEL_REVISION: ${{ vars.EMBEDDING_MODEL_REVISION }}
+          EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE }}
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_DEVELOPER_BOT_TOKEN:?TELEGRAM_DEVELOPER_BOT_TOKEN is required}"
@@ -105,12 +97,17 @@ jobs:
               fi
             done
             printf '%s' "${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}" | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-xs}" | railway variable set EMBEDDING_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${EMBEDDING_MODEL_REVISION:-d8c86521100d3556476a063fc2342036d45c106f}" | railway variable set EMBEDDING_MODEL_REVISION --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${EMBEDDING_BATCH_SIZE:-32}" | railway variable set EMBEDDING_BATCH_SIZE --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' '384' | railway variable set EMBEDDING_DIMENSIONS --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' 'true' | railway variable set EMBEDDING_OFFLINE --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' '/opt/huggingface' | railway variable set EMBEDDING_CACHE_DIR --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             if railway variable list --json --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID" | jq -e 'has("TELEGRAM_PRODUCTION_BOT_TOKEN")' >/dev/null; then
               railway variable delete TELEGRAM_PRODUCTION_BOT_TOKEN --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             fi
           done
           printf '%s' "$PREVIEW_DATABASE_URL_UNPOOLED" | railway variable set PREVIEW_DATABASE_URL_UNPOOLED --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-          printf '%s' "$NEON_AUTH_BASE_URL" | railway variable set NEON_AUTH_BASE_URL --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
 
       - name: Deploy Railway preview services
         env:
@@ -138,17 +135,10 @@ jobs:
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          NEON_AUTH_BASE_URL: ${{ steps.auth.outputs.base_url }}
-          NEON_AUTH_COOKIE_SECRET: ${{ secrets.NEON_AUTH_COOKIE_SECRET }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          : "${NEON_AUTH_COOKIE_SECRET:?NEON_AUTH_COOKIE_SECRET is required}"
           preview_url="$(vercel deploy --yes --target preview --cwd frontend \
             --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
-            --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
-            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
-            --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
-            --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --meta githubCommitSha="$HEAD_SHA" \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           deployment_id="$(vercel inspect "$preview_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r '.id')"
@@ -175,26 +165,21 @@ jobs:
           EXPECTED_FRONTEND_ORIGIN: ${{ steps.vercel.outputs.preview_url }}
         run: bash scripts/wait-for-railway-api.sh
 
-      - name: Smoke-test authenticated match surfaces
+      - name: Smoke-test browser match data path
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          vercel link --yes --cwd frontend --project "${{ vars.VERCEL_PROJECT_NAME }}" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
-          match_html="$(vercel curl /match --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
-          grep -Fq '<title>Match Lab · Finite Feed</title>' <<< "$match_html"
-          session_body="$(vercel curl /api/auth/get-session --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
-          jq -e '. == null' <<< "$session_body" >/dev/null
+          curl --fail --silent --show-error "$FRONTEND_URL/match" >/dev/null
           headers_file="$(mktemp)"
+          body_file="$(mktemp)"
+          annotator_id="50000000-0000-4000-8000-000000000008"
           curl --fail --silent --show-error \
-            -X OPTIONS -D "$headers_file" -o /dev/null \
+            -D "$headers_file" -o "$body_file" \
             -H "Origin: $FRONTEND_URL" \
-            -H 'Access-Control-Request-Method: GET' \
-            -H 'Access-Control-Request-Headers: authorization' \
-            "$API_URL/api/annotations/next"
+            "$API_URL/api/annotations/next?annotator_id=$annotator_id"
           grep -Fqi "access-control-allow-origin: $FRONTEND_URL" "$headers_file"
-          grep -Eqi 'access-control-allow-headers:.*authorization' "$headers_file"
+          jq -e '.profile_id and .video_id and (.topics | type == "array") and .title and .description' "$body_file" >/dev/null
 
       - name: Post or update preview summary
         uses: actions/github-script@v8

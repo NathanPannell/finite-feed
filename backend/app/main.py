@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
@@ -9,9 +8,8 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
-from backend.app.auth import AuthConfigurationError, AuthenticatedAnnotator, InvalidAuthToken, NeonTokenVerifier
-from backend.app.annotations import annotation_stats, next_annotation, record_annotation
 from backend.app.db import close_pool, connection, open_pool
+from backend.app.annotations import annotation_stats, next_annotation, record_annotation
 from backend.app.recommendations import (
     generate_recommendation as create_recommendation,
     get_or_create_pending_recommendation,
@@ -34,36 +32,13 @@ async def lifespan(_: FastAPI):
 
 
 settings = get_settings()
-token_verifier = NeonTokenVerifier(settings.neon_auth_base_url)
 app = FastAPI(title="Finite Feed API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Content-Type"],
 )
-
-
-def require_annotator(
-    authorization: Annotated[str | None, Header()] = None,
-) -> AuthenticatedAnnotator:
-    scheme, _, token = (authorization or "").partition(" ")
-    if scheme.casefold() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sign in with Google to label matches.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        return token_verifier.verify(token)
-    except AuthConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except InvalidAuthToken as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
 
 
 @app.get("/health")
@@ -83,30 +58,20 @@ def ready(conn: Connection = Depends(connection)) -> dict[str, str | int | list[
 
 
 @app.get("/api/annotations/next", response_model=AnnotationCard | None)
-def get_next_annotation(
-    annotator: Annotated[AuthenticatedAnnotator, Depends(require_annotator)],
-    conn: Connection = Depends(connection),
-):
-    return next_annotation(conn, annotator.annotator_id)
+def get_next_annotation(annotator_id: UUID, conn: Connection = Depends(connection)):
+    return next_annotation(conn, annotator_id)
 
 
 @app.get("/api/annotations/stats", response_model=AnnotationStats)
-def get_annotation_stats(
-    annotator: Annotated[AuthenticatedAnnotator, Depends(require_annotator)],
-    conn: Connection = Depends(connection),
-):
-    return annotation_stats(conn, annotator.annotator_id)
+def get_annotation_stats(annotator_id: UUID, conn: Connection = Depends(connection)):
+    return annotation_stats(conn, annotator_id)
 
 
 @app.post("/api/annotations", response_model=AnnotationResult, status_code=status.HTTP_201_CREATED)
-def create_annotation(
-    payload: AnnotationCreate,
-    annotator: Annotated[AuthenticatedAnnotator, Depends(require_annotator)],
-    conn: Connection = Depends(connection),
-):
+def create_annotation(payload: AnnotationCreate, conn: Connection = Depends(connection)):
     row = record_annotation(
         conn,
-        annotator=annotator,
+        annotator_id=payload.annotator_id,
         profile_id=payload.profile_id,
         video_id=payload.video_id,
         label=payload.label,
@@ -290,7 +255,29 @@ def get_metrics(conn: Connection = Depends(connection)):
 @app.get("/api/pipeline/status", response_model=PipelineStatus)
 def pipeline_status(conn: Connection = Depends(connection)):
     videos = conn.execute(
-        "SELECT COUNT(*) AS videos, COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS embedded_videos FROM videos"
+        """
+        SELECT COUNT(*) AS videos,
+               COUNT(*) FILTER (
+                   WHERE semantic_embedding IS NOT NULL
+                     AND semantic_embedding_model = %s
+                     AND semantic_embedding_revision = %s
+                     AND semantic_embedding_dimensions = %s
+                     AND semantic_embedding_fingerprint IS NOT DISTINCT FROM content_fingerprint
+               ) AS embedded_videos,
+               COUNT(*) FILTER (
+                   WHERE semantic_embedding IS NULL
+                      OR semantic_embedding_model IS DISTINCT FROM %s
+                      OR semantic_embedding_revision IS DISTINCT FROM %s
+                      OR semantic_embedding_dimensions IS DISTINCT FROM %s
+                      OR semantic_embedding_fingerprint IS DISTINCT FROM content_fingerprint
+               ) AS embedding_backfill_remaining,
+               COUNT(*) FILTER (WHERE semantic_embedding_last_error IS NOT NULL) AS embedding_failures
+        FROM videos
+        """,
+        (
+            settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
+            settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
+        ),
     ).fetchone()
     ingestion = conn.execute(
         "SELECT status, completed_at, videos_seen FROM ingestion_runs ORDER BY started_at DESC LIMIT 1"

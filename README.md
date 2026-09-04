@@ -10,15 +10,15 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 - Video, recommendation, interaction-event, click, and feedback records.
 - A deterministic baseline ranker combining preference overlap with age- and channel-normalized momentum.
 - A worker that resolves tracked YouTube channels, imports recent uploads, and refreshes changed metadata.
-- Reusable local feature-hash vectors for title-and-description retrieval without per-run embedding costs.
+- Self-hosted Arctic Embed XS vectors with pgvector HNSW cosine retrieval and no hosted embedding service.
 - Recent and evergreen shortlists followed by an OpenRouter final selection and grounded rationale.
 - Scheduled Telegram delivery, one-tap feedback, tracked redirects, and conversational profile updates.
 - A mobile-friendly redirect that records `clicked` before opening YouTube.
 - A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
-- A Google-authenticated match lab for collecting attributed, reasoned human judgments on profile-video pairs.
+- A public match lab for collecting anonymous, reasoned human judgments on profile-video pairs.
 - A production-safe worker that ingests previews but disables preview delivery.
 
-Transcript ingestion, richer semantic embeddings, developer-bot preview routing, and a repeatable human-scored evaluation set remain post-baseline work.
+Transcript ingestion, developer-bot preview routing, and a repeatable human-scored evaluation set remain post-baseline work.
 
 ## Recommendation pipeline
 
@@ -49,7 +49,7 @@ Run the API, worker, and frontend in separate terminals:
 Push-Location frontend; npm run dev
 ```
 
-Set `NEON_AUTH_BASE_URL` and a 32-character-or-longer `NEON_AUTH_COOKIE_SECRET` in the API and frontend environments. Open `http://localhost:3000`; `/health` checks liveness, and `/ready` checks migrations and reports the deployed commit.
+Open `http://localhost:3000`. `/health` checks liveness; `/ready` checks migrations and reports the deployed commit.
 
 Add runtime credentials as GitHub Actions repository secrets. The deployment workflows forward them into the matching Railway production and preview services; `.env.example` contains names and safe defaults only.
 
@@ -58,9 +58,11 @@ Add runtime credentials as GitHub Actions repository secrets. The deployment wor
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend\tests
 .\.venv\Scripts\python.exe -m backend.evals.run_recommendation_eval
+.\.venv\Scripts\python.exe -m backend.evals.benchmark_embeddings
 Push-Location frontend; npm run lint; npm run typecheck; npm run build
 ```
 
 After configuring OpenRouter, add `--with-model` to exercise the live low-cost model against the same genre-specific cases.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for deployment lifecycle details and [INSTALLATION_ISSUES.md](INSTALLATION_ISSUES.md) for bootstrap problems found during initial setup.
+See [SEMANTIC_EMBEDDINGS.md](SEMANTIC_EMBEDDINGS.md) for semantic rollout, verification, benchmarking, and rollback.

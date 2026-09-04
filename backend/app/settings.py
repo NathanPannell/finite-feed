@@ -29,8 +29,14 @@ class Settings(BaseSettings):
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(default="google/gemma-4-31b-it:free", alias="OPENROUTER_MODEL")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
-    embedding_model: str = Field(default="local-feature-hash-v1", alias="EMBEDDING_MODEL")
-    neon_auth_base_url: str = Field(default="", alias="NEON_AUTH_BASE_URL")
+    embedding_model: str = Field(default="Snowflake/snowflake-arctic-embed-xs", alias="EMBEDDING_MODEL")
+    embedding_model_revision: str = Field(
+        default="d8c86521100d3556476a063fc2342036d45c106f", alias="EMBEDDING_MODEL_REVISION"
+    )
+    embedding_dimensions: int = Field(default=384, alias="EMBEDDING_DIMENSIONS")
+    embedding_batch_size: int = Field(default=32, ge=1, le=256, alias="EMBEDDING_BATCH_SIZE")
+    embedding_cache_dir: str | None = Field(default=None, alias="EMBEDDING_CACHE_DIR")
+    embedding_offline: bool = Field(default=False, alias="EMBEDDING_OFFLINE")
     telegram_production_bot_token: str = Field(default="", alias="TELEGRAM_PRODUCTION_BOT_TOKEN")
     telegram_developer_bot_token: str = Field(default="", alias="TELEGRAM_DEVELOPER_BOT_TOKEN")
     telegram_webhook_secret: str = Field(default="", alias="TELEGRAM_WEBHOOK_SECRET")

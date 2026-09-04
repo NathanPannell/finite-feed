@@ -108,6 +108,8 @@ class Metrics(BaseModel):
 class PipelineStatus(BaseModel):
     videos: int
     embedded_videos: int
+    embedding_backfill_remaining: int
+    embedding_failures: int
     last_ingestion_status: str | None
     last_ingestion_at: datetime | None
     last_ingestion_videos_seen: int
@@ -123,6 +125,7 @@ class AnnotationCard(BaseModel):
 
 
 class AnnotationCreate(BaseModel):
+    annotator_id: UUID
     profile_id: UUID
     video_id: UUID
     label: Literal["yes", "no", "unsure"]
@@ -138,7 +141,6 @@ class AnnotationCreate(BaseModel):
 
 class AnnotationResult(AnnotationCreate):
     id: UUID
-    annotator_id: UUID
     annotator_kind: Literal["anonymous", "google"]
     created_at: datetime
 
