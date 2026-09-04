@@ -175,14 +175,34 @@ jobs:
             sleep 5
           done
           [[ -n "$production_url" ]] || { echo 'Vercel production URL was not available.' >&2; exit 1; }
+          [[ "$production_url" == https://* ]] || { echo 'Vercel production URL must use HTTPS.' >&2; exit 1; }
+          production_host="${production_url#https://}"
+          production_host="${production_host%%/*}"
+          [[ "$production_host" != *.vercel.app ]] || { echo 'A public custom production domain is required.' >&2; exit 1; }
+          custom_domain="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_ORG_ID" \
+            | jq -r --arg host "$production_host" '[.domains[] | select(.name == $host)] | length')"
+          [[ "$custom_domain" == "1" ]] || { echo 'Production URL is not a configured Vercel project domain.' >&2; exit 1; }
+
           for admin_path in /admin /api/admin/summary; do
-            admin_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$deployment_url$admin_path")"
+            headers_file="$(mktemp)"
+            admin_status="$(curl --silent --show-error --dump-header "$headers_file" \
+              --output /dev/null --write-out '%{http_code}' "$deployment_url$admin_path")"
             case "$admin_status" in
-              301|302|303|307|308|401|403) ;;
+              401|403) ;;
+              301|302|303|307|308)
+                auth_location="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }' "$headers_file")"
+                case "$auth_location" in
+                  https://vercel.com/sso*|https://vercel.com/login*|https://vercel.com/api/auth*|https://*.vercel.com/_vercel/*|/_vercel/*) ;;
+                  *) echo "Generated deployment $admin_path redirected somewhere other than Vercel authentication." >&2; exit 1 ;;
+                esac
+                ;;
               *) echo "Generated deployment $admin_path did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
             esac
           done
-          curl --fail --location --silent --show-error "$production_url/match" >/dev/null
+          match_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$production_url/match")"
+          [[ "$match_status" == "200" ]] || { echo "Public custom-domain /match returned HTTP $match_status instead of 200." >&2; exit 1; }
           origins="$(jq -nr --arg deployment "$deployment_url" --arg production "$production_url" '[$deployment, $production] | unique | join(",")')"
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
           echo "production_url=$production_url" >> "$GITHUB_OUTPUT"
