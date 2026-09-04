@@ -42,11 +42,12 @@ def test_inline_ted_disclaimers_are_removed_without_losing_speaker_prose() -> No
         "NOTE FROM TED: This talk only represents the speaker’s personal views and experiences in the military. "
         "TEDx events are independently organized by volunteers. The guidelines we give TEDx organizers are "
         "described in more detail here I am Lt Vamshi E (Retd). Based on my experiences, I learned how to make "
-        "the most of your 20s. This talk was given at a TEDx event using the TED conference format but "
+        "the most of your 20s. Ex-Army Officer, HR Professional, Mentor This talk was given at a TEDx event using the TED conference format but "
         "independently organized by a local community. Learn more at https://example.test"
     )
     assert clean_description(description) == (
-        "I am Lt Vamshi E (Retd). Based on my experiences, I learned how to make the most of your 20s."
+        "I am Lt Vamshi E (Retd). Based on my experiences, I learned how to make the most of your 20s. "
+        "Ex-Army Officer, HR Professional, Mentor"
     )
 
 
@@ -95,5 +96,5 @@ def test_language_detection_is_local_deterministic_and_uses_cleaned_metadata() -
 
 def test_document_fingerprint_versions_derived_text_without_mutating_raw_fingerprint() -> None:
     raw = "sha256:canonical-source-metadata"
-    assert document_fingerprint(raw) == "description-v3:sha256:canonical-source-metadata"
+    assert document_fingerprint(raw) == "description-v4:sha256:canonical-source-metadata"
     assert raw == "sha256:canonical-source-metadata"

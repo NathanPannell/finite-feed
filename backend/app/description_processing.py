@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from langdetect import DetectorFactory, LangDetectException, detect_langs
 
-DESCRIPTION_PROCESSING_VERSION = "description-v3"
+DESCRIPTION_PROCESSING_VERSION = "description-v4"
 
 _MOJIBAKE = {
     "\u00e2\u20ac\u2122": "’",
@@ -47,9 +47,12 @@ _INLINE_PROMOTION = re.compile(
     r"(?:(?<=[.!?])|^)\s*(?:"
     r"this (?:video|episode|talk) is (?:sponsored|presented|paid for) by|"
     r"(?:sponsored|presented|paid for) by|"
-    r"(?:thanks?|thank you) to .+ for sponsor|"
-    r"this talk was given at a tedx event using the ted conference format"
+    r"(?:thanks?|thank you) to .+ for sponsor"
     r")\b",
+    re.IGNORECASE,
+)
+_INLINE_BOILERPLATE = re.compile(
+    r"\bthis talk was given at a tedx event using the ted conference format\b",
     re.IGNORECASE,
 )
 _LEADING_TED_NOTE = re.compile(
@@ -118,8 +121,13 @@ def clean_description(value: str) -> str:
         if _PROMOTION.match(line):
             continue
         inline_promotion = _INLINE_PROMOTION.search(line)
-        if inline_promotion:
-            line = line[:inline_promotion.start()].strip()
+        inline_boilerplate = _INLINE_BOILERPLATE.search(line)
+        cut_at = min(
+            (match.start() for match in (inline_promotion, inline_boilerplate) if match),
+            default=None,
+        )
+        if cut_at is not None:
+            line = line[:cut_at].strip()
         line = _URL.sub("", line)
         line = _HASHTAG.sub(r"\1", line)
         line = re.sub(r"\s+([,.;:!?])", r"\1", line)
