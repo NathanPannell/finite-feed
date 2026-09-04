@@ -381,7 +381,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
                     <span id="picks-label">Picks per delivery</span>
                     <div className="picks-stepper" role="group" aria-labelledby="picks-label">
                       <button type="button" aria-label="Decrease picks" disabled={profile.recommendation_count <= minimumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.max(minimumPicks, profile.recommendation_count - 1) })}>−</button>
-                      <output aria-live="polite" aria-label={`${profile.recommendation_count} picks`}>{profile.recommendation_count}</output>
+                      <output aria-live="polite" aria-label={`${profile.recommendation_count} ${profile.recommendation_count === 1 ? "pick" : "picks"}`}>{profile.recommendation_count}</output>
                       <button type="button" aria-label="Increase picks" disabled={profile.recommendation_count >= maximumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.min(maximumPicks, profile.recommendation_count + 1) })}>+</button>
                     </div>
                   </div>

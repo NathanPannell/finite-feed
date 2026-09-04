@@ -187,7 +187,9 @@ test("saves delivery values without exposing time controls and resolves a URL-on
   await expect(page.getByLabel("Hour")).toHaveCount(0);
   await expect(page.getByLabel("Time zone")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Decrease picks" })).toBeDisabled();
+  await expect(page.getByRole("status", { name: "1 pick" })).toBeVisible();
   await page.getByRole("button", { name: "Increase picks" }).click();
+  await expect(page.getByRole("status", { name: "2 picks" })).toBeVisible();
   await page.getByRole("button", { name: "Save preferences" }).click();
   expect(captured.profilePayload()).toEqual({ cadence_days: [2, 5], recommendation_count: 2 });
 
