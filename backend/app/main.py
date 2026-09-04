@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -8,7 +9,7 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
-from backend.app.admin import router as admin_router
+from backend.app.admin import ChannelUrl, resolve_youtube_channel, router as admin_router, upsert_admin_channel
 from backend.app.db import close_pool, connection, open_pool
 from backend.app.annotations import annotation_stats, next_annotation, record_annotation
 from backend.app.recommendations import (
@@ -134,36 +135,67 @@ def update_profile(payload: ProfileUpdate, conn: Connection = Depends(connection
 @app.get("/api/channels", response_model=list[Channel])
 def list_channels(conn: Connection = Depends(connection)):
     return conn.execute(
-        "SELECT id, name, url, is_default, created_at FROM tracked_channels WHERE user_id = %s AND is_active ORDER BY is_default DESC, name",
+        "SELECT id, name, url, thumbnail_url, is_default, created_at FROM tracked_channels WHERE user_id = %s AND is_active ORDER BY is_default DESC, name",
         (USER_ID,),
     ).fetchall()
 
 
+@app.post("/api/channels/resolve")
+def resolve_public_channel(
+    payload: ChannelUrl,
+    conn: Connection = Depends(connection),
+):
+    if not settings.youtube_api_key:
+        raise HTTPException(status_code=503, detail="YouTube resolver is not configured")
+    try:
+        details = resolve_youtube_channel(str(payload.url), settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="YouTube channel lookup failed. Try again.") from exc
+    existing = conn.execute(
+        "SELECT user_id, is_active FROM tracked_channels WHERE youtube_channel_id = %s",
+        (details["youtube_channel_id"],),
+    ).fetchone()
+    return {
+        **details,
+        "already_tracked": bool(existing and existing["user_id"] == USER_ID and existing["is_active"]),
+        "can_reactivate": bool(existing and existing["user_id"] == USER_ID and not existing["is_active"]),
+    }
+
+
 @app.post("/api/channels", response_model=Channel, status_code=status.HTTP_201_CREATED)
 def add_channel(payload: ChannelCreate, conn: Connection = Depends(connection)):
+    if not settings.youtube_api_key:
+        raise HTTPException(status_code=503, detail="YouTube resolver is not configured")
     try:
-        row = conn.execute(
-            """
-            INSERT INTO tracked_channels (id, user_id, name, url) VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id, url) DO UPDATE
-                SET is_active = TRUE, name = EXCLUDED.name
-                WHERE NOT tracked_channels.is_active
-            RETURNING id, name, url, is_default, created_at
-            """,
-            (uuid4(), USER_ID, payload.name, str(payload.url)),
-        ).fetchone()
-        if not row:
-            conn.rollback()
-            raise HTTPException(status_code=409, detail="That channel is already tracked")
+        details = resolve_youtube_channel(str(payload.url), settings)
+        row, _ = upsert_admin_channel(
+            conn,
+            user_id=USER_ID,
+            details=details,
+            max_video_age_days=7,
+            actor=None,
+            commit=False,
+        )
         conn.execute(
             "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'channel_add', 'dashboard', %s)",
-            (uuid4(), USER_ID, Jsonb({"url": str(payload.url)})),
+            (uuid4(), USER_ID, Jsonb({"url": details["url"]})),
         )
         conn.commit()
         return row
+    except HTTPException:
+        conn.rollback()
+        raise
     except UniqueViolation as exc:
         conn.rollback()
         raise HTTPException(status_code=409, detail="That channel is already tracked") from exc
+    except ValueError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=502, detail="YouTube channel lookup failed. Try again.") from exc
 
 
 @app.delete("/api/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)

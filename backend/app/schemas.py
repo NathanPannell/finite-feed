@@ -35,22 +35,13 @@ class Profile(ProfileUpdate):
 
 
 class ChannelCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
     url: AnyHttpUrl = Field(max_length=2048)
-
-    @field_validator("name")
-    @classmethod
-    def normalize_name(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Name cannot be blank")
-        return normalized
 
     @field_validator("url")
     @classmethod
     def require_youtube(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        if value.host not in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
-            raise ValueError("Use a youtube.com channel URL")
+        if value.host not in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
+            raise ValueError("Use a YouTube channel or video URL")
         return value
 
 
@@ -60,6 +51,7 @@ class Channel(BaseModel):
     id: UUID
     name: str
     url: str
+    thumbnail_url: str | None
     is_default: bool
     created_at: datetime
 

@@ -11,6 +11,8 @@ function json(route: Route, payload: unknown) {
 
 async function mockPublicApi(page: Page) {
   let feedbackId = "";
+  let profilePayload: Record<string, unknown> | null = null;
+  let channelPayload: Record<string, unknown> | null = null;
   await page.route(apiOrigin + "/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -23,8 +25,7 @@ async function mockPublicApi(page: Page) {
         title: feedbackId === "rec-1" ? "How to make hard choices" : "The architecture of attention",
         speaker: "Ada Reed",
         channel_name: "TED",
-        youtube_url: "https://youtube.com/watch?v=signal",
-        published_at: "2026-09-01T12:00:00Z",
+        thumbnail_url: "https://images.example.test/signal.jpg",
         duration_seconds: 1080,
         rationale: "It turns a broad interest into one practical decision model.",
         rating,
@@ -35,6 +36,11 @@ async function mockPublicApi(page: Page) {
 
     if (url.pathname === "/api/recommendations/generate") {
       return json(route, {});
+    }
+
+    if (url.pathname === "/api/profile" && request.method() === "PUT") {
+      profilePayload = request.postDataJSON();
+      return json(route, { ...profilePayload, version: 5, updated_at: "2026-09-04T12:00:00Z" });
     }
 
     if (url.pathname === "/api/profile") {
@@ -49,10 +55,45 @@ async function mockPublicApi(page: Page) {
       });
     }
 
+    if (url.pathname === "/api/channels/resolve") {
+      const submittedUrl = String(request.postDataJSON().url);
+      if (submittedUrl.includes("missing")) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        return route.fulfill({ status: 404, json: { detail: "YouTube video was not found" }, headers: { "access-control-allow-origin": "*" } });
+      }
+      if (submittedUrl.includes("@ted")) {
+        return json(route, {
+          youtube_channel_id: "UCTED",
+          name: "TED",
+          url: "https://www.youtube.com/channel/UCTED",
+          thumbnail_url: null,
+          already_tracked: true,
+          can_reactivate: false,
+        });
+      }
+      return json(route, {
+        youtube_channel_id: "UC123",
+        name: "Practical Engineering",
+        url: "https://www.youtube.com/channel/UC123",
+        thumbnail_url: "https://images.example.test/channel.jpg",
+        already_tracked: false,
+        can_reactivate: false,
+      });
+    }
+
+    if (/\/api\/channels\/[^/]+$/.test(url.pathname) && request.method() === "DELETE") {
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } });
+    }
+
+    if (url.pathname === "/api/channels" && request.method() === "POST") {
+      channelPayload = request.postDataJSON();
+      return json(route, { id: "channel-3", name: "Practical Engineering", url: "https://www.youtube.com/channel/UC123", thumbnail_url: "https://images.example.test/channel.jpg", is_default: false });
+    }
+
     if (url.pathname === "/api/channels") {
       return json(route, [
-        { id: "channel-1", name: "TED", url: "https://youtube.com/@ted", is_default: true },
-        { id: "channel-2", name: "MIT OpenCourseWare", url: "https://youtube.com/@mitocw", is_default: false },
+        { id: "channel-1", name: "TED", url: "https://youtube.com/@ted", thumbnail_url: null, is_default: true },
+        { id: "channel-2", name: "MIT OpenCourseWare", url: "https://youtube.com/@mitocw", thumbnail_url: null, is_default: false },
       ]);
     }
 
@@ -63,8 +104,7 @@ async function mockPublicApi(page: Page) {
           title: "How to make hard choices",
           speaker: "Ada Reed",
           channel_name: "TED",
-          youtube_url: "https://youtube.com/watch?v=signal",
-          published_at: "2026-09-01T12:00:00Z",
+          thumbnail_url: "https://images.example.test/signal.jpg",
           duration_seconds: 1080,
           rationale: "It turns a broad interest into one practical decision model.",
           rating: null,
@@ -76,8 +116,7 @@ async function mockPublicApi(page: Page) {
           title: "The architecture of attention",
           speaker: null,
           channel_name: "TEDx",
-          youtube_url: "https://youtube.com/watch?v=archive",
-          published_at: "2026-08-28T12:00:00Z",
+          thumbnail_url: "https://images.example.test/archive.jpg",
           duration_seconds: 840,
           rationale: "A concise framework for protecting focus without productivity theater.",
           rating: "up",
@@ -87,40 +126,84 @@ async function mockPublicApi(page: Page) {
       ]);
     }
 
-    if (url.pathname === "/api/metrics") {
-      return json(route, { delivered: 8, clicked: 6, rated_up: 4, rated_down: 1, click_through_rate: .75, thumbs_up_share: .8 });
-    }
-
-    if (url.pathname === "/api/pipeline/status") {
-      return json(route, { videos: 251, embedded_videos: 251, last_ingestion_status: "complete", last_ingestion_at: "2026-09-03T12:00:00Z" });
-    }
-
     return json(route, {});
   });
-  return () => feedbackId;
+  return {
+    feedbackId: () => feedbackId,
+    profilePayload: () => profilePayload,
+    channelPayload: () => channelPayload,
+  };
 }
 
-test("renders the public signal, recent ledger, preferences, and persistent feedback", async ({ page }) => {
-  const feedbackId = await mockPublicApi(page);
+test("renders thumbnail-led recommendations, separated preferences, and semantic feedback", async ({ page }) => {
+  const captured = await mockPublicApi(page);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: /Fewer things/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "How to make hard choices" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The architecture of attention" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Match Lab" })).toHaveAttribute("href", "/match");
-  await expect(page.getByRole("button", { name: "Remove MIT OpenCourseWare" })).toBeVisible();
-  await expect(page.getByLabel("What should feel unusually valuable?")).toContainText("Rigorous ideas");
+  await expect(page.getByRole("link", { name: "Open Match Lab", exact: true })).toHaveAttribute("href", "/match");
+  await expect(page.getByRole("link", { name: "Watch How to make hard choices on YouTube" })).toHaveAttribute("href", apiOrigin + "/r/rec-1");
+  await expect(page.getByRole("heading", { name: "Delivery preferences" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Preference memory" })).toBeVisible();
+  await expect(page.getByText("Rigorous ideas about systems, human judgment, and better decisions.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Signal quality" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Not useful" }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Useful" }).first().click();
   await expect(page.getByRole("button", { name: "Useful" }).first()).toHaveAttribute("aria-pressed", "true");
-  expect(feedbackId()).toBe("rec-1");
+  expect(captured.feedbackId()).toBe("rec-1");
+});
+
+test("saves delivery values without exposing time controls and resolves a URL-only source", async ({ page }) => {
+  const captured = await mockPublicApi(page);
+  await page.goto("/");
+
+  await expect(page.getByLabel("Hour")).toHaveCount(0);
+  await expect(page.getByLabel("Time zone")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Decrease picks" })).toBeDisabled();
+  await page.getByRole("button", { name: "Increase picks" }).click();
+  await page.getByRole("button", { name: "Save preferences" }).click();
+  expect(captured.profilePayload()).toMatchObject({ delivery_hour: 9, timezone: "America/Los_Angeles", recommendation_count: 2 });
+
+  const sourceUrl = "https://youtu.be/practical";
+  await page.getByLabel("YouTube URL").fill(sourceUrl);
+  await expect(page.getByText("Practical Engineering is ready to add.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open canonical channel" })).toBeVisible();
+  await page.getByRole("button", { name: "Add source" }).click();
+  expect(captured.channelPayload()).toEqual({ url: sourceUrl });
+  await expect(page.getByRole("button", { name: "Remove Practical Engineering" })).toBeVisible();
+});
+
+test("shows invalid, lookup failure, duplicate, and removable-default source states", async ({ page }) => {
+  await mockPublicApi(page);
+  await page.goto("/");
+  const input = page.getByLabel("YouTube URL");
+
+  await input.fill("https://example.com/not-youtube");
+  await expect(page.getByText("Use a YouTube channel, handle, video, or youtu.be URL.")).toBeVisible();
+
+  await input.fill("https://youtu.be/missing");
+  await expect(page.getByText("Finding the channel behind this URL…")).toBeVisible();
+  await expect(page.getByText("YouTube video was not found")).toBeVisible();
+
+  await input.fill("https://youtube.com/@ted");
+  await expect(page.getByText("TED is already tracked.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add source" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Remove TED" }).click();
+  await expect(page.getByRole("button", { name: "Remove TED" })).toHaveCount(0);
 });
 
 test("keeps the public page inside a 320px viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await mockPublicApi(page);
   await page.goto("/");
-  await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  const mobileNavigation = page.getByRole("navigation", { name: "Mobile navigation" });
+  await expect(mobileNavigation).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "For you", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Open Match Lab", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Control Room", exact: true })).toBeVisible();
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
 });

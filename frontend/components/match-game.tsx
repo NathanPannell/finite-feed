@@ -100,7 +100,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <SignalShell className="match-page">
+    <SignalShell active="match" className="match-page">
       <main className="match-main">
         <header className="match-intro">
           <h1>Does this<br /><span>belong?</span></h1>

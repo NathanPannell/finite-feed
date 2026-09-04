@@ -13,5 +13,7 @@ def test_profile_normalizes_schedule() -> None:
 
 
 def test_channel_requires_youtube_url() -> None:
-    with pytest.raises(ValidationError, match="youtube.com"):
-        ChannelCreate(name="Not YouTube", url="https://example.com/channel")
+    with pytest.raises(ValidationError, match="YouTube"):
+        ChannelCreate(url="https://example.com/channel")
+
+    assert str(ChannelCreate(url="https://youtu.be/video-id").url).startswith("https://youtu.be/")
