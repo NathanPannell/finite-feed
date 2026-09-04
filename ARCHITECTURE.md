@@ -10,6 +10,8 @@ Vercel frontend ──HTTPS──> Railway API ──pooled SQL──> Neon prod
 
 GitHub Actions owns production deployment after CI. It stamps both Railway services with the commit SHA, deploys them, waits until `/ready` reports that exact SHA and a readable migration table, then deploys Vercel once with the resulting API URL. It writes the actual Vercel production URLs into Railway's exact CORS allowlist and the production Neon Auth trusted domains, then redeploys the API.
 
+The API and worker images contain the same pinned Arctic Embed XS artifact and run with model-network access disabled. The worker performs the idempotent semantic backfill before ingestion and delivery. Neon stores `vector(384)` values and serves cosine nearest-neighbor queries through an HNSW index; the additive legacy vectors remain available for rollback until a later verified cleanup.
+
 ## Pull request N
 
 ```text

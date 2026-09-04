@@ -28,5 +28,27 @@
       {"video_id": "carbon-accounting", "title": "A better carbon spreadsheet", "description": "Corporate emissions accounting methods."},
       {"video_id": "ancient-roads", "title": "The roads of ancient Rome", "description": "Archaeology and historic construction."}
     ]
+  },
+  {
+    "name": "paraphrase-team-resilience",
+    "profile": "How can leaders help a group bounce back after a crushing failure?",
+    "expected_video_id": "resilient-squads",
+    "legacy_feature_hash_expected_to_fail": true,
+    "candidates": [
+      {"video_id": "resilient-squads", "title": "Restoring team confidence after defeat", "description": "A coach explains psychological recovery, shared resilience, and regrouping after losing."},
+      {"video_id": "rubber-bands", "title": "Why a rubber ball bounces", "description": "How elastic material returns after a crushing force."},
+      {"video_id": "management-titles", "title": "Leadership titles in organizations", "description": "How managers assign people to groups and reporting lines."}
+    ]
+  },
+  {
+    "name": "synonym-attention-performance",
+    "profile": "I want the psychology of keeping calm and concentrating during a tense match.",
+    "expected_video_id": "composure",
+    "legacy_feature_hash_expected_to_fail": true,
+    "candidates": [
+      {"video_id": "composure", "title": "Mental skills for performing under pressure", "description": "Athletes describe concentration, composure, ignoring distractions, and handling anxiety in competition."},
+      {"video_id": "neural-signals", "title": "How nerves carry signals to your head", "description": "A clear guide to anatomy during medical imaging."},
+      {"video_id": "contest-rules", "title": "Writing rules for a contest", "description": "Ideas for keeping competitions fair and easy to judge."}
+    ]
   }
 ]

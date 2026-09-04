@@ -4,7 +4,9 @@ from uuid import uuid4
 
 from psycopg import Connection
 
-from backend.app.embeddings import MODEL_NAME, embed_text
+from backend.app.embedding_backfill import document_text
+from backend.app.embeddings import Embedder, configured_embedder
+from backend.app.settings import get_settings
 from backend.app.youtube import YouTubeClient
 
 
@@ -19,7 +21,17 @@ def video_fingerprint(title: str, description: str) -> str:
     return hashlib.sha256(f"{title}\n{description}".encode("utf-8")).hexdigest()
 
 
-def ingest_tracked_channels(conn: Connection, youtube: YouTubeClient, page_limit: int = 2) -> IngestionSummary:
+def _vector_literal(vector: list[float]) -> str:
+    return "[" + ",".join(format(float(value), ".17g") for value in vector) + "]"
+
+
+def ingest_tracked_channels(
+    conn: Connection,
+    youtube: YouTubeClient,
+    page_limit: int = 2,
+    embedder: Embedder | None = None,
+) -> IngestionSummary:
+    encoder = embedder or configured_embedder(get_settings())
     run_id = uuid4()
     conn.execute("INSERT INTO ingestion_runs (id, status) VALUES (%s, 'running')", (run_id,))
     conn.commit()
@@ -37,21 +49,47 @@ def ingest_tracked_channels(conn: Connection, youtube: YouTubeClient, page_limit
             videos = youtube.list_uploads(details.uploads_playlist_id, page_limit)
             channels_scanned += 1
             videos_seen += len(videos)
+
+            prepared = []
+            changed_documents = []
             for video in videos:
                 fingerprint = video_fingerprint(video.title, video.description)
                 existing = conn.execute(
-                    "SELECT content_fingerprint FROM videos WHERE youtube_video_id = %s",
+                    """
+                    SELECT content_fingerprint, semantic_embedding_model, semantic_embedding_revision,
+                           semantic_embedding_dimensions, semantic_embedding_fingerprint
+                    FROM videos WHERE youtube_video_id = %s
+                    """,
                     (video.youtube_video_id,),
                 ).fetchone()
-                changed = not existing or existing["content_fingerprint"] != fingerprint
-                embedding = embed_text(f"{video.title}\n{video.description}") if changed else None
+                changed = (
+                    not existing
+                    or existing["content_fingerprint"] != fingerprint
+                    or existing["semantic_embedding_model"] != encoder.model_name
+                    or existing["semantic_embedding_revision"] != encoder.model_revision
+                    or existing["semantic_embedding_dimensions"] != encoder.dimensions
+                    or existing["semantic_embedding_fingerprint"] != fingerprint
+                )
+                prepared.append((video, fingerprint, changed))
+                if changed:
+                    changed_documents.append(document_text(video.title, video.description))
+
+            changed_vectors = iter(encoder.embed_documents(changed_documents))
+            for video, fingerprint, changed in prepared:
+                vector = next(changed_vectors) if changed else None
+                vector_literal = _vector_literal(vector) if vector is not None else None
                 conn.execute(
                     """
                     INSERT INTO videos (
                         id, youtube_video_id, channel_name, title, speaker, youtube_url,
                         thumbnail_url, description, published_at, duration_seconds, view_count,
-                        content_fingerprint, embedding, embedding_model
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        content_fingerprint, semantic_embedding, semantic_embedding_model,
+                        semantic_embedding_revision, semantic_embedding_dimensions,
+                        semantic_embedding_fingerprint
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::vector, %s, %s, %s, %s
+                    )
                     ON CONFLICT (youtube_video_id) DO UPDATE SET
                         channel_name = EXCLUDED.channel_name,
                         title = EXCLUDED.title,
@@ -63,14 +101,25 @@ def ingest_tracked_channels(conn: Connection, youtube: YouTubeClient, page_limit
                         duration_seconds = EXCLUDED.duration_seconds,
                         view_count = EXCLUDED.view_count,
                         content_fingerprint = EXCLUDED.content_fingerprint,
-                        embedding = COALESCE(EXCLUDED.embedding, videos.embedding),
-                        embedding_model = CASE WHEN EXCLUDED.embedding IS NULL THEN videos.embedding_model ELSE EXCLUDED.embedding_model END,
+                        semantic_embedding = COALESCE(EXCLUDED.semantic_embedding, videos.semantic_embedding),
+                        semantic_embedding_model = COALESCE(EXCLUDED.semantic_embedding_model, videos.semantic_embedding_model),
+                        semantic_embedding_revision = COALESCE(EXCLUDED.semantic_embedding_revision, videos.semantic_embedding_revision),
+                        semantic_embedding_dimensions = COALESCE(EXCLUDED.semantic_embedding_dimensions, videos.semantic_embedding_dimensions),
+                        semantic_embedding_fingerprint = COALESCE(EXCLUDED.semantic_embedding_fingerprint, videos.semantic_embedding_fingerprint),
+                        semantic_embedding_attempt_count = CASE WHEN EXCLUDED.semantic_embedding IS NULL
+                            THEN videos.semantic_embedding_attempt_count ELSE 0 END,
+                        semantic_embedding_last_error = CASE WHEN EXCLUDED.semantic_embedding IS NULL
+                            THEN videos.semantic_embedding_last_error ELSE NULL END,
                         updated_at = NOW()
                     """,
                     (
                         uuid4(), video.youtube_video_id, video.channel_name, video.title, video.speaker,
                         video.youtube_url, video.thumbnail_url, video.description, video.published_at,
-                        video.duration_seconds, video.view_count, fingerprint, embedding, MODEL_NAME,
+                        video.duration_seconds, video.view_count, fingerprint, vector_literal,
+                        encoder.model_name if changed else None,
+                        encoder.model_revision if changed else None,
+                        encoder.dimensions if changed else None,
+                        fingerprint if changed else None,
                     ),
                 )
                 videos_changed += int(changed)

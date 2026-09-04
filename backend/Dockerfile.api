@@ -1,11 +1,13 @@
 FROM python:3.13-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HF_HOME=/opt/huggingface HF_HUB_DISABLE_TELEMETRY=1
 WORKDIR /workspace
 COPY backend/requirements.txt /workspace/backend/requirements.txt
 RUN pip install --no-cache-dir -r /workspace/backend/requirements.txt
 COPY backend /workspace/backend
 COPY database /workspace/database
+RUN python -m backend.app.embeddings
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 EMBEDDING_CACHE_DIR=/opt/huggingface EMBEDDING_OFFLINE=true
 
 CMD ["sh", "-c", "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
