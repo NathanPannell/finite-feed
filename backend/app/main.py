@@ -474,6 +474,7 @@ def telegram_webhook(
     elif text.startswith("/"):
         bot.send_text(chat_id, "Use /recommend for a new pick, or /preferences to inspect your current profile.")
     elif len(text) >= 10:
+        conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         current = conn.execute(
             "SELECT version, rendered_markdown FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
             (user_id,),
