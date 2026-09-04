@@ -18,14 +18,14 @@ export function SignalShell({ active, children, className = "" }: SignalShellPro
         <p>An edited signal for a noisier internet.</p>
         <nav aria-label="Primary navigation">
           <Link href="/" aria-current={active === "feed" ? "page" : undefined}>For you</Link>
-          <Link href="/admin" aria-current={active === "admin" ? "page" : undefined}>Control room</Link>
+          <a href="/admin" aria-current={active === "admin" ? "page" : undefined}>Control room</a>
         </nav>
       </header>
       {children}
       <nav className="signal-mobile-nav" aria-label="Mobile navigation">
         <Link href="/" aria-current={active === "feed" ? "page" : undefined}>For you</Link>
         <Link href="/#preferences">Preferences</Link>
-        <Link href="/admin" aria-current={active === "admin" ? "page" : undefined}>Control</Link>
+        <a href="/admin" aria-current={active === "admin" ? "page" : undefined}>Control</a>
       </nav>
     </div>
   );
