@@ -352,6 +352,7 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     assert "FROM interaction_events" in performance_sql
     assert "created_at::date AS day" in performance_sql
     assert "delivered_at::date AS day" in performance_sql
+    assert "cohort_up_count" in performance_sql
     assert "up_count" in performance_sql and "down_count" in performance_sql
     assert "up_share" in performance_sql
     assert performance_params == (30, 30, 30)

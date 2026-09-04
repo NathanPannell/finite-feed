@@ -308,7 +308,9 @@ def performance(
               AND created_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
             GROUP BY created_at::date
         ), sent_daily AS (
-            SELECT delivered_at::date AS day, COUNT(*) AS sent_count
+            SELECT delivered_at::date AS day,
+                   COUNT(*) AS sent_count,
+                   COUNT(*) FILTER (WHERE rating = 'up') AS cohort_up_count
             FROM recommendations
             WHERE delivered_at IS NOT NULL
               AND delivered_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
@@ -319,7 +321,7 @@ def performance(
                COALESCE(feedback_daily.down_count, 0) AS down_count,
                COALESCE(sent_daily.sent_count, 0) AS sent_count,
                CASE WHEN sent_daily.sent_count > 0
-                    THEN ROUND(COALESCE(feedback_daily.up_count, 0)::numeric / sent_daily.sent_count, 4)
+                    THEN ROUND(sent_daily.cohort_up_count::numeric / sent_daily.sent_count, 4)
                     ELSE NULL END AS up_share
         FROM dates
         LEFT JOIN feedback_daily USING (day)
