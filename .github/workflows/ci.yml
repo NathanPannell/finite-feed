@@ -94,6 +94,7 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           TELEGRAM_PRODUCTION_CHAT_ID: ${{ vars.TELEGRAM_PRODUCTION_CHAT_ID }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_PRODUCTION_BOT_TOKEN:?TELEGRAM_PRODUCTION_BOT_TOKEN is required}"
@@ -109,7 +110,7 @@ jobs:
                 railway variable delete "$variable" --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
               fi
             done
-            printf '%s' 'openrouter/free' | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}" | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
           done
           railway redeploy --from-source --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"

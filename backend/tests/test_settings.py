@@ -67,3 +67,8 @@ def test_telegram_ids_must_be_numeric_without_echoing_bad_value() -> None:
 def test_developer_ids_support_a_comma_separated_allowlist() -> None:
     settings = Settings(DEVELOPER_TELEGRAM_USER_IDS="123, -456")
     assert settings.developer_user_ids == {123, -456}
+
+
+def test_default_openrouter_model_is_a_general_purpose_free_model() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.openrouter_model == "google/gemma-4-31b-it:free"

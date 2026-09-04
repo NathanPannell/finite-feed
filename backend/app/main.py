@@ -9,7 +9,12 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from backend.app.db import close_pool, connection, open_pool
-from backend.app.recommendations import generate_recommendation as create_recommendation
+from backend.app.recommendations import (
+    generate_recommendation as create_recommendation,
+    get_or_create_pending_recommendation,
+    lock_recommendation_for_delivery,
+    mark_recommendation_delivered,
+)
 from backend.app.schemas import Channel, ChannelCreate, FeedbackCreate, Metrics, PipelineStatus, Profile, ProfileUpdate, Recommendation
 from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
@@ -246,6 +251,15 @@ def _telegram_user(conn: Connection, chat_id: int, developer: bool):
     return row["id"] if row else None
 
 
+def _forget_telegram_update(conn: Connection, bot_kind: str, update_id: int) -> None:
+    conn.rollback()
+    conn.execute(
+        "DELETE FROM telegram_updates WHERE bot_kind = %s AND update_id = %s",
+        (bot_kind, update_id),
+    )
+    conn.commit()
+
+
 @app.post("/telegram/webhook/{bot_kind}")
 def telegram_webhook(
     bot_kind: str,
@@ -260,14 +274,6 @@ def telegram_webhook(
     token = settings.telegram_production_bot_token if bot_kind == "production" else settings.telegram_developer_bot_token
     if not token:
         raise HTTPException(status_code=503, detail="Telegram bot is not configured")
-    inserted = conn.execute(
-        "INSERT INTO telegram_updates (bot_kind, update_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING update_id",
-        (bot_kind, update.get("update_id")),
-    ).fetchone()
-    conn.commit()
-    if not inserted:
-        return {"ok": True, "duplicate": True}
-    bot = TelegramBot(token)
     callback = update.get("callback_query")
     message = update.get("message") or (callback or {}).get("message") or {}
     chat_id = (message.get("chat") or {}).get("id")
@@ -276,6 +282,17 @@ def telegram_webhook(
     user_id = _telegram_user(conn, int(chat_id), bot_kind == "developer")
     if not user_id:
         raise HTTPException(status_code=403, detail="Telegram user is not authorized")
+    update_id = update.get("update_id")
+    if not isinstance(update_id, int):
+        raise HTTPException(status_code=400, detail="Invalid Telegram update")
+    inserted = conn.execute(
+        "INSERT INTO telegram_updates (bot_kind, update_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING update_id",
+        (bot_kind, update_id),
+    ).fetchone()
+    conn.commit()
+    if not inserted:
+        return {"ok": True, "duplicate": True}
+    bot = TelegramBot(token)
     if callback:
         parts = str(callback.get("data", "")).split(":")
         if len(parts) == 3 and parts[0] == "feedback" and parts[1] in {"up", "down"}:
@@ -294,8 +311,14 @@ def telegram_webhook(
         return {"ok": True}
     text = str(message.get("text", "")).strip()
     if text == "/recommend":
-        recommendation_id = create_recommendation(conn, settings, user_id, require_model=True)
-        bot.send_recommendation(conn, recommendation_id, chat_id, settings.public_app_url)
+        try:
+            recommendation_id = get_or_create_pending_recommendation(conn, settings, user_id, require_model=True)
+            if lock_recommendation_for_delivery(conn, user_id, recommendation_id):
+                bot.send_recommendation(conn, recommendation_id, chat_id, settings.public_app_url)
+                mark_recommendation_delivered(conn, user_id, recommendation_id, scheduled=False)
+        except Exception:
+            _forget_telegram_update(conn, bot_kind, update_id)
+            raise
     elif text == "/preferences":
         current = conn.execute(
             "SELECT preference_statement FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",

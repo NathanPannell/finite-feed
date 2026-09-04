@@ -65,6 +65,7 @@ jobs:
           TELEGRAM_DEVELOPER_BOT_TOKEN: ${{ secrets.TELEGRAM_DEVELOPER_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_DEVELOPER_BOT_TOKEN:?TELEGRAM_DEVELOPER_BOT_TOKEN is required}"
@@ -92,7 +93,7 @@ jobs:
                 railway variable delete "$variable" --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
               fi
             done
-            printf '%s' 'openrouter/free' | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}" | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             if railway variable list --json --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID" | jq -e 'has("TELEGRAM_PRODUCTION_BOT_TOKEN")' >/dev/null; then
               railway variable delete TELEGRAM_PRODUCTION_BOT_TOKEN --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             fi

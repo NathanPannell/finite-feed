@@ -27,7 +27,7 @@ def main() -> int:
         raise SystemExit("OPENROUTER_API_KEY is required with --with-model")
     client = OpenRouterClient(
         key,
-        os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
+        os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free"),
         os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
         os.environ.get("PUBLIC_APP_URL", "http://localhost:8000"),
     ) if args.with_model else None
