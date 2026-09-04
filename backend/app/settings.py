@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     openrouter_model: str = Field(default="google/gemma-4-31b-it:free", alias="OPENROUTER_MODEL")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
     embedding_model: str = Field(default="local-feature-hash-v1", alias="EMBEDDING_MODEL")
+    neon_auth_base_url: str = Field(default="", alias="NEON_AUTH_BASE_URL")
     telegram_production_bot_token: str = Field(default="", alias="TELEGRAM_PRODUCTION_BOT_TOKEN")
     telegram_developer_bot_token: str = Field(default="", alias="TELEGRAM_DEVELOPER_BOT_TOKEN")
     telegram_webhook_secret: str = Field(default="", alias="TELEGRAM_WEBHOOK_SECRET")

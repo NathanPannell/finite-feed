@@ -59,6 +59,8 @@ jobs:
         working-directory: frontend
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          NEON_AUTH_BASE_URL: https://auth.example.test/app/auth
+          NEON_AUTH_COOKIE_SECRET: ci-only-cookie-secret-with-32-characters
 
   deploy-production:
     if: vars.BOOTSTRAP_COMPLETE == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -85,6 +87,13 @@ jobs:
           node-version: 22
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
+      - name: Resolve production Neon Auth
+        id: auth
+        run: |
+          auth_config="$(neon neon-auth status --project-id "$NEON_PROJECT_ID" --branch "$NEON_PARENT_BRANCH" --output json --no-color)"
+          auth_base_url="$(jq -r '.base_url // empty' <<< "$auth_config")"
+          [[ -n "$auth_base_url" ]] || { echo 'Neon Auth base URL was not available.' >&2; exit 1; }
+          echo "base_url=$auth_base_url" >> "$GITHUB_OUTPUT"
       - name: Stamp and deploy Railway services
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -95,6 +104,7 @@ jobs:
           TELEGRAM_PRODUCTION_CHAT_ID: ${{ vars.TELEGRAM_PRODUCTION_CHAT_ID }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          NEON_AUTH_BASE_URL: ${{ steps.auth.outputs.base_url }}
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_PRODUCTION_BOT_TOKEN:?TELEGRAM_PRODUCTION_BOT_TOKEN is required}"
@@ -112,6 +122,7 @@ jobs:
             done
             printf '%s' "${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}" | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
           done
+          printf '%s' "$NEON_AUTH_BASE_URL" | railway variable set NEON_AUTH_BASE_URL --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
       - name: Wait for the exact migrated API commit
@@ -121,8 +132,17 @@ jobs:
         id: vercel
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
+          NEON_AUTH_BASE_URL: ${{ steps.auth.outputs.base_url }}
+          NEON_AUTH_COOKIE_SECRET: ${{ secrets.NEON_AUTH_COOKIE_SECRET }}
         run: |
-          deployment_url="$(vercel deploy --prod --yes --cwd frontend --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          : "${NEON_AUTH_COOKIE_SECRET:?NEON_AUTH_COOKIE_SECRET is required}"
+          deployment_url="$(vercel deploy --prod --yes --cwd frontend \
+            --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
+            --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
+            --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           production_url=""
           for _ in $(seq 1 12); do
             production_url="$(vercel project list --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r --arg id "$VERCEL_PROJECT_ID" '.projects[] | select(.id == $id) | .latestProductionUrl // empty')"

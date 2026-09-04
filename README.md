@@ -15,7 +15,7 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 - Scheduled Telegram delivery, one-tap feedback, tracked redirects, and conversational profile updates.
 - A mobile-friendly redirect that records `clicked` before opening YouTube.
 - A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
-- A public match lab for collecting anonymous, reasoned human judgments on profile-video pairs.
+- A Google-authenticated match lab for collecting attributed, reasoned human judgments on profile-video pairs.
 - A production-safe worker that ingests previews but disables preview delivery.
 
 Transcript ingestion, richer semantic embeddings, developer-bot preview routing, and a repeatable human-scored evaluation set remain post-baseline work.
@@ -49,7 +49,7 @@ Run the API, worker, and frontend in separate terminals:
 Push-Location frontend; npm run dev
 ```
 
-Open `http://localhost:3000`. `/health` checks liveness; `/ready` checks migrations and reports the deployed commit.
+Set `NEON_AUTH_BASE_URL` and a 32-character-or-longer `NEON_AUTH_COOKIE_SECRET` in the API and frontend environments. Open `http://localhost:3000`; `/health` checks liveness, and `/ready` checks migrations and reports the deployed commit.
 
 Add runtime credentials as GitHub Actions repository secrets. The deployment workflows forward them into the matching Railway production and preview services; `.env.example` contains names and safe defaults only.
 

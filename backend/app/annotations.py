@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 
 from psycopg import Connection
 
+from backend.app.auth import AuthenticatedAnnotator
+
 
 _MOJIBAKE = {
     "\u00e2\u20ac\u2122": "’",
@@ -28,6 +30,74 @@ def clean_display_text(value: str) -> str:
         if character in {"\n", "\t"} or not unicodedata.category(character).startswith("C")
     )
     return re.sub(r"\s+", " ", text).strip()
+
+
+_URL = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+_EMAIL = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
+_HASHTAG = re.compile(r"(?<!\w)#[\w-]+", re.UNICODE)
+_CHAPTER = re.compile(r"^\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\b")
+_ALWAYS_BOILERPLATE_PREFIXES = (
+    "about ted",
+    "about tedx",
+    "copyright",
+    "credits:",
+    "follow us",
+    "follow ted",
+    "music:",
+    "shop ted",
+    "subscribe",
+    "support ted",
+    "this talk was given at a tedx",
+    "visit ted",
+)
+_LINKED_BOILERPLATE_PREFIXES = (
+    "connect with",
+    "learn more:",
+    "watch more",
+)
+
+
+def clean_video_description(value: str, title: str = "") -> str:
+    """Return meaningful prose while deterministically removing YouTube boilerplate."""
+    text = html.unescape(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    for broken, replacement in _MOJIBAKE.items():
+        text = text.replace(broken, replacement)
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(
+        character
+        for character in text
+        if character == "\n" or not unicodedata.category(character).startswith("C")
+    )
+    normalized_title = clean_display_text(title).casefold()
+    kept: list[str] = []
+    seen: set[str] = set()
+    for raw_line in text.split("\n"):
+        line = re.sub(r"\s+", " ", raw_line).strip(" \t|\u2022")
+        if not line or _CHAPTER.match(line):
+            continue
+        lowered = line.casefold()
+        without_suffix = re.sub(r"\s*\|\s*(?:tedx?|ted talk)\s*$", "", lowered).strip()
+        if normalized_title and without_suffix == normalized_title:
+            continue
+        has_link = bool(_URL.search(line) or _EMAIL.search(line))
+        if lowered.startswith(_ALWAYS_BOILERPLATE_PREFIXES):
+            continue
+        if has_link and lowered.startswith(_LINKED_BOILERPLATE_PREFIXES):
+            continue
+        if lowered.startswith(("speaker:", "translator:", "filmed at", "recorded at")):
+            continue
+        line = _URL.sub("", line)
+        line = _EMAIL.sub("", line)
+        line = _HASHTAG.sub("", line)
+        line = re.sub(r"\s+", " ", line).strip(" \t|,;–—-")
+        if not line:
+            continue
+        key = line.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(line)
+    return "\n\n".join(kept)
 
 
 def next_annotation(conn: Connection, annotator_id: UUID):
@@ -64,20 +134,40 @@ def next_annotation(conn: Connection, annotator_id: UUID):
         "summary": clean_display_text(row["summary"]),
         "topics": [clean_display_text(topic) for topic in row["topics"]],
         "title": clean_display_text(row["title"]),
-        "description": clean_display_text(row["description"]),
+        "description": clean_video_description(row["description"], row["title"]),
     }
 
 
 def record_annotation(
     conn: Connection,
     *,
-    annotator_id: UUID,
+    annotator: AuthenticatedAnnotator,
     profile_id: UUID,
     video_id: UUID,
     label: str,
     rationale: str | None,
-    annotator_kind: str = "anonymous",
 ):
+    conn.execute(
+        """
+        INSERT INTO annotation_annotators (
+            id, kind, issuer, subject, email, name, image_url
+        ) VALUES (%s, 'google', %s, %s, %s, %s, %s)
+        ON CONFLICT (issuer, subject)
+        DO UPDATE SET
+            email = EXCLUDED.email,
+            name = EXCLUDED.name,
+            image_url = EXCLUDED.image_url,
+            last_seen_at = NOW()
+        """,
+        (
+            annotator.annotator_id,
+            annotator.issuer,
+            annotator.subject,
+            annotator.email,
+            annotator.name,
+            annotator.image_url,
+        ),
+    )
     row = conn.execute(
         """
         INSERT INTO annotation_labels (
@@ -95,7 +185,7 @@ def record_annotation(
             updated_at = NOW()
         RETURNING id, profile_id, video_id, annotator_id, annotator_kind, label, rationale, created_at
         """,
-        (uuid4(), annotator_id, annotator_kind, label, rationale, video_id, profile_id),
+        (uuid4(), annotator.annotator_id, "google", label, rationale, video_id, profile_id),
     ).fetchone()
     if row:
         conn.commit()

@@ -123,7 +123,6 @@ class AnnotationCard(BaseModel):
 
 
 class AnnotationCreate(BaseModel):
-    annotator_id: UUID
     profile_id: UUID
     video_id: UUID
     label: Literal["yes", "no", "unsure"]
@@ -139,6 +138,7 @@ class AnnotationCreate(BaseModel):
 
 class AnnotationResult(AnnotationCreate):
     id: UUID
+    annotator_id: UUID
     annotator_kind: Literal["anonymous", "google"]
     created_at: datetime
 
