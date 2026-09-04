@@ -131,16 +131,29 @@ class OwnersConnection:
         self.owners = owners
 
     def execute(self, query, _params=None):
-        assert "FROM app_users" in str(query)
-        return Result(rows=self.owners)
+        sql = str(query)
+        assert "FROM app_users" in sql
+        assert "ORDER BY created_at, id LIMIT 1" in sql
+        return Result(row=self.owners[0] if self.owners else None)
 
 
-def test_omitted_owner_auto_selects_only_a_single_app_user() -> None:
-    assert resolve_admin_owner(OwnersConnection([{"id": USER_ID}]), None) == USER_ID
-    with pytest.raises(HTTPException) as error:
-        resolve_admin_owner(OwnersConnection([{"id": USER_ID}, {"id": uuid4()}]), None)
-    assert error.value.status_code == 409
-    assert "Select an owner" in error.value.detail
+def test_omitted_owner_deterministically_selects_earliest_app_user() -> None:
+    later_user = uuid4()
+    assert resolve_admin_owner(OwnersConnection([{"id": USER_ID}, {"id": later_user}]), None) == USER_ID
+
+
+def test_omitted_owner_preserves_existing_canonical_owner_for_reactivation() -> None:
+    canonical_owner = uuid4()
+    channel_id = uuid4()
+    existing = {"id": channel_id, "user_id": canonical_owner, "is_active": False, "max_video_age_days": 7}
+    conn = ChannelConnection(existing)
+    row, reactivated = upsert_admin_channel(
+        conn, user_id=None, details=channel_details(), max_video_age_days=30, actor="verified-subject",
+    )
+    assert reactivated is True
+    assert row["user_id"] == canonical_owner
+    assert conn.audit_params[3] == canonical_owner
+    assert not any("SELECT id FROM app_users" in query for query in conn.queries)
 
 
 def test_active_duplicate_is_rejected_by_canonical_channel_id() -> None:
@@ -222,6 +235,7 @@ def test_soft_stop_is_audited_without_delete() -> None:
     conn = PatchConnection(channel_id)
     row = patch_channel(channel_id, ChannelPatch(is_active=False), {"sub": "verified-subject"}, conn)
     assert row["is_active"] is False
+    assert "user_id" not in row
     assert conn.audit_params[1] == "stop"
     assert not any("DELETE" in query for query in conn.queries)
 
@@ -373,6 +387,22 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     client = TestClient(app)
     assert client.get("/api/admin/videos?sort=drop_table").status_code == 422
     assert client.get("/api/admin/recommendations?page_size=101").status_code == 422
+    assert client.get("/api/admin/performance?days=6").status_code == 422
+    assert client.get("/api/admin/performance?days=30").status_code == 200
+    performance_sql, performance_params = conn.calls[-1]
+    assert "generate_series" in performance_sql
+    assert "FROM interaction_events" in performance_sql
+    assert "created_at::date AS day" in performance_sql
+    assert "delivered_at::date AS day" in performance_sql
+    assert "cohort_up_count" in performance_sql
+    assert "up_count" in performance_sql and "down_count" in performance_sql
+    assert "up_share" in performance_sql
+    assert performance_params == (30, 30, 30)
+    assert client.get("/api/admin/activity?limit=1").status_code == 200
+    activity_sql, activity_params = conn.calls[-1]
+    assert "event_type, source, result" in activity_sql
+    assert "target_id" not in activity_sql and "affected_record" not in activity_sql
+    assert activity_params == (1,)
     assert client.get("/api/admin/channels?sort=last_ingestion_at_desc").status_code == 200
     assert client.get("/api/admin/videos?sort=published_at&direction=desc&published_from=2026-09-01&ingested_from=2026-09-02").status_code == 200
     video_sql, video_params = conn.calls[-1]
@@ -381,3 +411,7 @@ def test_list_query_parameters_are_allowlisted_and_bounded() -> None:
     assert client.get("/api/admin/recommendations?sort=created_at&direction=desc&delivery=queued").status_code == 200
     recommendation_sql, _ = conn.calls[-1]
     assert "r.delivered_at IS NULL" in recommendation_sql
+    assert "v.published_at AS video_published_at" in recommendation_sql
+    assert "v.duration_seconds AS video_duration_seconds" in recommendation_sql
+    assert "v.view_count AS video_view_count" in recommendation_sql
+    assert recommendation_sql.count("e.event_type <> 'delivery'") == 2
