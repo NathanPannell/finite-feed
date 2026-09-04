@@ -563,7 +563,7 @@ export function AdminDashboard() {
 
             {tab === "channels" && <ChannelResolver url={channelUrl} setUrl={onChannelUrlChange} maxAge={maxAge} setMaxAge={setMaxAge} state={resolveState} error={resolveError} resolved={resolvedChannel} submit={addChannel} busy={mutationId === "add"} />}
 
-            <div className="admin-controls">
+            <div className="admin-controls" key={tab}>
               {tab === "videos" && <label className="admin-control compact-control"><span>Search mode</span><select value={videoSearchMode} onChange={(event) => { setVideoSearchMode(event.target.value as "text" | "vector"); setList(emptyPage); }}>{/* options are intentionally explicit */}<option value="text">Text</option><option value="vector">Meaning</option></select></label>}
               <form className="admin-search" onSubmit={videoSearchMode === "vector" && tab === "videos" ? vectorSearch : applySearch}>
                 <Icon name="search" /><label className="sr-only" htmlFor="admin-search">Search {tab}</label><input id="admin-search" value={tab === "videos" && videoSearchMode === "vector" ? vectorPhrase : searchDraft} onChange={(event) => tab === "videos" && videoSearchMode === "vector" ? setVectorPhrase(event.target.value) : setSearchDraft(event.target.value)} placeholder={tab === "videos" && videoSearchMode === "vector" ? "Describe an idea to retrieve" : `Search ${tab}`} /><button>{tab === "videos" && videoSearchMode === "vector" ? "Search meaning" : "Search"}</button>
@@ -590,7 +590,7 @@ function ChannelResolver({ url, setUrl, maxAge, setMaxAge, state, error, resolve
   const active = booleanValue(resolved, "is_active", "active");
   return <form className="admin-resolver" onSubmit={submit}>
     <div className="admin-resolver-fields"><label><span>YouTube channel URL</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://youtube.com/@handle" required aria-describedby="resolver-help" /></label><label><span>Video window</span><NumberStepper label="New channel video window" value={maxAge} setValue={setMaxAge} min={1} max={365} unit="days" /></label></div>
-    <p id="resolver-help" className={`admin-resolver-help ${state === "error" ? "error" : ""}`} role={state === "error" ? "alert" : undefined}>{state === "loading" ? "Resolving channel…" : error || "Paste an exact @handle or /channel/ URL. Generic name search is intentionally unavailable."}</p>
+    <p id="resolver-help" className={`admin-resolver-help ${state === "error" ? "error" : ""}`} role={state === "error" ? "alert" : undefined}>{state === "loading" ? "Resolving channel…" : error || "Paste a channel, handle, video, or youtu.be URL."}</p>
     {resolved && <div className="admin-resolved">
       {text(resolved, "thumbnail_url", "thumbnail") ? <img src={text(resolved, "thumbnail_url", "thumbnail")} alt="" /> : <span className="admin-thumbnail-fallback">{text(resolved, "name", "title").slice(0, 1)}</span>}
       <div><strong>{text(resolved, "name", "title") || "Resolved channel"}</strong><p>{text(resolved, "description") || "No public description supplied."}</p><small>{compactNumber(value(resolved, "subscriber_count"))} subscribers · {compactNumber(value(resolved, "public_video_count", "video_count"))} public videos</small></div>

@@ -28,11 +28,13 @@ def test_annotation_round_trip() -> None:
             """
             INSERT INTO videos (
                 id, youtube_video_id, channel_name, title, youtube_url, description,
-                view_count, channel_baseline_views
+                thumbnail_url, view_count, channel_baseline_views
             ) VALUES (%s, 'annotation-test-video', 'Test channel', 'A useful test',
                       'https://youtube.com/watch?v=annotation-test-video',
-                      'A practical description.', 1, 1)
-            ON CONFLICT (youtube_video_id) DO UPDATE SET title = EXCLUDED.title
+                      'A practical description.', 'https://i.ytimg.com/vi/annotation-test-video/hqdefault.jpg', 1, 1)
+            ON CONFLICT (youtube_video_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                thumbnail_url = EXCLUDED.thumbnail_url
             """,
             (VIDEO_ID,),
         )
@@ -48,6 +50,7 @@ def test_annotation_round_trip() -> None:
         card = next_annotation(conn, ANNOTATOR_ID)
         assert card
         assert card["video_id"] == VIDEO_ID
+        assert card["thumbnail_url"] == "https://i.ytimg.com/vi/annotation-test-video/hqdefault.jpg"
         result = record_annotation(
             conn,
             annotator_id=ANNOTATOR_ID,
