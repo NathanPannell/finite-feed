@@ -175,11 +175,13 @@ jobs:
             sleep 5
           done
           [[ -n "$production_url" ]] || { echo 'Vercel production URL was not available.' >&2; exit 1; }
-          admin_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$deployment_url/admin")"
-          case "$admin_status" in
-            301|302|303|307|308|401|403) ;;
-            *) echo "Generated deployment /admin did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
-          esac
+          for admin_path in /admin /api/admin/summary; do
+            admin_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$deployment_url$admin_path")"
+            case "$admin_status" in
+              301|302|303|307|308|401|403) ;;
+              *) echo "Generated deployment $admin_path did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
+            esac
+          done
           curl --fail --location --silent --show-error "$production_url/match" >/dev/null
           origins="$(jq -nr --arg deployment "$deployment_url" --arg production "$production_url" '[$deployment, $production] | unique | join(",")')"
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
