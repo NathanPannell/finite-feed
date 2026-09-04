@@ -200,24 +200,26 @@ jobs:
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          curl --fail --silent --show-error "$FRONTEND_URL/match" >/dev/null
+          vercel curl /match --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- --fail --silent --show-error >/dev/null
           cookie_file="$(mktemp)"
           body_file="$(mktemp)"
-          curl --fail --silent --show-error \
-            -c "$cookie_file" -b "$cookie_file" -o "$body_file" \
-            "$FRONTEND_URL/api/match/annotations/next"
+          vercel curl /api/match/annotations/next --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error \
+            -c "$cookie_file" -b "$cookie_file" -o "$body_file"
           grep -Fq 'finite_feed_match_reviewer' "$cookie_file"
           jq -e '.profile_id and .video_id and (.topics | type == "array") and .title and .description' "$body_file" >/dev/null
           profile_id="$(jq -r '.profile_id' "$body_file")"
           video_id="$(jq -r '.video_id' "$body_file")"
-          curl --fail --silent --show-error \
+          vercel curl /api/match/annotations --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error \
             -c "$cookie_file" -b "$cookie_file" \
             -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg profile "$profile_id" --arg video "$video_id" '{profile_id:$profile,video_id:$video,label:"yes",rationale:null}')" \
-            "$FRONTEND_URL/api/match/annotations" >/dev/null
-          curl --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" \
-            "$FRONTEND_URL/api/match/annotations/stats" | jq -e '.completed >= 1' >/dev/null
+            >/dev/null
+          vercel curl /api/match/annotations/stats --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" | jq -e '.completed >= 1' >/dev/null
 
       - name: Post or update preview summary
         uses: actions/github-script@v8
