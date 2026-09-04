@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from backend.app.admin import ChannelUrl, resolve_youtube_channel, router as admin_router, upsert_admin_channel
 from backend.app.db import close_pool, connection, open_pool
 from backend.app.annotations import annotation_stats, next_annotation, record_annotation
+from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION
 from backend.app.recommendations import (
     generate_recommendation as create_recommendation,
     get_or_create_pending_recommendation,
@@ -354,21 +355,23 @@ def pipeline_status(conn: Connection = Depends(connection)):
                      AND semantic_embedding_model = %s
                      AND semantic_embedding_revision = %s
                      AND semantic_embedding_dimensions = %s
-                     AND semantic_embedding_fingerprint IS NOT DISTINCT FROM content_fingerprint
+                     AND semantic_embedding_fingerprint IS NOT DISTINCT FROM (%s || ':' || content_fingerprint)
                ) AS embedded_videos,
                COUNT(*) FILTER (
                    WHERE semantic_embedding IS NULL
                       OR semantic_embedding_model IS DISTINCT FROM %s
                       OR semantic_embedding_revision IS DISTINCT FROM %s
                       OR semantic_embedding_dimensions IS DISTINCT FROM %s
-                      OR semantic_embedding_fingerprint IS DISTINCT FROM content_fingerprint
+                      OR semantic_embedding_fingerprint IS DISTINCT FROM (%s || ':' || content_fingerprint)
                ) AS embedding_backfill_remaining,
                COUNT(*) FILTER (WHERE semantic_embedding_last_error IS NOT NULL) AS embedding_failures
         FROM videos
         """,
         (
             settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
+            DESCRIPTION_PROCESSING_VERSION,
             settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
+            DESCRIPTION_PROCESSING_VERSION,
         ),
     ).fetchone()
     ingestion = conn.execute(

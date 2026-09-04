@@ -1,40 +1,33 @@
-import html
 import re
-import unicodedata
 from uuid import UUID, uuid4
 
 from psycopg import Connection
 
-
-_MOJIBAKE = {
-    "\u00e2\u20ac\u2122": "’",
-    "\u00e2\u20ac\u0153": "“",
-    "\u00e2\u20ac\u009d": "”",
-    "\u00e2\u20ac\u201c": "–",
-    "\u00e2\u20ac\u201d": "—",
-    "\u00c2": "",
-    "\ufffd": "",
-}
+from backend.app.description_processing import (
+    clean_description,
+    is_english_metadata,
+    normalize_display_text,
+)
 
 
 def clean_display_text(value: str) -> str:
-    text = html.unescape(value or "")
-    for broken, replacement in _MOJIBAKE.items():
-        text = text.replace(broken, replacement)
-    text = unicodedata.normalize("NFKC", text)
-    text = "".join(
-        character
-        for character in text
-        if character in {"\n", "\t"} or not unicodedata.category(character).startswith("C")
+    return re.sub(r"\s+", " ", normalize_display_text(value)).strip()
+
+
+def _is_english_video(row: dict) -> bool:
+    return is_english_metadata(
+        row["title"],
+        row["description"],
+        row.get("default_language"),
+        row.get("default_audio_language"),
     )
-    return re.sub(r"\s+", " ", text).strip()
 
 
 def next_annotation(conn: Connection, annotator_id: UUID):
-    row = conn.execute(
+    rows = conn.execute(
         """
         SELECT p.id AS profile_id, v.video_id, p.summary, p.topics, v.title, v.description,
-               source.thumbnail_url
+               v.default_language, v.default_audio_language, source.thumbnail_url
         FROM annotation_profiles p
         CROSS JOIN annotation_videos v
         JOIN videos source ON source.id = v.video_id
@@ -55,18 +48,21 @@ def next_annotation(conn: Connection, annotator_id: UUID):
             score.difficulty_score DESC NULLS LAST,
             coverage.label_count,
             md5(p.id::text || ':' || v.video_id::text || ':' || %s::text)
-        LIMIT 1
         """,
         (annotator_id, annotator_id),
-    ).fetchone()
-    if not row:
+    ).fetchall()
+    row = next(
+        (row for row in rows if _is_english_video(row)),
+        None,
+    )
+    if row is None:
         return None
     return {
         **row,
         "summary": clean_display_text(row["summary"]),
         "topics": [clean_display_text(topic) for topic in row["topics"]],
         "title": clean_display_text(row["title"]),
-        "description": clean_display_text(row["description"]),
+        "description": clean_description(row["description"]),
     }
 
 
@@ -80,6 +76,14 @@ def record_annotation(
     rationale: str | None,
     annotator_kind: str = "anonymous",
 ):
+    video = conn.execute(
+        """SELECT title, description, default_language, default_audio_language
+           FROM annotation_videos WHERE video_id = %s""",
+        (video_id,),
+    ).fetchone()
+    if not video or not _is_english_video(video):
+        conn.rollback()
+        return None
     row = conn.execute(
         """
         INSERT INTO annotation_labels (
@@ -103,17 +107,32 @@ def record_annotation(
         conn.commit()
     else:
         conn.rollback()
+        return None
     return row
 
 
 def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
-    row = conn.execute(
+    videos = conn.execute(
+        """SELECT video_id, title, description, default_language, default_audio_language
+           FROM annotation_videos"""
+    ).fetchall()
+    eligible_ids = [
+        row["video_id"]
+        for row in videos
+        if _is_english_video(row)
+    ]
+    active_profiles = conn.execute(
+        "SELECT COUNT(*) AS count FROM annotation_profiles WHERE active"
+    ).fetchone()["count"]
+    completed = conn.execute(
         """
-        SELECT
-            (SELECT COUNT(*) FROM annotation_labels WHERE annotator_id = %s) AS completed,
-            (SELECT COUNT(*) FROM annotation_profiles WHERE active)
-              * (SELECT COUNT(*) FROM annotation_videos) AS total
+        SELECT COUNT(*) AS count
+        FROM annotation_labels label
+        JOIN annotation_profiles profile ON profile.id = label.profile_id
+        WHERE label.annotator_id = %s AND profile.active
+          AND label.video_id = ANY(%s::uuid[])
         """,
-        (annotator_id,),
-    ).fetchone()
-    return {"completed": row["completed"], "remaining": max(row["total"] - row["completed"], 0)}
+        (annotator_id, eligible_ids),
+    ).fetchone()["count"]
+    total = active_profiles * len(eligible_ids)
+    return {"completed": completed, "remaining": max(total - completed, 0)}

@@ -121,7 +121,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
                 <h2>Video</h2>
                 <p>The candidate the system is considering.</p>
               </header>
-              {card.thumbnail_url && (
+              {card.thumbnail_url ? (
                 <Image
                   className="match-video-thumbnail"
                   src={card.thumbnail_url}
@@ -129,7 +129,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
                   width={640}
                   height={360}
                 />
-              )}
+              ) : <div className="match-video-thumbnail match-video-thumbnail-fallback" aria-label="No video thumbnail">FF</div>}
               <div className="match-video-copy">
                 <h3>{card.title}</h3>
                 <p className={`video-description${descriptionExpanded ? " is-expanded" : ""}`}>{card.description}</p>

@@ -68,7 +68,7 @@ class FakeConnection:
             return Result([{"count": 0}])
         if normalized.startswith("SET LOCAL"):
             return Result([])
-        return Result([self.recent_row] if params[5] is not None else [])
+        return Result([self.recent_row] if params[6] is not None else [])
 
 
 def test_retrieval_uses_query_embedding_and_sql_cosine_distance() -> None:
@@ -88,6 +88,9 @@ def test_retrieval_uses_query_embedding_and_sql_cosine_distance() -> None:
     assert len(nearest_queries) == 2
     assert all(query.count("<=>") == 2 for query in nearest_queries)
     assert all("ORDER BY semantic_embedding <=>" in query for query in nearest_queries)
+    assert all("description-v4" not in query for query in nearest_queries)
+    nearest_params = [params for query, params in conn.queries if "semantic_similarity" in query]
+    assert all(params[4] == "description-v4" for params in nearest_params)
     settings_sql = [query for query, _ in conn.queries if query.startswith("SET LOCAL hnsw")]
     assert settings_sql == [
         "SET LOCAL hnsw.iterative_scan = strict_order",

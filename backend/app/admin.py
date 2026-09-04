@@ -12,6 +12,7 @@ from pydantic import AnyHttpUrl, BaseModel, Field, field_validator, model_valida
 
 from backend.app.admin_auth import require_admin
 from backend.app.db import connection
+from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION
 from backend.app.embeddings import configured_embedder
 from backend.app.settings import Settings, get_settings
 from backend.app.youtube import YouTubeClient
@@ -629,7 +630,7 @@ def vector_search(
           AND semantic_embedding_model = %s
           AND semantic_embedding_revision = %s
           AND semantic_embedding_dimensions = %s
-          AND semantic_embedding_fingerprint IS NOT DISTINCT FROM content_fingerprint
+          AND semantic_embedding_fingerprint IS NOT DISTINCT FROM (%s || ':' || content_fingerprint)
         ORDER BY semantic_embedding <=> %s::vector, id
         LIMIT %s
         """,
@@ -639,6 +640,7 @@ def vector_search(
             encoder.model_name,
             encoder.model_revision,
             encoder.dimensions,
+            DESCRIPTION_PROCESSING_VERSION,
             query_vector,
             payload.limit,
         ),

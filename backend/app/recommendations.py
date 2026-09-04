@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION, clean_description
 from backend.app.embeddings import Embedder, configured_embedder
 from backend.app.openrouter import OpenRouterClient
 from backend.app.settings import Settings
@@ -40,9 +41,14 @@ def semantic_backfill_remaining(conn: Connection, embedder: Embedder) -> int:
            OR semantic_embedding_model IS DISTINCT FROM %s
            OR semantic_embedding_revision IS DISTINCT FROM %s
            OR semantic_embedding_dimensions IS DISTINCT FROM %s
-           OR semantic_embedding_fingerprint IS DISTINCT FROM content_fingerprint
+           OR semantic_embedding_fingerprint IS DISTINCT FROM (%s || ':' || content_fingerprint)
         """,
-        (embedder.model_name, embedder.model_revision, embedder.dimensions),
+        (
+            embedder.model_name,
+            embedder.model_revision,
+            embedder.dimensions,
+            DESCRIPTION_PROCESSING_VERSION,
+        ),
     ).fetchone()
     return row["count"]
 
@@ -66,7 +72,7 @@ def _nearest_rows(
           AND semantic_embedding_model = %s
           AND semantic_embedding_revision = %s
           AND semantic_embedding_dimensions = %s
-          AND semantic_embedding_fingerprint IS NOT DISTINCT FROM content_fingerprint
+          AND semantic_embedding_fingerprint IS NOT DISTINCT FROM (%s || ':' || content_fingerprint)
           AND id NOT IN (SELECT video_id FROM recommendations WHERE user_id = %s)
           AND (%s::timestamptz IS NULL OR published_at >= %s::timestamptz)
           AND (cardinality(%s::uuid[]) = 0 OR id <> ALL(%s::uuid[]))
@@ -78,6 +84,7 @@ def _nearest_rows(
             embedder.model_name,
             embedder.model_revision,
             embedder.dimensions,
+            DESCRIPTION_PROCESSING_VERSION,
             user_id,
             published_since,
             published_since,
@@ -161,7 +168,7 @@ def generate_recommendation(
         "title": item.row["title"],
         "speaker": item.row["speaker"],
         "channel": item.row["channel_name"],
-        "description": item.row["description"][:1200],
+        "description": clean_description(item.row["description"])[:1200],
         "published_at": item.row["published_at"],
         "semantic_relevance": round(item.relevance, 4),
         "relative_momentum": round(item.momentum, 4),

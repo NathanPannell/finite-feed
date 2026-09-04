@@ -31,6 +31,8 @@ class StubYouTubeClient(YouTubeClient):
                 "channelTitle": "Example",
                 "title": "Example video",
                 "description": "Description",
+                "defaultLanguage": "en-GB",
+                "defaultAudioLanguage": "en-US",
                 "publishedAt": "2026-09-01T00:00:00Z",
                 "thumbnails": {},
             },
@@ -55,6 +57,8 @@ def test_upload_page_uses_cursor_and_bounded_page_size() -> None:
     page = client.list_upload_page("UU123", page_token="cursor", max_results=7)
     assert page.next_page_token == "next-token"
     assert [video.youtube_video_id for video in page.videos] == ["video-1"]
+    assert page.videos[0].default_language == "en-GB"
+    assert page.videos[0].default_audio_language == "en-US"
     assert client.calls[0] == (
         "/playlistItems",
         {"part": "contentDetails", "playlistId": "UU123", "maxResults": 7, "pageToken": "cursor"},

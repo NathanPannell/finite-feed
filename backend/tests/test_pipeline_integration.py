@@ -7,6 +7,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from backend.app.embedding_backfill import backfill_embeddings
+from backend.app.description_processing import document_fingerprint
 from backend.app.ingestion import ingest_tracked_channels
 from backend.app.recommendations import (
     _nearest_rows,
@@ -140,7 +141,7 @@ def test_hnsw_iterative_scan_reaches_eligible_rows_after_filtered_decoys() -> No
                 (
                     video_id, f"test-ann-decoy-{index}", f"https://youtu.be/decoy-{index}",
                     fingerprint, query, embedder.model_name, embedder.model_revision,
-                    embedder.dimensions, fingerprint,
+                    embedder.dimensions, document_fingerprint(fingerprint),
                 ),
             )
             conn.execute(
@@ -162,7 +163,8 @@ def test_hnsw_iterative_scan_reaches_eligible_rows_after_filtered_decoys() -> No
             """,
             (
                 eligible_id, eligible_fingerprint, eligible_vector, embedder.model_name,
-                embedder.model_revision, embedder.dimensions, eligible_fingerprint,
+                embedder.model_revision, embedder.dimensions,
+                document_fingerprint(eligible_fingerprint),
             ),
         )
         conn.execute("ANALYZE videos")
@@ -218,7 +220,7 @@ def test_backfill_skips_locks_honors_retry_delay_and_resumes() -> None:
             "semantic_embedding_model": embedder.model_name,
             "semantic_embedding_revision": embedder.model_revision,
             "semantic_embedding_dimensions": embedder.dimensions,
-            "semantic_embedding_fingerprint": "fingerprint-v1",
+            "semantic_embedding_fingerprint": document_fingerprint("fingerprint-v1"),
             "semantic_embedding_attempt_count": 1,
         }
 

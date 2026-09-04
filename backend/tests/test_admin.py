@@ -329,6 +329,7 @@ class VectorConnection:
             return Result(rows=[])
         assert "semantic_embedding <=>" in sql
         assert params[2:5] == ("semantic-test", "revision-test", 384)
+        assert params[5] == "description-v4"
         assert params[-1] == 20
         return Result(rows=self.rows)
 

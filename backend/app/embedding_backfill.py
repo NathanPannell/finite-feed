@@ -8,6 +8,12 @@ from typing import Protocol
 
 from psycopg import Connection
 
+from backend.app.description_processing import (
+    DESCRIPTION_PROCESSING_VERSION,
+    clean_description,
+    document_fingerprint,
+)
+
 EMBEDDING_DIMENSIONS = 384
 
 
@@ -30,7 +36,7 @@ class BackfillSummary:
 def document_text(title: str, description: str) -> str:
     """Build the canonical text passed to document (not query) encoding."""
     normalized_title = re.sub(r"\s+", " ", title).strip()
-    normalized_description = re.sub(r"\s+", " ", description).strip()
+    normalized_description = clean_description(description)
     return f"{normalized_title}\n{normalized_description}"
 
 
@@ -69,7 +75,7 @@ def backfill_embeddings(
                   OR semantic_embedding_model IS DISTINCT FROM %s
                   OR semantic_embedding_revision IS DISTINCT FROM %s
                   OR semantic_embedding_dimensions IS DISTINCT FROM %s
-                  OR semantic_embedding_fingerprint IS DISTINCT FROM content_fingerprint
+                  OR semantic_embedding_fingerprint IS DISTINCT FROM (%s || ':' || content_fingerprint)
               )
               AND (semantic_embedding_last_attempt_at IS NULL
                    OR semantic_embedding_last_attempt_at <= NOW() - (%s * INTERVAL '1 minute'))
@@ -82,6 +88,7 @@ def backfill_embeddings(
                 embedder.model_name,
                 embedder.model_revision,
                 embedder.dimensions,
+                DESCRIPTION_PROCESSING_VERSION,
                 retry_delay_minutes,
                 list(attempted_ids),
                 list(attempted_ids),
@@ -157,7 +164,7 @@ def backfill_embeddings(
                     embedder.model_name,
                     embedder.model_revision,
                     embedder.dimensions,
-                    row["content_fingerprint"],
+                    document_fingerprint(row["content_fingerprint"]),
                     row["id"],
                     row["content_fingerprint"],
                 ),
