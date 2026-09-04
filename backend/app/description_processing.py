@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from langdetect import DetectorFactory, LangDetectException, detect_langs
 
-DESCRIPTION_PROCESSING_VERSION = "description-v2"
+DESCRIPTION_PROCESSING_VERSION = "description-v3"
 
 _MOJIBAKE = {
     "\u00e2\u20ac\u2122": "’",
@@ -47,8 +47,18 @@ _INLINE_PROMOTION = re.compile(
     r"(?:(?<=[.!?])|^)\s*(?:"
     r"this (?:video|episode|talk) is (?:sponsored|presented|paid for) by|"
     r"(?:sponsored|presented|paid for) by|"
-    r"(?:thanks?|thank you) to .+ for sponsor"
+    r"(?:thanks?|thank you) to .+ for sponsor|"
+    r"this talk was given at a tedx event using the ted conference format"
     r")\b",
+    re.IGNORECASE,
+)
+_LEADING_TED_NOTE = re.compile(
+    r"^\s*note from ted:\s*[^.!?]*(?:[.!?]|$)\s*",
+    re.IGNORECASE,
+)
+_LEADING_TEDX_NOTICE = re.compile(
+    r"^\s*tedx events are independently organized by volunteers\.\s*"
+    r"(?:the guidelines we give tedx organizers are described in more detail here\.?\s*)?",
     re.IGNORECASE,
 )
 _BOILERPLATE = re.compile(
@@ -91,6 +101,8 @@ def clean_description(value: str) -> str:
     kept: list[str] = []
     for raw_line in text.split("\n"):
         line = re.sub(r"\s+", " ", raw_line).strip()
+        line = _LEADING_TED_NOTE.sub("", line)
+        line = _LEADING_TEDX_NOTICE.sub("", line)
         if not line:
             continue
         if _TIMESTAMP.match(line) or _CHAPTER_HEADER.match(line) or _BOILERPLATE.match(line):

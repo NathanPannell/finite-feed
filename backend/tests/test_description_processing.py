@@ -37,6 +37,19 @@ def test_same_line_sponsorship_tail_is_removed_without_losing_prose() -> None:
     assert clean_description(description) == "A researcher explains what changed and why it matters."
 
 
+def test_inline_ted_disclaimers_are_removed_without_losing_speaker_prose() -> None:
+    description = (
+        "NOTE FROM TED: This talk only represents the speaker’s personal views and experiences in the military. "
+        "TEDx events are independently organized by volunteers. The guidelines we give TEDx organizers are "
+        "described in more detail here I am Lt Vamshi E (Retd). Based on my experiences, I learned how to make "
+        "the most of your 20s. This talk was given at a TEDx event using the TED conference format but "
+        "independently organized by a local community. Learn more at https://example.test"
+    )
+    assert clean_description(description) == (
+        "I am Lt Vamshi E (Retd). Based on my experiences, I learned how to make the most of your 20s."
+    )
+
+
 def test_trailing_marker_starts_non_content_block() -> None:
     description = "Useful explanation of the result.\n#TED #science\nWatch another talk"
     assert clean_description(description) == "Useful explanation of the result."
@@ -82,5 +95,5 @@ def test_language_detection_is_local_deterministic_and_uses_cleaned_metadata() -
 
 def test_document_fingerprint_versions_derived_text_without_mutating_raw_fingerprint() -> None:
     raw = "sha256:canonical-source-metadata"
-    assert document_fingerprint(raw) == "description-v2:sha256:canonical-source-metadata"
+    assert document_fingerprint(raw) == "description-v3:sha256:canonical-source-metadata"
     assert raw == "sha256:canonical-source-metadata"

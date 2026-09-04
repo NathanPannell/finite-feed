@@ -16,7 +16,7 @@ sentence. Inline links and hashtags are removed from their sentence without
 discarding the surrounding prose. If nothing useful remains, the derived
 description is the empty string.
 
-Semantic fingerprints include `description-v2`, so deployment makes vectors
+Semantic fingerprints include `description-v3`, so deployment makes vectors
 built from older raw descriptions stale and the existing backfill rebuilds
 them. The underlying source fingerprint and metadata remain unchanged.
 
