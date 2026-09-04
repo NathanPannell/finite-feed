@@ -125,7 +125,8 @@ class AnnotationCard(BaseModel):
 
 
 class AnnotationCreate(BaseModel):
-    annotator_id: UUID
+    model_config = ConfigDict(extra="forbid")
+
     profile_id: UUID
     video_id: UUID
     label: Literal["yes", "no", "unsure"]
@@ -139,10 +140,16 @@ class AnnotationCreate(BaseModel):
         return value.strip() or None
 
 
+class AnnotationAssessment(BaseModel):
+    predicted_fit: Literal["yes", "no", "unsure"]
+    close_call: bool
+    decision_summary: str
+
+
 class AnnotationResult(AnnotationCreate):
     id: UUID
-    annotator_kind: Literal["anonymous", "google"]
     created_at: datetime
+    assessment: AnnotationAssessment | None = None
 
 
 class AnnotationStats(BaseModel):

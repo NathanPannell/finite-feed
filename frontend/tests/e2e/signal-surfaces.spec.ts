@@ -3,9 +3,13 @@ import { expect, Page, Route, test } from "@playwright/test";
 const apiOrigin = "http://api.finite-feed.test";
 
 function json(route: Route, payload: unknown) {
+  const appOrigin = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3107"}`;
   return route.fulfill({
     json: payload,
-    headers: { "access-control-allow-origin": "*" },
+    headers: {
+      "access-control-allow-origin": appOrigin,
+      "access-control-allow-credentials": "true",
+    },
   });
 }
 
@@ -128,10 +132,10 @@ test("keeps the public page inside a 320px viewport", async ({ page }) => {
 test("shows caught up after the final reasoned match judgment", async ({ page }) => {
   let annotationBody: Record<string, unknown> | null = null;
   let saved = false;
-  await page.route(apiOrigin + "/**", async (route) => {
+  await page.route("**/api/match/annotations**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === "/api/annotations/next") {
+    if (url.pathname === "/api/match/annotations/next") {
       if (saved) return json(route, null);
       return json(route, {
         profile_id: "profile-1",
@@ -142,10 +146,10 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
         description: "A researcher explains why small decisions compound into structural outcomes.",
       });
     }
-    if (url.pathname === "/api/annotations/stats") {
+    if (url.pathname === "/api/match/annotations/stats") {
       return json(route, saved ? { completed: 4, remaining: 0 } : { completed: 3, remaining: 1 });
     }
-    if (url.pathname === "/api/annotations" && request.method() === "POST") {
+    if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
       annotationBody = request.postDataJSON();
       saved = true;
       return json(route, { saved: true });
@@ -171,4 +175,46 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   await page.setViewportSize({ width: 320, height: 800 });
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
+});
+
+test("shows debug assessment only after save and advances automatically", async ({ page }) => {
+  let saved = false;
+  await page.route("**/api/match/annotations**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/api/match/annotations/next") {
+      return json(route, saved ? null : {
+        profile_id: "profile-debug",
+        video_id: "video-debug",
+        summary: "Wants careful explanations of decision systems.",
+        topics: ["decisions"],
+        title: "How judgment works",
+        description: "A practical account of evidence and decisions.",
+      });
+    }
+    if (url.pathname === "/api/match/annotations/stats") {
+      return json(route, saved ? { completed: 1, remaining: 0 } : { completed: 0, remaining: 1 });
+    }
+    if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
+      saved = true;
+      return json(route, {
+        assessment: {
+          predicted_fit: "yes",
+          close_call: true,
+          decision_summary: "Direct evidence makes this a useful close judgment call.",
+        },
+      });
+    }
+    return json(route, {});
+  });
+
+  await page.goto("/match");
+  await expect(page.getByText("Model assessment · debug")).toHaveCount(0);
+  await page.clock.install();
+  await page.getByRole("button", { name: "Yes" }).click();
+  await page.getByRole("button", { name: "Save judgment" }).click();
+  await expect(page.getByRole("heading", { name: "Predicted fit: yes" })).toBeVisible();
+  await expect(page.getByText(/Close call.*Direct evidence/)).toBeVisible();
+  await page.clock.fastForward(3_500);
+  await expect(page.getByRole("heading", { name: /caught up/ })).toBeVisible({ timeout: 5_000 });
 });

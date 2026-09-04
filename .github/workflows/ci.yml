@@ -122,6 +122,7 @@ jobs:
           TELEGRAM_PRODUCTION_BOT_TOKEN: ${{ secrets.TELEGRAM_PRODUCTION_BOT_TOKEN }}
           TELEGRAM_DEVELOPER_BOT_TOKEN: ${{ secrets.TELEGRAM_DEVELOPER_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          MATCH_LAB_COOKIE_SECRET: ${{ secrets.MATCH_LAB_COOKIE_SECRET }}
           TELEGRAM_PRODUCTION_CHAT_ID: ${{ vars.TELEGRAM_PRODUCTION_CHAT_ID }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
@@ -131,6 +132,7 @@ jobs:
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_PRODUCTION_BOT_TOKEN:?TELEGRAM_PRODUCTION_BOT_TOKEN is required}"
+          : "${MATCH_LAB_COOKIE_SECRET:?MATCH_LAB_COOKIE_SECRET is required}"
           for service in "$RAILWAY_API_SERVICE_ID" "$RAILWAY_WORKER_SERVICE_ID"; do
             printf '%s' "$EXPECTED_COMMIT_SHA" | railway variable set APP_COMMIT_SHA --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
             printf '%s' "$YOUTUBE_API_KEY" | railway variable set YOUTUBE_API_KEY --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
@@ -154,6 +156,9 @@ jobs:
           printf '%s' "$VERCEL_OIDC_TEAM_SLUG" | railway variable set VERCEL_OIDC_TEAM_SLUG --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           printf '%s' "$VERCEL_OIDC_PROJECT_NAME" | railway variable set VERCEL_OIDC_PROJECT_NAME --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           printf '%s' 'production' | railway variable set VERCEL_OIDC_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' "$MATCH_LAB_COOKIE_SECRET" | railway variable set MATCH_LAB_COOKIE_SECRET --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' 'false' | railway variable set MATCH_LAB_DEBUG_ASSESSMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' 'production' | railway variable set MATCH_LAB_TARGET_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
       - name: Wait for the exact migrated API commit

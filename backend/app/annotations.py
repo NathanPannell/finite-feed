@@ -17,6 +17,10 @@ _MOJIBAKE = {
 }
 
 
+class AnnotationConflict(RuntimeError):
+    pass
+
+
 def clean_display_text(value: str) -> str:
     text = html.unescape(value or "")
     for broken, replacement in _MOJIBAKE.items():
@@ -33,32 +37,44 @@ def clean_display_text(value: str) -> str:
 def next_annotation(conn: Connection, annotator_id: UUID):
     row = conn.execute(
         """
-        SELECT p.id AS profile_id, v.video_id, p.summary, p.topics, v.title, v.description
-        FROM annotation_profiles p
-        CROSS JOIN annotation_videos v
-        LEFT JOIN annotation_pair_scores score
-          ON score.profile_id = p.id AND score.video_id = v.video_id
+        SELECT score.profile_id, score.video_id, p.summary, p.topics, v.title, v.description
+        FROM annotation_pair_scores score
+        JOIN annotation_profiles p ON p.id = score.profile_id AND p.active
+        JOIN annotation_videos v ON v.video_id = score.video_id
         LEFT JOIN annotation_labels mine
-          ON mine.profile_id = p.id
-         AND mine.video_id = v.video_id
+          ON mine.profile_id = score.profile_id
+         AND mine.video_id = score.video_id
          AND mine.annotator_id = %s
         LEFT JOIN LATERAL (
             SELECT COUNT(*) AS label_count
-            FROM annotation_labels all_labels
-            WHERE all_labels.profile_id = p.id AND all_labels.video_id = v.video_id
+            FROM annotation_labels labels
+            WHERE labels.profile_id = score.profile_id AND labels.video_id = score.video_id
         ) coverage ON TRUE
-        WHERE p.active AND mine.id IS NULL
+        WHERE score.curated
+          AND score.queue_status = 'open'
+          AND mine.id IS NULL
+          AND coverage.label_count < 3
         ORDER BY
-            (score.difficulty_score IS NULL),
-            score.difficulty_score DESC NULLS LAST,
             coverage.label_count,
-            md5(p.id::text || ':' || v.video_id::text || ':' || %s::text)
+            score.last_served_at NULLS FIRST,
+            md5(score.profile_id::text || ':' || score.video_id::text)
+        FOR UPDATE OF score SKIP LOCKED
         LIMIT 1
         """,
-        (annotator_id, annotator_id),
+        (annotator_id,),
     ).fetchone()
     if not row:
+        conn.rollback()
         return None
+    conn.execute(
+        """
+        UPDATE annotation_pair_scores
+        SET last_served_at = clock_timestamp()
+        WHERE profile_id = %s AND video_id = %s
+        """,
+        (row["profile_id"], row["video_id"]),
+    )
+    conn.commit()
     return {
         **row,
         "summary": clean_display_text(row["summary"]),
@@ -78,30 +94,104 @@ def record_annotation(
     rationale: str | None,
     annotator_kind: str = "anonymous",
 ):
-    row = conn.execute(
+    pair = conn.execute(
+        """
+        SELECT predicted_fit, close_call, decision_summary, queue_status
+        FROM annotation_pair_scores
+        WHERE profile_id = %s AND video_id = %s AND curated
+        FOR UPDATE
+        """,
+        (profile_id, video_id),
+    ).fetchone()
+    if not pair:
+        conn.rollback()
+        return None
+
+    existing = conn.execute(
+        """
+        SELECT id, profile_id, video_id, label, rationale, created_at
+        FROM annotation_labels
+        WHERE profile_id = %s AND video_id = %s AND annotator_id = %s
+        """,
+        (profile_id, video_id, annotator_id),
+    ).fetchone()
+    if existing:
+        conn.rollback()
+        if existing["label"] == label and existing["rationale"] == rationale:
+            return {
+                **existing,
+                "assessment": {
+                    "predicted_fit": pair["predicted_fit"],
+                    "close_call": pair["close_call"],
+                    "decision_summary": clean_display_text(pair["decision_summary"]),
+                },
+            }
+        raise AnnotationConflict("This reviewer already judged this pair")
+    if pair["queue_status"] != "open":
+        conn.rollback()
+        raise AnnotationConflict("This pair is already closed")
+
+    current_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM annotation_labels WHERE profile_id = %s AND video_id = %s",
+        (profile_id, video_id),
+    ).fetchone()["count"]
+    if current_count >= 3:
+        conn.execute(
+            """
+            UPDATE annotation_pair_scores SET queue_status = 'escalated', consensus_label = NULL
+            WHERE profile_id = %s AND video_id = %s
+            """,
+            (profile_id, video_id),
+        )
+        conn.commit()
+        raise AnnotationConflict("This pair has reached its review limit")
+
+    result = conn.execute(
         """
         INSERT INTO annotation_labels (
             id, profile_id, video_id, annotator_id, annotator_kind, label, rationale
-        )
-        SELECT %s, p.id, v.video_id, %s, %s, %s, %s
-        FROM annotation_profiles p
-        JOIN annotation_videos v ON v.video_id = %s
-        WHERE p.id = %s AND p.active
-        ON CONFLICT (profile_id, video_id, annotator_id)
-        DO UPDATE SET
-            label = EXCLUDED.label,
-            rationale = EXCLUDED.rationale,
-            annotator_kind = EXCLUDED.annotator_kind,
-            updated_at = NOW()
-        RETURNING id, profile_id, video_id, annotator_id, annotator_kind, label, rationale, created_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, profile_id, video_id, label, rationale, created_at
         """,
-        (uuid4(), annotator_id, annotator_kind, label, rationale, video_id, profile_id),
+        (uuid4(), profile_id, video_id, annotator_id, annotator_kind, label, rationale),
     ).fetchone()
-    if row:
-        conn.commit()
-    else:
-        conn.rollback()
-    return row
+    counts = conn.execute(
+        """
+        SELECT label, COUNT(*) AS count
+        FROM annotation_labels
+        WHERE profile_id = %s AND video_id = %s
+        GROUP BY label
+        ORDER BY count DESC, label
+        """,
+        (profile_id, video_id),
+    ).fetchall()
+    consensus = next((item["label"] for item in counts if item["count"] >= 2), None)
+    total = sum(item["count"] for item in counts)
+    if consensus:
+        conn.execute(
+            """
+            UPDATE annotation_pair_scores SET queue_status = 'consensus', consensus_label = %s
+            WHERE profile_id = %s AND video_id = %s
+            """,
+            (consensus, profile_id, video_id),
+        )
+    elif total >= 3:
+        conn.execute(
+            """
+            UPDATE annotation_pair_scores SET queue_status = 'escalated', consensus_label = NULL
+            WHERE profile_id = %s AND video_id = %s
+            """,
+            (profile_id, video_id),
+        )
+    conn.commit()
+    return {
+        **result,
+        "assessment": {
+            "predicted_fit": pair["predicted_fit"],
+            "close_call": pair["close_call"],
+            "decision_summary": clean_display_text(pair["decision_summary"]),
+        },
+    }
 
 
 def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
@@ -109,9 +199,19 @@ def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
         """
         SELECT
             (SELECT COUNT(*) FROM annotation_labels WHERE annotator_id = %s) AS completed,
-            (SELECT COUNT(*) FROM annotation_profiles WHERE active)
-              * (SELECT COUNT(*) FROM annotation_videos) AS total
+            (
+                SELECT COUNT(*)
+                FROM annotation_pair_scores score
+                WHERE score.curated
+                  AND score.queue_status = 'open'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM annotation_labels mine
+                      WHERE mine.profile_id = score.profile_id
+                        AND mine.video_id = score.video_id
+                        AND mine.annotator_id = %s
+                  )
+            ) AS remaining
         """,
-        (annotator_id,),
+        (annotator_id, annotator_id),
     ).fetchone()
-    return {"completed": row["completed"], "remaining": max(row["total"] - row["completed"], 0)}
+    return {"completed": row["completed"], "remaining": row["remaining"]}

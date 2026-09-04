@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from psycopg import Connection
@@ -10,7 +10,8 @@ from psycopg.types.json import Jsonb
 
 from backend.app.admin import router as admin_router
 from backend.app.db import close_pool, connection, open_pool
-from backend.app.annotations import annotation_stats, next_annotation, record_annotation
+from backend.app.annotations import AnnotationConflict, annotation_stats, next_annotation, record_annotation
+from backend.app.match_identity import reviewer_identity
 from backend.app.recommendations import (
     generate_recommendation as create_recommendation,
     get_or_create_pending_recommendation,
@@ -38,6 +39,7 @@ app.include_router(admin_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type"],
 )
@@ -60,27 +62,40 @@ def ready(conn: Connection = Depends(connection)) -> dict[str, str | int | list[
 
 
 @app.get("/api/annotations/next", response_model=AnnotationCard | None)
-def get_next_annotation(annotator_id: UUID, conn: Connection = Depends(connection)):
-    return next_annotation(conn, annotator_id)
+def get_next_annotation(request: Request, response: Response, conn: Connection = Depends(connection)):
+    reviewer_id = reviewer_identity(request, response, settings)
+    return next_annotation(conn, reviewer_id)
 
 
 @app.get("/api/annotations/stats", response_model=AnnotationStats)
-def get_annotation_stats(annotator_id: UUID, conn: Connection = Depends(connection)):
-    return annotation_stats(conn, annotator_id)
+def get_annotation_stats(request: Request, response: Response, conn: Connection = Depends(connection)):
+    reviewer_id = reviewer_identity(request, response, settings)
+    return annotation_stats(conn, reviewer_id)
 
 
 @app.post("/api/annotations", response_model=AnnotationResult, status_code=status.HTTP_201_CREATED)
-def create_annotation(payload: AnnotationCreate, conn: Connection = Depends(connection)):
-    row = record_annotation(
-        conn,
-        annotator_id=payload.annotator_id,
-        profile_id=payload.profile_id,
-        video_id=payload.video_id,
-        label=payload.label,
-        rationale=payload.rationale,
-    )
+def create_annotation(
+    payload: AnnotationCreate,
+    request: Request,
+    response: Response,
+    conn: Connection = Depends(connection),
+):
+    reviewer_id = reviewer_identity(request, response, settings)
+    try:
+        row = record_annotation(
+            conn,
+            annotator_id=reviewer_id,
+            profile_id=payload.profile_id,
+            video_id=payload.video_id,
+            label=payload.label,
+            rationale=payload.rationale,
+        )
+    except AnnotationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Annotation pair not found")
+    if not settings.match_lab_debug_assessment:
+        row["assessment"] = None
     return row
 
 

@@ -58,6 +58,9 @@ export default defineRailway(() => {
       TELEGRAM_PRODUCTION_CHAT_ID: preserve(),
       DEVELOPER_TELEGRAM_USER_IDS: preserve(),
       PUBLIC_APP_URL: preserve(),
+      MATCH_LAB_COOKIE_SECRET: preserve(),
+      MATCH_LAB_DEBUG_ASSESSMENT: preserve(),
+      MATCH_LAB_TARGET_ENVIRONMENT: preserve(),
     },
     replicas: { "us-west2": 1 },
   });

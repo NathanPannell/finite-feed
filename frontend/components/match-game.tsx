@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SignalShell } from "@/components/signal-shell";
 
 type MatchCard = {
@@ -14,11 +14,12 @@ type MatchCard = {
 
 type Stats = { completed: number; remaining: number };
 type Label = "yes" | "no" | "unsure";
+type Assessment = { predicted_fit: Label; close_call: boolean; decision_summary: string };
+type AnnotationResult = { assessment: Assessment | null };
 
-const storageKey = "finite-feed-annotator-id";
+const matchApiBase = "/api/match/annotations";
 
-export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
-  const [annotatorId, setAnnotatorId] = useState("");
+export function MatchGame() {
   const [card, setCard] = useState<MatchCard | null>(null);
   const [stats, setStats] = useState<Stats>({ completed: 0, remaining: 0 });
   const [selected, setSelected] = useState<Label | null>(null);
@@ -26,17 +27,24 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [assessment, setAssessment] = useState<Assessment | null>(null);
+  const advanceTimer = useRef<number | null>(null);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async () => {
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const query = new URLSearchParams({ annotator_id: id });
-      const [cardResponse, statsResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/api/annotations/next?${query}`, { cache: "no-store" }),
-        fetch(`${apiBaseUrl}/api/annotations/stats?${query}`, { cache: "no-store" }),
-      ]);
+      // Fetch sequentially on first visit so the server-issued identity cookie from
+      // the card request is present before stats are calculated.
+      const cardResponse = await fetch(`${matchApiBase}/next`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const statsResponse = await fetch(`${matchApiBase}/stats`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       if (!cardResponse.ok || !statsResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
       const nextCard: MatchCard | null = await cardResponse.json();
       setCard(nextCard);
@@ -49,33 +57,27 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
     } finally {
       setBusy(false);
     }
-  }, [apiBaseUrl]);
+  }, []);
 
   useEffect(() => {
-    if (!apiBaseUrl) return;
-    const task = window.setTimeout(() => {
-      let id = window.localStorage.getItem(storageKey);
-      if (!id) {
-        id = window.crypto.randomUUID();
-        window.localStorage.setItem(storageKey, id);
-      }
-      setAnnotatorId(id);
-      void load(id);
-    }, 0);
-    return () => window.clearTimeout(task);
-  }, [apiBaseUrl, load]);
+    const task = window.setTimeout(() => void load(), 0);
+    return () => {
+      window.clearTimeout(task);
+      if (advanceTimer.current !== null) window.clearTimeout(advanceTimer.current);
+    };
+  }, [load]);
 
   async function submit() {
-    if (!card || !annotatorId || !selected || busy) return;
+    if (!card || !selected || busy) return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/annotations`, {
+      const response = await fetch(matchApiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({
-          annotator_id: annotatorId,
           profile_id: card.profile_id,
           video_id: card.video_id,
           label: selected,
@@ -83,20 +85,35 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
         }),
       });
       if (!response.ok) throw new Error("Your answer was not saved. Try again.");
+      let result: AnnotationResult = { assessment: null };
+      try {
+        result = await response.json() as AnnotationResult;
+      } catch {
+        // The judgment is already durable; assessment display is best effort.
+      }
       setRationale("");
       setCard(null);
-      const nextCard = await load(annotatorId);
-      if (nextCard !== undefined) {
-        setNotice(nextCard ? "Answer saved. The next pair is ready." : "Answer saved. Every available pair has a judgment.");
+      if (result.assessment) {
+        setAssessment(result.assessment);
+        setBusy(false);
+        setNotice("Answer saved.");
+        advanceTimer.current = window.setTimeout(async () => {
+          setAssessment(null);
+          const nextCard = await load();
+          if (nextCard !== undefined) {
+            setNotice(nextCard ? "Answer saved. The next pair is ready." : "Answer saved. Every available pair has a judgment.");
+          }
+        }, 3500);
+      } else {
+        const nextCard = await load();
+        if (nextCard !== undefined) {
+          setNotice(nextCard ? "Answer saved. The next pair is ready." : "Answer saved. Every available pair has a judgment.");
+        }
       }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Your answer was not saved. Try again.");
       setBusy(false);
     }
-  }
-
-  if (!apiBaseUrl) {
-    return <main className="match-state">This page is waiting for its API connection.</main>;
   }
 
   return (
@@ -116,7 +133,13 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
         {notice && <p className="signal-notice match-notice" role="status">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}
 
-        {card ? (
+        {assessment ? (
+          <section className="match-assessment" role="status" aria-live="polite">
+            <span>Model assessment · debug</span>
+            <h2>Predicted fit: {assessment.predicted_fit}</h2>
+            <p>{assessment.close_call ? "Close call" : "Clear call"} · {assessment.decision_summary}</p>
+          </section>
+        ) : card ? (
           <section className="match-workspace" aria-busy={busy} aria-labelledby="match-question">
             <div className="match-comparison">
               <article className="match-profile">
@@ -165,7 +188,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
           <section className="signal-empty match-empty">
             <h2>The lab lost its signal.</h2>
             <p>Retry the same anonymous session; no judgment has been lost.</p>
-            <button className="signal-action" onClick={() => void load(annotatorId)}>Try again</button>
+            <button className="signal-action" onClick={() => void load()}>Try again</button>
           </section>
         ) : (
           <section className="signal-empty match-empty">

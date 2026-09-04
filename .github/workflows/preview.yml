@@ -71,6 +71,8 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_DEVELOPER_BOT_TOKEN: ${{ secrets.TELEGRAM_DEVELOPER_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          MATCH_LAB_COOKIE_SECRET: ${{ secrets.MATCH_LAB_COOKIE_SECRET }}
+          MATCH_LAB_DEBUG_ASSESSMENT: ${{ vars.MATCH_LAB_PREVIEW_DEBUG_ASSESSMENT }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
           EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
@@ -79,6 +81,10 @@ jobs:
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_DEVELOPER_BOT_TOKEN:?TELEGRAM_DEVELOPER_BOT_TOKEN is required}"
+          if [[ -z "$MATCH_LAB_COOKIE_SECRET" ]]; then
+            MATCH_LAB_COOKIE_SECRET="$(openssl rand -hex 32)"
+            echo "Using an ephemeral Match Lab signing secret for this preview deployment."
+          fi
           railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_BASE_ENVIRONMENT_ID"
           if railway environment list --json | jq -e --arg name "$PREVIEW_ENVIRONMENT" '.. | objects | select(.name? == $name)' >/dev/null; then
             echo "Railway environment already exists; updating it in place."
@@ -118,6 +124,9 @@ jobs:
           printf '%s' "$VERCEL_OIDC_TEAM_SLUG" | railway variable set VERCEL_OIDC_TEAM_SLUG --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
           printf '%s' "$VERCEL_OIDC_PROJECT_NAME" | railway variable set VERCEL_OIDC_PROJECT_NAME --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
           printf '%s' 'preview' | railway variable set VERCEL_OIDC_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          printf '%s' "$MATCH_LAB_COOKIE_SECRET" | railway variable set MATCH_LAB_COOKIE_SECRET --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          printf '%s' "${MATCH_LAB_DEBUG_ASSESSMENT:-false}" | railway variable set MATCH_LAB_DEBUG_ASSESSMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          printf '%s' "$PREVIEW_ENVIRONMENT" | railway variable set MATCH_LAB_TARGET_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
 
       - name: Deploy Railway preview services
         timeout-minutes: 15
@@ -182,21 +191,33 @@ jobs:
           EXPECTED_FRONTEND_ORIGIN: ${{ steps.vercel.outputs.preview_url }}
         run: bash scripts/wait-for-railway-api.sh
 
+      - name: Seed isolated Match Lab preview fixture
+        env:
+          PREVIEW_DATABASE_URL_UNPOOLED: ${{ steps.neon.outputs.db_url }}
+        run: psql "$PREVIEW_DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -f database/preview/seed_match_lab_smoke.sql
+
       - name: Smoke-test browser match data path
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
         run: |
           curl --fail --silent --show-error "$FRONTEND_URL/match" >/dev/null
-          headers_file="$(mktemp)"
+          cookie_file="$(mktemp)"
           body_file="$(mktemp)"
-          annotator_id="50000000-0000-4000-8000-000000000008"
           curl --fail --silent --show-error \
-            -D "$headers_file" -o "$body_file" \
-            -H "Origin: $FRONTEND_URL" \
-            "$API_URL/api/annotations/next?annotator_id=$annotator_id"
-          grep -Fqi "access-control-allow-origin: $FRONTEND_URL" "$headers_file"
+            -c "$cookie_file" -b "$cookie_file" -o "$body_file" \
+            "$FRONTEND_URL/api/match/annotations/next"
+          grep -Fq 'finite_feed_match_reviewer' "$cookie_file"
           jq -e '.profile_id and .video_id and (.topics | type == "array") and .title and .description' "$body_file" >/dev/null
+          profile_id="$(jq -r '.profile_id' "$body_file")"
+          video_id="$(jq -r '.video_id' "$body_file")"
+          curl --fail --silent --show-error \
+            -c "$cookie_file" -b "$cookie_file" \
+            -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg profile "$profile_id" --arg video "$video_id" '{profile_id:$profile,video_id:$video,label:"yes",rationale:null}')" \
+            "$FRONTEND_URL/api/match/annotations" >/dev/null
+          curl --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" \
+            "$FRONTEND_URL/api/match/annotations/stats" | jq -e '.completed >= 1' >/dev/null
 
       - name: Post or update preview summary
         uses: actions/github-script@v8
