@@ -115,8 +115,10 @@ def test_annotation_round_trip() -> None:
         )
         conn.execute(
             """
-            INSERT INTO annotation_videos (video_id, title, description, channel_name, source_updated_at)
-            VALUES (%s, 'A useful test', 'A practical description.', 'Test channel', NOW())
+            INSERT INTO annotation_videos (
+                video_id, title, description, channel_name, source_updated_at, default_language
+            )
+            VALUES (%s, 'A useful test', 'A practical description.', 'Test channel', NOW(), 'en')
             """,
             (VIDEO_ID,),
         )
