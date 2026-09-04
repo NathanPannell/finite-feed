@@ -66,6 +66,9 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
+          EMBEDDING_MODEL_REVISION: ${{ vars.EMBEDDING_MODEL_REVISION }}
+          EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE }}
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_DEVELOPER_BOT_TOKEN:?TELEGRAM_DEVELOPER_BOT_TOKEN is required}"
@@ -94,6 +97,12 @@ jobs:
               fi
             done
             printf '%s' "${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}" | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-xs}" | railway variable set EMBEDDING_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${EMBEDDING_MODEL_REVISION:-d8c86521100d3556476a063fc2342036d45c106f}" | railway variable set EMBEDDING_MODEL_REVISION --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' "${EMBEDDING_BATCH_SIZE:-32}" | railway variable set EMBEDDING_BATCH_SIZE --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' '384' | railway variable set EMBEDDING_DIMENSIONS --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' 'true' | railway variable set EMBEDDING_OFFLINE --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+            printf '%s' '/opt/huggingface' | railway variable set EMBEDDING_CACHE_DIR --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             if railway variable list --json --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID" | jq -e 'has("TELEGRAM_PRODUCTION_BOT_TOKEN")' >/dev/null; then
               railway variable delete TELEGRAM_PRODUCTION_BOT_TOKEN --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
             fi

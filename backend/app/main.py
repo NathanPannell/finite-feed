@@ -223,7 +223,29 @@ def get_metrics(conn: Connection = Depends(connection)):
 @app.get("/api/pipeline/status", response_model=PipelineStatus)
 def pipeline_status(conn: Connection = Depends(connection)):
     videos = conn.execute(
-        "SELECT COUNT(*) AS videos, COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS embedded_videos FROM videos"
+        """
+        SELECT COUNT(*) AS videos,
+               COUNT(*) FILTER (
+                   WHERE semantic_embedding IS NOT NULL
+                     AND semantic_embedding_model = %s
+                     AND semantic_embedding_revision = %s
+                     AND semantic_embedding_dimensions = %s
+                     AND semantic_embedding_fingerprint IS NOT DISTINCT FROM content_fingerprint
+               ) AS embedded_videos,
+               COUNT(*) FILTER (
+                   WHERE semantic_embedding IS NULL
+                      OR semantic_embedding_model IS DISTINCT FROM %s
+                      OR semantic_embedding_revision IS DISTINCT FROM %s
+                      OR semantic_embedding_dimensions IS DISTINCT FROM %s
+                      OR semantic_embedding_fingerprint IS DISTINCT FROM content_fingerprint
+               ) AS embedding_backfill_remaining,
+               COUNT(*) FILTER (WHERE semantic_embedding_last_error IS NOT NULL) AS embedding_failures
+        FROM videos
+        """,
+        (
+            settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
+            settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
+        ),
     ).fetchone()
     ingestion = conn.execute(
         "SELECT status, completed_at, videos_seen FROM ingestion_runs ORDER BY started_at DESC LIMIT 1"

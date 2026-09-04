@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from backend.app.embedding_backfill import backfill_embeddings
+from backend.app.embeddings import configured_embedder
 from backend.app.ingestion import ingest_tracked_channels
 from backend.app.recommendations import (
     get_or_create_pending_recommendation,
@@ -35,15 +37,22 @@ def ingestion_is_due(conn, interval_hours: int) -> bool:
 
 def run_ingestion_pass(pool: ConnectionPool) -> None:
     settings = get_settings()
-    if not settings.youtube_api_key:
-        logger.info("Ingestion paused until YOUTUBE_API_KEY is configured")
-        return
+    embedder = configured_embedder(settings)
     with pool.connection() as conn:
+        backfill = backfill_embeddings(conn, embedder, batch_size=settings.embedding_batch_size)
+        if backfill.attempted:
+            logger.info(
+                "Semantic backfill: %d batch(es), %d embedded, %d failed",
+                backfill.batches, backfill.embedded, backfill.failed,
+            )
+        if not settings.youtube_api_key:
+            logger.info("Ingestion paused until YOUTUBE_API_KEY is configured")
+            return
         if not ingestion_is_due(conn, settings.ingestion_interval_hours):
             return
         youtube = YouTubeClient(settings.youtube_api_key)
         try:
-            summary = ingest_tracked_channels(conn, youtube, settings.youtube_page_limit)
+            summary = ingest_tracked_channels(conn, youtube, settings.youtube_page_limit, embedder)
             logger.info(
                 "Ingestion completed: %d channel(s), %d video(s), %d changed",
                 summary.channels_scanned, summary.videos_seen, summary.videos_changed,
