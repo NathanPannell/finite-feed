@@ -392,7 +392,9 @@ h1, h2, h3 {
 .match-video-thumbnail { aspect-ratio: 16 / 9; background: var(--quiet-rule); display: block; height: auto; object-fit: cover; width: 100%; }
 .match-video-copy { margin-top: 24px; }
 .match-video h3 { margin: 0 0 14px; max-width: 17ch; text-wrap: balance; }
-.video-description { color: var(--graphite); font-size: 13px; line-height: 1.55; margin: 0; max-width: 62ch; }
+.video-description { -webkit-box-orient: vertical; -webkit-line-clamp: 6; color: var(--graphite); display: -webkit-box; font-size: 13px; line-height: 1.55; margin: 0; max-width: 62ch; overflow: hidden; }
+.video-description.is-expanded { -webkit-line-clamp: unset; display: block; }
+.video-description-toggle { background: transparent; border: 0; color: var(--signal-blue); font-size: 11px; font-weight: 800; margin-top: 10px; padding: 0; text-decoration: underline; text-underline-offset: 3px; text-transform: uppercase; }
 .match-response { background: var(--carbon); color: var(--paper-high); padding: 30px clamp(18px, 2vw, 32px); }
 .match-action-help { color: #c9c8c1; font-size: 12px; line-height: 1.5; margin: 0; }
 .match-response fieldset { margin: 24px 0 0; }

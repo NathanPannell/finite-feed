@@ -140,7 +140,7 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
         summary: "Wants practical systems thinking without motivational filler.",
         topics: ["systems", "judgment"],
         title: "The hidden logic of everyday choices",
-        description: "A researcher explains why small decisions compound into structural outcomes.",
+        description: "A researcher explains why small decisions compound into structural outcomes and how viewers can apply the framework without losing the important context. ".repeat(4),
         thumbnail_url: "https://i.ytimg.com/vi/video-1/hqdefault.jpg",
       });
     }
@@ -169,6 +169,10 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   await expect(page).toHaveURL(/\/match\/review$/);
   await expect(page.locator(".match-progress")).toHaveCount(0);
   await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
+  await expect(page.getByRole("button", { name: "Show full description" })).toBeVisible();
+  await page.getByRole("button", { name: "Show full description" }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toBeVisible();
+  await page.getByRole("button", { name: "Show less" }).click();
   const desktopGeometry = await page.locator(".signal-masthead, .signal-masthead-title, .signal-masthead nav").evaluateAll(([header, title, nav]) => {
     const headerBox = header.getBoundingClientRect();
     const titleBox = title.getBoundingClientRect();

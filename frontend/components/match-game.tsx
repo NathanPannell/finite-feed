@@ -23,6 +23,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [card, setCard] = useState<MatchCard | null>(null);
   const [selected, setSelected] = useState<Label | null>(null);
   const [rationale, setRationale] = useState("");
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -38,6 +39,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
       const nextCard: MatchCard | null = await cardResponse.json();
       setCard(nextCard);
       setSelected(null);
+      setDescriptionExpanded(false);
       return nextCard;
     } catch (error) {
       setError(error instanceof Error ? error.message : "The next pair could not be loaded. Try again.");
@@ -130,7 +132,17 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
               )}
               <div className="match-video-copy">
                 <h3>{card.title}</h3>
-                <p className="video-description">{card.description}</p>
+                <p className={`video-description${descriptionExpanded ? " is-expanded" : ""}`}>{card.description}</p>
+                {card.description.length > 420 && (
+                  <button
+                    className="video-description-toggle"
+                    type="button"
+                    aria-expanded={descriptionExpanded}
+                    onClick={() => setDescriptionExpanded((expanded) => !expanded)}
+                  >
+                    {descriptionExpanded ? "Show less" : "Show full description"}
+                  </button>
+                )}
               </div>
             </article>
 
