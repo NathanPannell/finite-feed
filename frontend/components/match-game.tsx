@@ -102,42 +102,47 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}
 
         {card ? (
-          <section className="match-workspace" aria-busy={busy} aria-labelledby="match-question">
-            <div className="match-comparison">
-              <article className="match-profile">
-                <h2 className="sr-only">Viewer profile</h2>
-                <ul className="topic-list" aria-label="Viewer topics">
-                  {card.topics.map((topic) => <li key={topic}>{topic}</li>)}
-                </ul>
-                <p className="profile-summary">{card.summary}</p>
-                <p className="match-content-label">Viewer</p>
-              </article>
+          <section className="match-workspace" aria-busy={busy} aria-label="Review a viewer and candidate video">
+            <article className="match-profile">
+              <header className="match-column-heading">
+                <h2>Viewer</h2>
+                <p>What this person wants to watch.</p>
+              </header>
+              <ul className="topic-list" aria-label="Viewer topics">
+                {card.topics.map((topic) => <li key={topic}>{topic}</li>)}
+              </ul>
+              <p className="profile-summary">{card.summary}</p>
+            </article>
 
-              <article className="match-video">
-                <h2 className="sr-only">Candidate video</h2>
-                {card.thumbnail_url && (
-                  <Image
-                    className="match-video-thumbnail"
-                    src={card.thumbnail_url}
-                    alt=""
-                    width={640}
-                    height={360}
-                  />
-                )}
-                <div className="match-video-copy">
-                  <h3 id="match-question">{card.title}</h3>
-                  <p className="video-description">{card.description}</p>
-                </div>
-              </article>
-            </div>
+            <article className="match-video">
+              <header className="match-column-heading">
+                <h2>Video</h2>
+                <p>The candidate the system is considering.</p>
+              </header>
+              {card.thumbnail_url && (
+                <Image
+                  className="match-video-thumbnail"
+                  src={card.thumbnail_url}
+                  alt=""
+                  width={640}
+                  height={360}
+                />
+              )}
+              <div className="match-video-copy">
+                <h3>{card.title}</h3>
+                <p className="video-description">{card.description}</p>
+              </div>
+            </article>
 
-            <div className="match-response">
+            <aside className="match-response" aria-labelledby="match-action-title">
+              <h2 id="match-action-title">Action</h2>
+              <p className="match-action-help">Would this person value this video? Choose the clearest answer.</p>
               <fieldset>
-                <legend>Choose the fit</legend>
+                <legend className="sr-only">Choose a judgment</legend>
                 <div className="match-choices">
-                  <button type="button" aria-pressed={selected === "no"} onClick={() => setSelected("no")} disabled={busy}>No</button>
-                  <button type="button" aria-pressed={selected === "unsure"} onClick={() => setSelected("unsure")} disabled={busy}>Unsure</button>
-                  <button type="button" aria-pressed={selected === "yes"} onClick={() => setSelected("yes")} disabled={busy}>Yes</button>
+                  <button className="match-choice-yes" type="button" aria-pressed={selected === "yes"} onClick={() => setSelected("yes")} disabled={busy}>Yes</button>
+                  <button className="match-choice-no" type="button" aria-pressed={selected === "no"} onClick={() => setSelected("no")} disabled={busy}>No</button>
+                  <button className="match-choice-unsure" type="button" aria-pressed={selected === "unsure"} onClick={() => setSelected("unsure")} disabled={busy}>Unsure</button>
                 </div>
               </fieldset>
               <label htmlFor="match-reason">Reason <span>Optional, but useful when it is close.</span></label>
@@ -148,10 +153,10 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
                 maxLength={1000}
                 placeholder="What made the fit clear?"
               />
-              <button className="match-save" onClick={() => void submit()} disabled={busy || !selected}>
-                {busy ? "Saving…" : "Save judgment"}
+              <button className="match-save" data-state={busy ? "saving" : selected ? "ready" : "idle"} onClick={() => void submit()} disabled={busy || !selected}>
+                {busy ? "Saving judgment…" : "Save judgment"}
               </button>
-            </div>
+            </aside>
           </section>
         ) : busy ? (
           <section className="signal-empty match-empty" aria-live="polite">

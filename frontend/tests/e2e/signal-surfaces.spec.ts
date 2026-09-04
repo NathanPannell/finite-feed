@@ -163,6 +163,10 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   await page.goto("/match");
   await expect(page.getByRole("heading", { name: /Does this belong/ })).toBeVisible();
   await expect(page.locator(".signal-masthead-title")).toHaveText("Does this belong?");
+  await expect(page.getByRole("heading", { name: "Make one clear call." })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  await page.getByRole("link", { name: "OK, let's begin" }).click();
+  await expect(page).toHaveURL(/\/match\/review$/);
   await expect(page.locator(".match-progress")).toHaveCount(0);
   await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
   const desktopGeometry = await page.locator(".signal-masthead, .signal-masthead-title, .signal-masthead nav").evaluateAll(([header, title, nav]) => {
@@ -178,8 +182,36 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   });
   expect(Math.abs(desktopGeometry.headerCenter - desktopGeometry.titleCenter)).toBeLessThanOrEqual(2);
   expect(desktopGeometry.titleRight).toBeLessThan(desktopGeometry.navLeft);
+  await expect(page.getByRole("heading", { name: "Viewer" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Video" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Action" })).toBeVisible();
+  const workspaceGeometry = await page.locator(".match-workspace, .match-profile, .match-video, .match-response").evaluateAll(([workspace, viewer, video, action]) => {
+    const workspaceWidth = workspace.getBoundingClientRect().width;
+    return {
+      evidenceShare: (viewer.getBoundingClientRect().width + video.getBoundingClientRect().width) / workspaceWidth,
+      actionShare: action.getBoundingClientRect().width / workspaceWidth,
+    };
+  });
+  expect(workspaceGeometry.evidenceShare).toBeGreaterThan(.74);
+  expect(workspaceGeometry.actionShare).toBeLessThan(.26);
+  await expect(page.getByRole("button", { name: "Yes" })).toHaveCSS("background-color", "rgb(23, 93, 58)");
+  await expect(page.getByRole("button", { name: "No" })).toHaveCSS("background-color", "rgb(142, 40, 29)");
+  await expect(page.getByRole("button", { name: "Unsure" })).toHaveCSS("background-color", "rgb(250, 249, 242)");
+  await page.setViewportSize({ width: 320, height: 800 });
+  await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  const mobileOrder = await page.locator(".match-profile, .match-video, .match-response").evaluateAll(([viewer, video, action]) => ({
+    viewerTop: viewer.getBoundingClientRect().top,
+    videoTop: video.getBoundingClientRect().top,
+    actionTop: action.getBoundingClientRect().top,
+  }));
+  expect(mobileOrder.viewerTop).toBeLessThan(mobileOrder.videoTop);
+  expect(mobileOrder.videoTop).toBeLessThan(mobileOrder.actionTop);
+  const activeWidth = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
+  expect(activeWidth.scroll).toBeLessThanOrEqual(activeWidth.inner);
+  await page.setViewportSize({ width: 1024, height: 800 });
   expect(await page.locator(".match-video-thumbnail").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Yes" }).click();
+  await expect(page.getByRole("button", { name: "Yes" })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Reason Optional, but useful when it is close.").fill("The method directly matches the viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();
 
