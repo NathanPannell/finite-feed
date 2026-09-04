@@ -1,15 +1,68 @@
+import hashlib
+import json
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 import pytest
 
 from backend.app.settings import Settings
 from backend.tools.match_lab import (
+    _write_new_json,
+    build_snapshot,
     curate_pairs,
     replace_dataset,
     replace_target_identity,
     validate_curated_artifact,
     validate_replace_scope,
 )
+
+
+def test_snapshot_serializes_database_uuids_and_timestamps_reproducibly(tmp_path) -> None:
+    profile_id = UUID(int=1)
+    video_id = UUID(int=2)
+    timestamp = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+
+    class Rows(list):
+        def fetchall(self):
+            return list(self)
+
+    class SnapshotConnection:
+        def execute(self, query):
+            if "FROM annotation_profiles" in query:
+                return Rows([{"id": profile_id, "summary": "Practical teaching ideas.",
+                              "topics": ["education"], "source": "synthetic", "version": 1}])
+            if "FROM annotation_videos" in query:
+                return Rows([{"video_id": video_id, "title": "Classroom feedback",
+                              "description": "How teachers give useful feedback.",
+                              "channel_name": "TED", "source_updated_at": timestamp}])
+            assert "FROM schema_migrations" in query
+            return Rows([{"version": "0011_match_lab_curated_queue.sql"}])
+
+    snapshot = build_snapshot(SnapshotConnection(), "source-commit")
+    assert snapshot == build_snapshot(SnapshotConnection(), "source-commit")
+    destination = tmp_path / "snapshot.json"
+    _write_new_json(destination, snapshot)
+    exported = json.loads(destination.read_text(encoding="utf-8"))
+    pair = exported["pairs"][0]
+    assert pair["profile"]["id"] == str(profile_id)
+    assert pair["video"]["video_id"] == str(video_id)
+    assert pair["video"]["source_updated_at"] == timestamp.isoformat()
+    canonical = json.dumps(exported["pairs"], sort_keys=True, separators=(",", ":")).encode()
+    assert exported["snapshot_sha256"] == hashlib.sha256(canonical).hexdigest()
+
+
+def test_review_backup_serializes_uuid_and_date_without_overwriting(tmp_path) -> None:
+    review_id = UUID(int=3)
+    destination = tmp_path / "backup.json"
+    payload = {"annotation_labels": [{"id": review_id, "created_at": date(2026, 9, 4)}]}
+    _write_new_json(destination, payload)
+    original = destination.read_bytes()
+    assert json.loads(original)["annotation_labels"] == [
+        {"id": str(review_id), "created_at": "2026-09-04"}
+    ]
+    with pytest.raises(FileExistsError):
+        _write_new_json(destination, {"annotation_labels": []})
+    assert destination.read_bytes() == original
 
 
 def _snapshot(pair_count: int = 240) -> dict:

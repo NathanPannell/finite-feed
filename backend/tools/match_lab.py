@@ -24,7 +24,9 @@ LOCAL_DATABASE_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _json_default(value: Any) -> str:
-    if isinstance(value, (UUID, datetime, date)):
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, (datetime, date)):
         return value.isoformat()
     raise TypeError(f"Cannot encode {type(value).__name__}")
 
