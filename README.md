@@ -53,6 +53,14 @@ Open `http://localhost:3000`. `/health` checks liveness; `/ready` checks migrati
 
 Add runtime credentials as GitHub Actions repository secrets. The deployment workflows forward them into the matching Railway production and preview services; `.env.example` contains names and safe defaults only.
 
+The private admin dashboard requires the `VERCEL_TEAM_SLUG` and
+`VERCEL_PROJECT_NAME` repository variables. Keep Vercel Authentication on
+**Standard Protection** (`all_except_custom_domains`): the public custom domain
+continues to serve `/match`, while the Next.js route proxy redirects only
+`/admin` and `/api/admin` to the SSO-protected generated deployment URL.
+The proxy fails closed with 503 in production if `VERCEL_URL` is unavailable.
+Vercel OIDC independently secures the Railway admin API hop.
+
 ## Verify
 
 ```powershell

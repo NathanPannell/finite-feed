@@ -28,11 +28,30 @@ def request_stop(*_: object) -> None:
     stop_event.set()
 
 
-def ingestion_is_due(conn, interval_hours: int) -> bool:
+def ingestion_is_due(
+    conn,
+    interval_hours: int,
+    retry_minutes: int = 30,
+    now: datetime | None = None,
+) -> bool:
     row = conn.execute(
-        "SELECT MAX(completed_at) AS completed_at FROM ingestion_runs WHERE status = 'completed'"
+        """
+        SELECT status, started_at, completed_at
+        FROM ingestion_runs
+        ORDER BY started_at DESC
+        LIMIT 1
+        """
     ).fetchone()
-    return not row["completed_at"] or row["completed_at"] <= datetime.now(UTC) - timedelta(hours=interval_hours)
+    if not row:
+        return True
+    checked_at = now or datetime.now(UTC)
+    last_attempt_at = row["completed_at"] or row["started_at"]
+    cooldown = (
+        timedelta(hours=interval_hours)
+        if row["status"] == "completed"
+        else timedelta(minutes=retry_minutes)
+    )
+    return last_attempt_at <= checked_at - cooldown
 
 
 def run_ingestion_pass(pool: ConnectionPool) -> None:
@@ -48,14 +67,22 @@ def run_ingestion_pass(pool: ConnectionPool) -> None:
         if not settings.youtube_api_key:
             logger.info("Ingestion paused until YOUTUBE_API_KEY is configured")
             return
-        if not ingestion_is_due(conn, settings.ingestion_interval_hours):
+        if not ingestion_is_due(conn, settings.ingestion_interval_hours, settings.ingestion_retry_minutes):
             return
         youtube = YouTubeClient(settings.youtube_api_key)
         try:
-            summary = ingest_tracked_channels(conn, youtube, settings.youtube_page_limit, embedder)
+            summary = ingest_tracked_channels(
+                conn,
+                youtube,
+                settings.youtube_page_limit,
+                embedder=embedder,
+                sync_interval_hours=settings.ingestion_interval_hours,
+                retry_minutes=settings.ingestion_retry_minutes,
+            )
             logger.info(
-                "Ingestion completed: %d channel(s), %d video(s), %d changed",
+                "Ingestion finished: %d channel(s), %d video(s), %d changed, %d failed",
                 summary.channels_scanned, summary.videos_seen, summary.videos_changed,
+                summary.channels_failed,
             )
         finally:
             youtube.close()

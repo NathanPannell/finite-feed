@@ -55,7 +55,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
         working-directory: frontend
       - run: npm run lint
         working-directory: frontend
@@ -65,6 +65,13 @@ jobs:
         working-directory: frontend
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          RAILWAY_API_BASE_URL: http://localhost:8000
+      - run: npm run test:proxy
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
 
   deploy-production:
     if: vars.BOOTSTRAP_COMPLETE == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -84,6 +91,8 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_OIDC_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
+      VERCEL_OIDC_PROJECT_NAME: ${{ vars.VERCEL_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -91,6 +100,20 @@ jobs:
           node-version: 22
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
+      - name: Verify route-scoped admin protection contract
+        run: npm --prefix frontend run test:proxy
+      - name: Require admin OIDC and Vercel Standard Protection
+        run: |
+          : "${VERCEL_OIDC_TEAM_SLUG:?VERCEL_TEAM_SLUG repository variable is required}"
+          : "${VERCEL_OIDC_PROJECT_NAME:?VERCEL_PROJECT_NAME repository variable is required}"
+          protection="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID" \
+            | jq -r '.ssoProtection.deploymentType // empty')"
+          [[ "$protection" == "all_except_custom_domains" ]] || {
+            echo 'Vercel Standard Protection (all_except_custom_domains) is required.' >&2
+            exit 1
+          }
       - name: Stamp and deploy Railway services
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -127,6 +150,9 @@ jobs:
             printf '%s' 'true' | railway variable set EMBEDDING_OFFLINE --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
             printf '%s' '/opt/huggingface' | railway variable set EMBEDDING_CACHE_DIR --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
           done
+          printf '%s' "$VERCEL_OIDC_TEAM_SLUG" | railway variable set VERCEL_OIDC_TEAM_SLUG --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' "$VERCEL_OIDC_PROJECT_NAME" | railway variable set VERCEL_OIDC_PROJECT_NAME --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          printf '%s' 'production' | railway variable set VERCEL_OIDC_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
           railway redeploy --from-source --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
       - name: Wait for the exact migrated API commit
@@ -137,7 +163,11 @@ jobs:
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
         run: |
-          deployment_url="$(vercel deploy --prod --yes --cwd frontend --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          deployment_url="$(vercel deploy --prod --yes --cwd frontend \
+            --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
+            --build-env RAILWAY_API_BASE_URL="$API_URL" \
+            --env RAILWAY_API_BASE_URL="$API_URL" \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           production_url=""
           for _ in $(seq 1 12); do
             production_url="$(vercel project list --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r --arg id "$VERCEL_PROJECT_ID" '.projects[] | select(.id == $id) | .latestProductionUrl // empty')"
@@ -145,6 +175,34 @@ jobs:
             sleep 5
           done
           [[ -n "$production_url" ]] || { echo 'Vercel production URL was not available.' >&2; exit 1; }
+          [[ "$production_url" == https://* ]] || { echo 'Vercel production URL must use HTTPS.' >&2; exit 1; }
+          production_host="${production_url#https://}"
+          production_host="${production_host%%/*}"
+          [[ "$production_host" != *.vercel.app ]] || { echo 'A public custom production domain is required.' >&2; exit 1; }
+          custom_domain="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_ORG_ID" \
+            | jq -r --arg host "$production_host" '[.domains[] | select(.name == $host)] | length')"
+          [[ "$custom_domain" == "1" ]] || { echo 'Production URL is not a configured Vercel project domain.' >&2; exit 1; }
+
+          for admin_path in /admin /api/admin/summary; do
+            headers_file="$(mktemp)"
+            admin_status="$(curl --silent --show-error --dump-header "$headers_file" \
+              --output /dev/null --write-out '%{http_code}' "$deployment_url$admin_path")"
+            case "$admin_status" in
+              401|403) ;;
+              301|302|303|307|308)
+                auth_location="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }' "$headers_file")"
+                case "$auth_location" in
+                  https://vercel.com/sso*|https://vercel.com/login*|https://vercel.com/api/auth*|https://*.vercel.com/_vercel/*|/_vercel/*) ;;
+                  *) echo "Generated deployment $admin_path redirected somewhere other than Vercel authentication." >&2; exit 1 ;;
+                esac
+                ;;
+              *) echo "Generated deployment $admin_path did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
+            esac
+          done
+          match_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$production_url/match")"
+          [[ "$match_status" == "200" ]] || { echo "Public custom-domain /match returned HTTP $match_status instead of 200." >&2; exit 1; }
           origins="$(jq -nr --arg deployment "$deployment_url" --arg production "$production_url" '[$deployment, $production] | unique | join(",")')"
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
           echo "production_url=$production_url" >> "$GITHUB_OUTPUT"

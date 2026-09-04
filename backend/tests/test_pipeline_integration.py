@@ -1,5 +1,5 @@
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import psycopg
@@ -16,7 +16,7 @@ from backend.app.recommendations import (
     mark_recommendation_delivered,
 )
 from backend.app.settings import Settings
-from backend.app.youtube import ChannelDetails, YouTubeVideo
+from backend.app.youtube import ChannelDetails, UploadPage, YouTubeVideo
 from backend.worker.main import claim_delivery_attempt
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -31,16 +31,22 @@ class FakeYouTube:
         name = "TEDx" if slug == "tedx" else "TED"
         return ChannelDetails(slug, name, f"uploads-{slug}")
 
-    def list_uploads(self, playlist_id: str, page_limit: int = 2) -> list[YouTubeVideo]:
+    def list_upload_page(
+        self,
+        playlist_id: str,
+        page_token: str | None = None,
+        max_results: int = 50,
+    ) -> UploadPage:
         relevant = playlist_id.endswith("ted")
         video_id = "test-football-psychology" if relevant else "test-pottery"
         title = "The psychology of football decisions | Casey Coach | TED" if relevant else "The chemistry of pottery | Pat Potter | TEDx"
         description = self.relevant_description if relevant else "A tour of ceramic glazes and kilns."
-        return [YouTubeVideo(
+        return UploadPage([YouTubeVideo(
             video_id, "TED" if relevant else "TEDx", title, "Casey Coach" if relevant else "Pat Potter",
             f"https://www.youtube.com/watch?v={video_id}", None, description,
-            datetime(2026, 9, 1, tzinfo=UTC), 900, 1000,
-        )]
+            datetime.now(UTC) - timedelta(days=1), 900, 1000,
+        )], None)
+
 
 
 class FakeEmbedder:

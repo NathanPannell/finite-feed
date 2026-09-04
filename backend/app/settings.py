@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     worker_poll_seconds: int = Field(default=60, ge=15, alias="WORKER_POLL_SECONDS")
     delivery_retry_minutes: int = Field(default=60, ge=15, alias="DELIVERY_RETRY_MINUTES")
     ingestion_interval_hours: int = Field(default=6, ge=1, alias="INGESTION_INTERVAL_HOURS")
+    ingestion_retry_minutes: int = Field(default=30, ge=5, le=1440, alias="INGESTION_RETRY_MINUTES")
     youtube_page_limit: int = Field(default=2, ge=1, le=10, alias="YOUTUBE_PAGE_LIMIT")
     youtube_api_key: str = Field(default="", alias="YOUTUBE_API_KEY")
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
@@ -43,6 +44,10 @@ class Settings(BaseSettings):
     telegram_production_chat_id: str = Field(default="", alias="TELEGRAM_PRODUCTION_CHAT_ID")
     developer_telegram_user_ids: str = Field(default="", alias="DEVELOPER_TELEGRAM_USER_IDS")
     public_app_url: str = Field(default="http://localhost:8000", alias="PUBLIC_APP_URL")
+    vercel_oidc_team_slug: str = Field(default="", alias="VERCEL_OIDC_TEAM_SLUG")
+    vercel_oidc_project_name: str = Field(default="", alias="VERCEL_OIDC_PROJECT_NAME")
+    vercel_oidc_environment: str = Field(default="", alias="VERCEL_OIDC_ENVIRONMENT")
+    vercel_oidc_issuer_mode: str = Field(default="team", alias="VERCEL_OIDC_ISSUER_MODE")
 
     @property
     def is_preview(self) -> bool:

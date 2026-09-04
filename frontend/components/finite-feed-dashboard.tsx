@@ -179,6 +179,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
           <a href="#channels">Sources</a>
           <a href="#signals">Signals</a>
           <a href="/match">Match lab</a>
+          <a href="/admin">Operations</a>
         </nav>
         <div className="sidebar-note">
           <span className="live-dot" />
@@ -192,7 +193,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
             <p className="kicker">Your high-signal queue</p>
             <h1>One idea worth your time.</h1>
           </div>
-          <button className="primary" onClick={() => void generate()} disabled={busy}>Find one now <span>→</span></button>
+          <div className="topbar-actions"><a className="admin-link" href="/admin">Operations</a><button className="primary" onClick={() => void generate()} disabled={busy}>Find one now <span>→</span></button></div>
         </header>
 
         {notice && <p className="notice" role="status">{notice}</p>}
