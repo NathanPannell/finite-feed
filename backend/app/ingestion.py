@@ -6,6 +6,7 @@ from uuid import uuid4
 from psycopg import Connection
 
 from backend.app.embedding_backfill import document_text
+from backend.app.description_processing import document_fingerprint
 from backend.app.embeddings import Embedder, configured_embedder
 from backend.app.settings import get_settings
 from backend.app.youtube import ChannelDetails, UploadPage, YouTubeClient, YouTubeVideo
@@ -48,6 +49,7 @@ def _store_videos(
     changed_documents = []
     for video in videos:
         fingerprint = video_fingerprint(video.title, video.description)
+        embedding_fingerprint = document_fingerprint(fingerprint)
         existing = conn.execute(
             """
             SELECT content_fingerprint, semantic_embedding_model, semantic_embedding_revision,
@@ -62,7 +64,7 @@ def _store_videos(
             or existing["semantic_embedding_model"] != encoder.model_name
             or existing["semantic_embedding_revision"] != encoder.model_revision
             or existing["semantic_embedding_dimensions"] != encoder.dimensions
-            or existing["semantic_embedding_fingerprint"] != fingerprint
+            or existing["semantic_embedding_fingerprint"] != embedding_fingerprint
         )
         prepared.append((video, fingerprint, changed))
         if changed:
@@ -125,7 +127,7 @@ def _store_videos(
                 encoder.model_name if changed else None,
                 encoder.model_revision if changed else None,
                 encoder.dimensions if changed else None,
-                fingerprint if changed else None,
+                embedding_fingerprint if changed else None,
             ),
         )
         changed_count += int(changed)

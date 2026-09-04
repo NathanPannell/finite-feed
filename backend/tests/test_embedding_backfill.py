@@ -4,6 +4,7 @@ from uuid import UUID
 import pytest
 
 from backend.app.embedding_backfill import EMBEDDING_DIMENSIONS, backfill_embeddings
+from backend.app.embedding_backfill import document_text
 
 
 class _Result:
@@ -74,7 +75,16 @@ def test_backfill_claims_locked_batch_and_records_exact_metadata() -> None:
     assert embedder.calls == [["A useful title\nA useful description"]]
     claim_sql, claim_params = conn.executions[0]
     assert "FOR UPDATE SKIP LOCKED" in claim_sql
-    assert claim_params == (embedder.model_name, embedder.model_revision, 384, 5, [], [], 8)
+    assert claim_params == (
+        embedder.model_name,
+        embedder.model_revision,
+        384,
+        "description-v1",
+        5,
+        [],
+        [],
+        8,
+    )
     vector_updates = [item for item in conn.executions if "SET semantic_embedding = %s::vector" in item[0]]
     assert len(vector_updates) == 1
     _, params = vector_updates[0]
@@ -82,9 +92,16 @@ def test_backfill_claims_locked_batch_and_records_exact_metadata() -> None:
         embedder.model_name,
         embedder.model_revision,
         embedder.dimensions,
-        VIDEO["content_fingerprint"],
+        "description-v1:" + VIDEO["content_fingerprint"],
     )
     assert conn.commits == 1
+
+
+def test_document_text_uses_cleaned_description_for_scoring() -> None:
+    assert document_text(
+        "A useful title",
+        "A useful explanation.\nSubscribe: https://example.com\n#TED",
+    ) == "A useful title\nA useful explanation."
 
 
 def test_backfill_persists_failure_telemetry_for_a_later_retry() -> None:

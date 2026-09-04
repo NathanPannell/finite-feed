@@ -1,5 +1,5 @@
 import os
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -15,6 +15,83 @@ PROFILE_ID = UUID("30000000-0000-4000-8000-000000000001")
 
 def test_clean_display_text_repairs_mojibake_and_controls() -> None:
     assert clean_display_text("A\u00e2\u20ac\u2122s\x00  title\n") == "A’s title"
+
+
+class _Result:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+class _AnnotationConnection:
+    def __init__(self, results):
+        self.results = list(results)
+        self.executions = []
+        self.commits = 0
+        self.rollbacks = 0
+
+    def execute(self, query, params=()):
+        self.executions.append((" ".join(query.split()), params))
+        return _Result(self.results.pop(0))
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+
+def test_next_annotation_skips_non_english_and_cleans_derived_description() -> None:
+    spanish = {
+        "profile_id": PROFILE_ID,
+        "video_id": uuid4(),
+        "summary": "Useful city ideas",
+        "topics": ["cities"],
+        "title": "Cómo mejorar nuestras ciudades",
+        "description": "Una arquitecta explica cómo crear barrios más saludables.",
+    }
+    english = {
+        "profile_id": PROFILE_ID,
+        "video_id": VIDEO_ID,
+        "summary": "Useful city ideas",
+        "topics": ["cities"],
+        "title": "How to improve our cities",
+        "description": "A planner explains how streets shape health.\n#TED #cities",
+    }
+    conn = _AnnotationConnection([[spanish, english]])
+
+    card = next_annotation(conn, ANNOTATOR_ID)
+
+    assert card["video_id"] == VIDEO_ID
+    assert card["description"] == "A planner explains how streets shape health."
+    assert english["description"].endswith("#TED #cities")
+
+
+def test_record_annotation_rejects_ineligible_video_before_insert() -> None:
+    conn = _AnnotationConnection([[
+        {
+            "title": "Pourquoi les villes changent",
+            "description": "Une architecte explique comment les quartiers évoluent.",
+        }
+    ]])
+
+    result = record_annotation(
+        conn,
+        annotator_id=ANNOTATOR_ID,
+        profile_id=PROFILE_ID,
+        video_id=VIDEO_ID,
+        label="yes",
+        rationale=None,
+    )
+
+    assert result is None
+    assert len(conn.executions) == 1
+    assert conn.rollbacks == 1
 
 
 def test_annotation_round_trip() -> None:
