@@ -62,6 +62,7 @@ def test_next_annotation_skips_non_english_and_cleans_derived_description() -> N
         "topics": ["cities"],
         "title": "How to improve our cities",
         "description": "A planner explains how streets shape health.\n#TED #cities",
+        "thumbnail_url": "https://example.test/cities.jpg",
     }
     conn = _AnnotationConnection([[spanish, english]])
 
@@ -69,6 +70,7 @@ def test_next_annotation_skips_non_english_and_cleans_derived_description() -> N
 
     assert card["video_id"] == VIDEO_ID
     assert card["description"] == "A planner explains how streets shape health."
+    assert card["thumbnail_url"] == "https://example.test/cities.jpg"
     assert english["description"].endswith("#TED #cities")
 
 

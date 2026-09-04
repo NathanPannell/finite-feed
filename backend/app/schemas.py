@@ -122,6 +122,7 @@ class AnnotationCard(BaseModel):
     topics: list[str]
     title: str
     description: str
+    thumbnail_url: str | None = None
 
 
 class AnnotationCreate(BaseModel):
