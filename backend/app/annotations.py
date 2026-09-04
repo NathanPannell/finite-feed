@@ -37,10 +37,12 @@ def clean_display_text(value: str) -> str:
 def next_annotation(conn: Connection, annotator_id: UUID):
     row = conn.execute(
         """
-        SELECT score.profile_id, score.video_id, p.summary, p.topics, v.title, v.description
+        SELECT score.profile_id, score.video_id, p.summary, p.topics,
+               v.title, v.description, source.thumbnail_url
         FROM annotation_pair_scores score
         JOIN annotation_profiles p ON p.id = score.profile_id AND p.active
         JOIN annotation_videos v ON v.video_id = score.video_id
+        JOIN videos source ON source.id = v.video_id
         LEFT JOIN annotation_labels mine
           ON mine.profile_id = score.profile_id
          AND mine.video_id = score.video_id

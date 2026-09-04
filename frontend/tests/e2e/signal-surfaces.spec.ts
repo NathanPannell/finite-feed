@@ -143,7 +143,8 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
         summary: "Wants practical systems thinking without motivational filler.",
         topics: ["systems", "judgment"],
         title: "The hidden logic of everyday choices",
-        description: "A researcher explains why small decisions compound into structural outcomes.",
+        description: "A researcher explains why small decisions compound into structural outcomes. ".repeat(12),
+        thumbnail_url: "https://example.test/thumbnail.jpg",
       });
     }
     if (url.pathname === "/api/match/annotations/stats") {
@@ -159,6 +160,10 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
 
   await page.goto("/match");
   await expect(page.getByRole("heading", { name: /Does this belong/ })).toBeVisible();
+  await expect(page.locator(".match-video-thumbnail")).toBeVisible();
+  await expect(page.getByText("What this person wants to watch.")).toBeVisible();
+  await page.getByRole("button", { name: "Show full description" }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toBeVisible();
   await page.getByRole("button", { name: "Yes" }).click();
   await page.getByLabel("Reason Optional, but useful when it is close.").fill("The method directly matches the viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();

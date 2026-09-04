@@ -36,8 +36,9 @@ def _prepare_pair(conn: psycopg.Connection, suffix: int, *, last_served: str | N
         """
         INSERT INTO videos (
             id, youtube_video_id, channel_name, title, youtube_url, description,
-            view_count, channel_baseline_views
-        ) VALUES (%s, %s, 'Test channel', %s, %s, 'A practical description.', 1, 1)
+            thumbnail_url, view_count, channel_baseline_views
+        ) VALUES (%s, %s, 'Test channel', %s, %s, 'A practical description.',
+                  'https://example.test/thumbnail.jpg', 1, 1)
         ON CONFLICT (youtube_video_id) DO UPDATE SET title = EXCLUDED.title
         """,
         (video_id, f"match-lab-test-{suffix}", f"Useful test {suffix}", f"https://youtube.com/watch?v=match-lab-test-{suffix}"),
@@ -162,6 +163,16 @@ def test_queue_rotates_fairly_across_equally_unreviewed_pairs() -> None:
             assert len(served) == 3
         finally:
             _cleanup(conn, video_ids)
+
+
+def test_next_annotation_includes_source_thumbnail() -> None:
+    with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+        video_id = _prepare_pair(conn, 109)
+        try:
+            card = next_annotation(conn, uuid4())
+            assert card["thumbnail_url"] == "https://example.test/thumbnail.jpg"
+        finally:
+            _cleanup(conn, [video_id])
 
 
 def test_concurrent_submissions_never_exceed_pair_capacity() -> None:
