@@ -9,6 +9,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3107",
     trace: "retain-on-failure",
+    viewport: { width: 1440, height: 1000 },
   },
   projects: [
     {
@@ -21,5 +22,6 @@ export default defineConfig({
     url: "http://127.0.0.1:3107/admin",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: { NEXT_PUBLIC_API_BASE_URL: "http://api.finite-feed.test" },
   },
 });

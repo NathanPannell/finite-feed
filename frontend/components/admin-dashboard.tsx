@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
+import { SignalShell } from "@/components/signal-shell";
 import { AdminApiError, adminRequest, JsonRecord, pageResult, PageResult } from "@/lib/admin-api";
 
 type Tab = "channels" | "videos" | "recommendations";
@@ -111,10 +111,26 @@ function DetailsValue({ data }: { data: unknown }) {
 }
 
 function RecordModal({ state, close, closeRef }: { state: DetailState; close: () => void; closeRef: RefObject<HTMLButtonElement | null> }) {
+  const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!state) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") {
+        close();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
@@ -128,7 +144,7 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
   if (!state) return null;
   return (
     <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close()}>
-      <section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="record-title">
+      <section ref={dialogRef} className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="record-title">
         <header>
           <div><p>{state.kind.slice(0, -1)} record</p><h2 id="record-title">{text(state.item, "name", "title", "event_type", "id") || "Record details"}</h2></div>
           <button ref={closeRef} className="admin-icon-button" onClick={close} aria-label="Close details"><Icon name="close" /></button>
@@ -199,6 +215,7 @@ export function AdminDashboard() {
   const [deliveryState, setDeliveryState] = useState("");
   const [rating, setRating] = useState("");
   const [videoSearchMode, setVideoSearchMode] = useState<"text" | "vector">("text");
+  const [hiddenColumns, setHiddenColumns] = useState<Record<Tab, string[]>>({ channels: [], videos: [], recommendations: [] });
   const [vectorPhrase, setVectorPhrase] = useState("");
   const [channelUrl, setChannelUrl] = useState("");
   const [maxAge, setMaxAge] = useState(7);
@@ -418,16 +435,11 @@ export function AdminDashboard() {
   }
 
   return (
-    <div className="admin-shell">
-      <aside className="admin-rail">
-        <Link className="brand" href="/" aria-label="Finite Feed home"><span className="brand-mark">F</span><span>Finite Feed</span></Link>
-        <nav aria-label="Admin navigation"><Link href="/">Personal feed</Link><Link className="active" href="/admin" aria-current="page">Operations</Link></nav>
-        <div className="admin-rail-note"><span className={`admin-health ${statusTone(latestStatus)}`} /><div><strong>{latestStatus}</strong><small>Latest worker run</small></div></div>
-      </aside>
+    <SignalShell active="admin" className="admin-shell">
 
       <main className="admin-main">
         <header className="admin-header">
-          <div><h1>Operations</h1><p>Review system health and make narrow, audited channel changes.</p></div>
+          <div><h1>Control room</h1><p>Inspect the pipeline, find records, and make narrow audited changes.</p></div>
           <button className="admin-refresh" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </header>
 
@@ -473,23 +485,24 @@ export function AdminDashboard() {
             {tab === "channels" && <ChannelResolver url={channelUrl} setUrl={onChannelUrlChange} maxAge={maxAge} setMaxAge={setMaxAge} ownerOptions={ownerOptions} ownerId={ownerId} setOwnerId={setOwnerId} state={resolveState} error={resolveError} resolved={resolvedChannel} submit={addChannel} busy={mutationId === "add"} />}
 
             <div className="admin-controls">
-              {tab === "videos" && <label className="admin-control compact-control"><span>Search mode</span><select value={videoSearchMode} onChange={(event) => { setVideoSearchMode(event.target.value as "text" | "vector"); setList(emptyPage); }}>{/* options are intentionally explicit */}<option value="text">Text</option><option value="vector">Vector phrase</option></select></label>}
+              {tab === "videos" && <label className="admin-control compact-control"><span>Search mode</span><select value={videoSearchMode} onChange={(event) => { setVideoSearchMode(event.target.value as "text" | "vector"); setList(emptyPage); }}>{/* options are intentionally explicit */}<option value="text">Text</option><option value="vector">Meaning</option></select></label>}
               <form className="admin-search" onSubmit={videoSearchMode === "vector" && tab === "videos" ? vectorSearch : applySearch}>
-                <Icon name="search" /><label className="sr-only" htmlFor="admin-search">Search {tab}</label><input id="admin-search" value={tab === "videos" && videoSearchMode === "vector" ? vectorPhrase : searchDraft} onChange={(event) => tab === "videos" && videoSearchMode === "vector" ? setVectorPhrase(event.target.value) : setSearchDraft(event.target.value)} placeholder={tab === "videos" && videoSearchMode === "vector" ? "Describe the idea to retrieve" : `Search ${tab}`} /><button>{tab === "videos" && videoSearchMode === "vector" ? "Find similar" : "Search"}</button>
+                <Icon name="search" /><label className="sr-only" htmlFor="admin-search">Search {tab}</label><input id="admin-search" value={tab === "videos" && videoSearchMode === "vector" ? vectorPhrase : searchDraft} onChange={(event) => tab === "videos" && videoSearchMode === "vector" ? setVectorPhrase(event.target.value) : setSearchDraft(event.target.value)} placeholder={tab === "videos" && videoSearchMode === "vector" ? "Describe an idea to retrieve" : `Search ${tab}`} /><button>{tab === "videos" && videoSearchMode === "vector" ? "Search meaning" : "Search"}</button>
               </form>
               {tab === "channels" && <><label className="admin-control"><span>Sort</span><select value={channelSort} onChange={(event) => setChannelSort(event.target.value)}><option value="name:asc">Name</option><option value="last_sync_started_at:desc">Last sync</option><option value="created_at:desc">Recently added</option><option value="latest_video_published_at:desc">Latest video</option></select></label><label className="admin-check"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /><span>Show inactive</span></label></>}
               {tab === "videos" && videoSearchMode === "text" && <VideoFilters values={{ videoSort, videoChannel, videoEmbedding, videoRecommended, videoPublishedAfter, videoIngestedAfter }} setters={{ setVideoSort, setVideoChannel, setVideoEmbedding, setVideoRecommended, setVideoPublishedAfter, setVideoIngestedAfter }} channels={summary} />}
+              <ColumnChooser tab={tab} hidden={hiddenColumns[tab]} setHidden={(next) => setHiddenColumns((current) => ({ ...current, [tab]: next }))} />
               {tab === "recommendations" && <><label className="admin-control"><span>State</span><select value={deliveryState} onChange={(event) => setDeliveryState(event.target.value)}><option value="">All</option><option value="queued">Queued</option><option value="delivered">Delivered</option></select></label><label className="admin-control"><span>Rating</span><select value={rating} onChange={(event) => setRating(event.target.value)}><option value="">All</option><option value="up">Up</option><option value="down">Down</option><option value="unrated">Unrated</option></select></label><label className="admin-control"><span>Sort</span><select value={recommendationSort} onChange={(event) => setRecommendationSort(event.target.value)}><option value="created_at:desc">Newest</option><option value="created_at:asc">Oldest</option><option value="delivered_at:desc">Delivery time</option><option value="clicked_at:desc">Click time</option><option value="rating:asc">Rating</option></select></label></>}
             </div>
 
-            {listError ? <ErrorState message={listError} retry={() => void loadList()} /> : <RecordTable tab={tab} data={list} loading={listLoading} mutationId={mutationId} open={openDetail} patchChannel={patchChannel} />}
+            {listError ? <ErrorState message={listError} retry={() => void loadList()} /> : <RecordTable tab={tab} data={list} loading={listLoading} mutationId={mutationId} open={openDetail} patchChannel={patchChannel} hiddenColumns={hiddenColumns[tab]} />}
             {!listError && !listLoading && !list.items.length && <EmptyState title={tab === "videos" && videoSearchMode === "vector" && !vectorPhrase ? "Search by meaning" : `No ${tab} found`} message={tab === "videos" && videoSearchMode === "vector" ? "Enter a phrase to rank compatible stored vectors." : "Adjust the filters or refresh after the next worker run."} />}
             {!listError && !!list.items.length && <Pagination data={list} go={(next) => setPage((current) => ({ ...current, [tab]: next }))} />}
           </div>
         </section>
       </main>
       <RecordModal state={detail} close={closeDetail} closeRef={modalCloseRef} />
-    </div>
+    </SignalShell>
   );
 }
 
@@ -519,12 +532,30 @@ function VideoFilters({ values, setters, channels }: { values: Record<string, st
   </div></details>;
 }
 
-function RecordTable({ tab, data, loading, mutationId, open, patchChannel }: { tab: Tab; data: PageResult; loading: boolean; mutationId: string; open: (kind: Tab, item: JsonRecord, trigger: HTMLElement) => void; patchChannel: (item: JsonRecord, patch: JsonRecord) => void }) {
+function ColumnChooser({ tab, hidden, setHidden }: { tab: Tab; hidden: string[]; setHidden: (columns: string[]) => void }) {
+  const options: Record<Tab, Array<{ id: string; label: string }>> = {
+    channels: [{ id: "channel-videos", label: "Videos" }],
+    videos: [
+      { id: "video-ingested", label: "Ingested" },
+      { id: "video-duration", label: "Duration" },
+      { id: "video-views", label: "Views" },
+    ],
+    recommendations: [
+      { id: "recommendation-rationale", label: "Rationale" },
+      { id: "recommendation-timeline", label: "Timeline" },
+    ],
+  };
+  return <details className="admin-column-chooser">
+    <summary>Choose columns</summary>
+    <div>{options[tab].map((option) => <label key={option.id}><input type="checkbox" checked={!hidden.includes(option.id)} onChange={(event) => setHidden(event.target.checked ? hidden.filter((item) => item !== option.id) : [...hidden, option.id])} /><span>{option.label}</span></label>)}</div>
+  </details>;
+}
+function RecordTable({ tab, data, loading, mutationId, open, patchChannel, hiddenColumns }: { tab: Tab; data: PageResult; loading: boolean; mutationId: string; open: (kind: Tab, item: JsonRecord, trigger: HTMLElement) => void; patchChannel: (item: JsonRecord, patch: JsonRecord) => void; hiddenColumns: string[] }) {
   const columns = tab === "channels" ? 7 : tab === "videos" ? 8 : 7;
-  return <div className="admin-table-wrap"><table className={`admin-table ${tab}`}><thead><tr>
-    {tab === "channels" && <><th>Channel</th><th>Owner</th><th>Tracking</th><th>Video window</th><th className="optional-column">Videos</th><th>Sync & backfill</th><th><span className="sr-only">Actions</span></th></>}
-    {tab === "videos" && <><th>Video</th><th>Channel</th><th>Published</th><th className="optional-column">Ingested</th><th className="optional-column">Duration</th><th className="optional-column">Views</th><th>Embedding</th><th><span className="sr-only">Actions</span></th></>}
-    {tab === "recommendations" && <><th>Recipient</th><th>Video</th><th className="optional-column">Rationale</th><th>Delivery</th><th>Rating</th><th className="optional-column">Timeline</th><th><span className="sr-only">Actions</span></th></>}
+  return <div className="admin-table-wrap" tabIndex={0} aria-label={tab + " records table, scroll for more columns"}><table className={["admin-table", tab, ...hiddenColumns.map((column) => "hide-" + column)].join(" ")}><thead><tr>
+    {tab === "channels" && <><th>Channel</th><th>Owner</th><th>Tracking</th><th>Video window</th><th className="optional-column col-channel-videos">Videos</th><th>Sync & backfill</th><th><span className="sr-only">Actions</span></th></>}
+    {tab === "videos" && <><th>Video</th><th>Channel</th><th>Published</th><th className="optional-column col-video-ingested">Ingested</th><th className="optional-column col-video-duration">Duration</th><th className="optional-column col-video-views">Views</th><th>Embedding</th><th><span className="sr-only">Actions</span></th></>}
+    {tab === "recommendations" && <><th>Recipient</th><th>Video</th><th className="optional-column col-recommendation-rationale">Rationale</th><th>Delivery</th><th>Rating</th><th className="optional-column col-recommendation-timeline">Timeline</th><th><span className="sr-only">Actions</span></th></>}
   </tr></thead><tbody>{loading ? <LoadingRows columns={columns} /> : data.items.map((item) => <RecordRow key={text(item, "id")} tab={tab} item={item} busy={mutationId === text(item, "id")} open={open} patchChannel={patchChannel} />)}</tbody></table></div>;
 }
 
@@ -534,12 +565,12 @@ function RecordRow({ tab, item, busy, open, patchChannel }: { tab: Tab; item: Js
     <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span>{text(item, "name").slice(0, 1)}</span>}<div><strong>{text(item, "name")}</strong><a href={text(item, "url", "canonical_url")} target="_blank" rel="noreferrer">Open YouTube</a></div></div></td>
     <td>{text(item, "owner_name", "user_display_name", "user_id") || "Default user"}</td><td><Status>{active ? "Active" : "Stopped"}</Status></td>
     <td><ChannelAgeControl item={item} save={patchChannel} /></td>
-    <td className="optional-column">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td><strong>{text(item, "sync_status", "last_sync_status") || "Waiting"}</strong><small>Last sync {localTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "not recorded")}</small><small>{text(item, "backfill_status", "backfill_progress") || "Backfill not started"}</small>{text(item, "sync_error", "last_sync_error") && <small className="error-text">{text(item, "sync_error", "last_sync_error")}</small>}</td>
+    <td className="optional-column col-channel-videos">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td><strong>{text(item, "sync_status", "last_sync_status") || "Waiting"}</strong><small>Last sync {localTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "not recorded")}</small><small>{text(item, "backfill_status", "backfill_progress") || "Backfill not started"}</small>{text(item, "sync_error", "last_sync_error") && <small className="error-text">{text(item, "sync_error", "last_sync_error")}</small>}</td>
     <td className="admin-row-actions"><button className="admin-text-button" disabled={busy} onClick={() => void patchChannel(item, { is_active: !active })}>{busy ? "Saving…" : active ? "Stop" : "Restore"}</button><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   if (tab === "videos") return <tr>
-    <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span /> }<div><strong>{text(item, "title")}</strong><a href={text(item, "youtube_url", "url")} target="_blank" rel="noreferrer">Watch video</a></div></div></td><td>{text(item, "channel_name")}</td><td><time title={text(item, "published_at")}>{localTime(value(item, "published_at"), "—")}</time></td><td className="optional-column"><time title={text(item, "created_at", "ingested_at")}>{localTime(value(item, "ingested_at", "created_at"), "—")}</time></td><td className="optional-column">{duration(value(item, "duration_seconds"))}</td><td className="optional-column">{compactNumber(value(item, "view_count", "views"))}</td><td>{value(item, "similarity") !== null && <strong>{numberValue(item, "similarity").toFixed(3)}</strong>}<Status>{booleanValue(item, "has_embedding") || Boolean(value(item, "embedding_model")) ? text(item, "embedding_model") || "Embedded" : "Missing"}</Status><small>{numberValue(item, "recommendation_count")} recommendations</small></td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
+    <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span /> }<div><strong>{text(item, "title")}</strong><a href={text(item, "youtube_url", "url")} target="_blank" rel="noreferrer">Watch video</a></div></div></td><td>{text(item, "channel_name")}</td><td><time title={text(item, "published_at")}>{localTime(value(item, "published_at"), "—")}</time></td><td className="optional-column col-video-ingested"><time title={text(item, "created_at", "ingested_at")}>{localTime(value(item, "ingested_at", "created_at"), "—")}</time></td><td className="optional-column col-video-duration">{duration(value(item, "duration_seconds"))}</td><td className="optional-column col-video-views">{compactNumber(value(item, "view_count", "views"))}</td><td>{value(item, "similarity") !== null && <strong>{numberValue(item, "similarity").toFixed(3) + " semantic similarity"}</strong>}<Status>{booleanValue(item, "has_embedding") || Boolean(value(item, "embedding_model")) ? text(item, "embedding_model") || "Embedded" : "Missing"}</Status><small>{numberValue(item, "recommendation_count")} recommendations</small></td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   const delivered = Boolean(value(item, "delivered_at"));
-  return <tr><td><strong>{text(item, "recipient_name", "user_display_name", "display_name") || "Recipient"}</strong><small>{text(item, "telegram_user_id", "telegram_id")}</small></td><td><strong>{text(item, "video_title", "title")}</strong><small>{text(item, "channel_name")}</small></td><td className="optional-column"><span className="admin-clamp">{text(item, "rationale")}</span></td><td><Status>{delivered ? "Delivered" : "Queued"}</Status></td><td><Status>{text(item, "rating") || "Unrated"}</Status></td><td className="optional-column"><small>Created {localTime(value(item, "created_at"))}</small><small>{delivered ? `Delivered ${localTime(value(item, "delivered_at"))}` : "Awaiting delivery"}</small>{value(item, "clicked_at") && <small>Clicked {localTime(value(item, "clicked_at"))}</small>}</td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td></tr>;
+  return <tr><td><strong>{text(item, "recipient_name", "user_display_name", "display_name") || "Recipient"}</strong><small>{text(item, "telegram_user_id", "telegram_id")}</small></td><td><strong>{text(item, "video_title", "title")}</strong><small>{text(item, "channel_name")}</small></td><td className="optional-column col-recommendation-rationale"><span className="admin-clamp">{text(item, "rationale")}</span></td><td><Status>{delivered ? "Delivered" : "Queued"}</Status></td><td><Status>{text(item, "rating") || "Unrated"}</Status></td><td className="optional-column col-recommendation-timeline"><small>Created {localTime(value(item, "created_at"))}</small><small>{delivered ? `Delivered ${localTime(value(item, "delivered_at"))}` : "Awaiting delivery"}</small>{value(item, "clicked_at") && <small>Clicked {localTime(value(item, "clicked_at"))}</small>}</td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td></tr>;
 }

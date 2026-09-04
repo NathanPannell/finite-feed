@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { SignalShell } from "@/components/signal-shell";
 
 type Profile = {
   preference_statement: string;
@@ -56,6 +57,11 @@ function durationLabel(seconds: number | null) {
   return `${Math.round(seconds / 60)} min`;
 }
 
+function shortDate(date: string | null) {
+  if (!date) return "Recently added";
+  return new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -77,7 +83,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
         fetch(`${apiBaseUrl}/api/metrics`, { cache: "no-store" }),
         fetch(`${apiBaseUrl}/api/pipeline/status`, { cache: "no-store" }),
       ]);
-      if (responses.some((response) => !response.ok)) throw new Error("The API is not ready yet.");
+      if (responses.some((response) => !response.ok)) throw new Error("The feed could not reach its source. Try again in a moment.");
       const [nextProfile, nextChannels, nextRecommendations, nextMetrics, nextPipeline] = await Promise.all(
         responses.map((response) => response.json()),
       );
@@ -88,7 +94,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
       setPipeline(nextPipeline);
       setNotice("");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not load Finite Feed.");
+      setNotice(error instanceof Error ? error.message : "Could not load Finite Feed. Try again.");
     }
   }, [apiBaseUrl]);
 
@@ -107,9 +113,9 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
       body: JSON.stringify(profile),
     });
     setBusy(false);
-    if (!response.ok) return setNotice("Could not save your preferences.");
+    if (!response.ok) return setNotice("Preferences were not saved. Check the fields and try again.");
     setProfile(await response.json());
-    setNotice("Preferences saved as a new, auditable version.");
+    setNotice("Preferences saved as a new, recoverable version.");
   }
 
   async function addChannel(event: FormEvent<HTMLFormElement>) {
@@ -123,19 +129,19 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     setBusy(false);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      return setNotice(body.detail ?? "Could not add that channel.");
+      return setNotice(body.detail ?? "That source was not added. Check the URL and try again.");
     }
     setChannelName("");
     setChannelUrl("");
-    setNotice("Channel added to your tracked set.");
+    setNotice("Source added to the tracked set.");
     await load();
   }
 
   async function removeChannel(id: string) {
     const response = await fetch(`${apiBaseUrl}/api/channels/${id}`, { method: "DELETE" });
-    if (!response.ok) return setNotice("Could not remove that channel.");
+    if (!response.ok) return setNotice("That source was not removed. Try again.");
     setChannels((current) => current.filter((channel) => channel.id !== id));
-    setNotice("Channel removed from your tracked set.");
+    setNotice("Source removed from the tracked set.");
   }
 
   async function rate(id: string, rating: "up" | "down") {
@@ -144,7 +150,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rating }),
     });
-    if (!response.ok) return setNotice("Could not record that feedback.");
+    if (!response.ok) return setNotice("Feedback was not recorded. Try again.");
     const updated = await response.json();
     setRecommendations((current) => current.map((item) => (item.id === id ? updated : item)));
     setNotice(rating === "up" ? "Saved — more like this." : "Saved — less like this.");
@@ -156,115 +162,140 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     setBusy(false);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      return setNotice(body.detail ?? "Could not generate a recommendation.");
+      return setNotice(body.detail ?? "A new recommendation could not be made. Try again.");
     }
     setNotice("A new recommendation is ready.");
     await load();
   }
 
   if (!apiBaseUrl) {
-    return <main className="setup-state">Set NEXT_PUBLIC_API_BASE_URL to connect this dashboard.</main>;
+    return <main className="setup-state">Set NEXT_PUBLIC_API_BASE_URL to connect this feed.</main>;
   }
 
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <a className="brand" href="#top" aria-label="Finite Feed home">
-          <span className="brand-mark">F</span>
-          <span>Finite Feed</span>
-        </a>
-        <nav aria-label="Dashboard sections">
-          <a className="active" href="#recommendations">Today</a>
-          <a href="#preferences">Preferences</a>
-          <a href="#channels">Sources</a>
-          <a href="#signals">Signals</a>
-          <a href="/match">Match lab</a>
-          <a href="/admin">Operations</a>
-        </nav>
-        <div className="sidebar-note">
-          <span className="live-dot" />
-          <div><strong>Twice weekly</strong><small>Next send · 9:00 AM</small></div>
-        </div>
-      </aside>
+  const latest = recommendations[0];
 
-      <main id="top" className="dashboard">
-        <header className="topbar">
+  return (
+    <SignalShell active="feed">
+      <main id="top" className="public-main">
+        <header className="public-hero">
+          <h1>Fewer things.<br /><span>Better chosen.</span></h1>
           <div>
-            <p className="kicker">Your high-signal queue</p>
-            <h1>One idea worth your time.</h1>
+            <p>One unusually valuable talk at a time, selected from the sources and ideas you trust.</p>
+            <button className="signal-action" onClick={() => void generate()} disabled={busy}>
+              {busy ? "Choosing…" : "Choose one now"}
+            </button>
           </div>
-          <div className="topbar-actions"><a className="admin-link" href="/admin">Operations</a><button className="primary" onClick={() => void generate()} disabled={busy}>Find one now <span>→</span></button></div>
         </header>
 
-        {notice && <p className="notice" role="status">{notice}</p>}
+        {notice && <p className="signal-notice" role="status">{notice}</p>}
 
-        <section id="recommendations" className="feature-section">
-          <div className="section-heading">
-            <div><span className="section-number">01</span><h2>Latest recommendation</h2></div>
-            <p>Selected from your tracked talks</p>
-          </div>
-          {recommendations.length ? (
-            <article className="recommendation-card">
-              <div className="video-art"><span>▶</span><small>{durationLabel(recommendations[0].duration_seconds)}</small></div>
-              <div className="recommendation-copy">
-                <p className="meta">{recommendations[0].channel_name} · {recommendations[0].published_at ? new Date(recommendations[0].published_at).toLocaleDateString() : "Recently added"}</p>
-                <h3>{recommendations[0].title}</h3>
-                {recommendations[0].speaker && <p className="speaker">with {recommendations[0].speaker}</p>}
-                <p className="rationale">{recommendations[0].rationale}</p>
-                <div className="actions">
-                  <a className="watch" href={`${apiBaseUrl}/r/${recommendations[0].id}`} target="_blank" rel="noreferrer">Watch on YouTube ↗</a>
-                  <button className={recommendations[0].rating === "up" ? "rated" : "icon-button"} onClick={() => void rate(recommendations[0].id, "up")} aria-label="More like this">↑</button>
-                  <button className={recommendations[0].rating === "down" ? "rated" : "icon-button"} onClick={() => void rate(recommendations[0].id, "down")} aria-label="Less like this">↓</button>
-                </div>
+        <div className="reading-grid">
+          <section id="recommendations" className="feed-column" aria-labelledby="recommendations-heading">
+            <header className="section-line">
+              <h2 id="recommendations-heading">For you</h2>
+              <span>{recommendations.length ? `${recommendations.length} recent` : "Queue open"}</span>
+            </header>
+
+            {latest ? (
+              <article className="lead-recommendation">
+                <p className="recommendation-meta">
+                  <span>{latest.channel_name}</span>
+                  <span>{durationLabel(latest.duration_seconds)}</span>
+                  <time dateTime={latest.published_at ?? undefined}>{shortDate(latest.published_at)}</time>
+                </p>
+                <h3>{latest.title}</h3>
+                {latest.speaker && <p className="recommendation-speaker">with {latest.speaker}</p>}
+                <p className="recommendation-rationale">{latest.rationale}</p>
+                <footer className="recommendation-actions">
+                  <a className="watch-action" href={`${apiBaseUrl}/r/${latest.id}`} target="_blank" rel="noreferrer">Watch on YouTube</a>
+                  <div role="group" aria-label="Rate this recommendation">
+                    <button className="fit-action" aria-pressed={latest.rating === "up"} onClick={() => void rate(latest.id, "up")}>Useful</button>
+                    <button className="fit-action" aria-pressed={latest.rating === "down"} onClick={() => void rate(latest.id, "down")}>Missed</button>
+                  </div>
+                </footer>
+              </article>
+            ) : (
+              <div className="signal-empty">
+                <h3>Your first pick is being edited.</h3>
+                <p>{pipeline?.embedded_videos ? `${pipeline.embedded_videos} talks are indexed and ready to compare.` : "The worker is preparing the first TED and TEDx candidates."}</p>
               </div>
-            </article>
-          ) : (
-            <div className="empty-card"><span>◎</span><h3>Your first pick is waiting.</h3><p>{pipeline?.embedded_videos ? `${pipeline.embedded_videos} talks are indexed and ready to compare.` : "The worker is preparing the first TED and TEDx candidates."}</p></div>
-          )}
-        </section>
+            )}
 
-        <div className="two-column">
-          <section id="preferences" className="panel">
-            <div className="section-heading compact"><div><span className="section-number">02</span><h2>Your filter</h2></div>{profile && <em>v{profile.version}</em>}</div>
-            {profile ? (
-              <form onSubmit={saveProfile}>
-                <label htmlFor="preference">What should feel unusually valuable?</label>
-                <textarea id="preference" value={profile.preference_statement} onChange={(event) => setProfile({ ...profile, preference_statement: event.target.value })} maxLength={5000} required />
-                <div className="schedule-row">
-                  <label>Delivery days</label>
-                  <div className="day-picker">{days.map((day, index) => <button type="button" key={day} className={profile.cadence_days.includes(index) ? "selected" : ""} onClick={() => setProfile({ ...profile, cadence_days: profile.cadence_days.includes(index) ? profile.cadence_days.filter((value) => value !== index) : [...profile.cadence_days, index] })}>{day[0]}</button>)}</div>
-                </div>
-                <div className="form-footer"><span>Every edit creates a recoverable version.</span><button className="secondary" disabled={busy}>Save filter</button></div>
+            {recommendations.length > 1 && (
+              <div className="recommendation-ledger" aria-label="Recent recommendations">
+                {recommendations.slice(1, 7).map((item) => (
+                  <article key={item.id} className="ledger-row">
+                    <div>
+                      <p>{item.channel_name} · {durationLabel(item.duration_seconds)}</p>
+                      <h3>{item.title}</h3>
+                      <span>{item.rationale}</span>
+                    </div>
+                    <div className="ledger-response">
+                      <time dateTime={item.created_at}>{shortDate(item.created_at)}</time>
+                      <div role="group" aria-label={`Rate ${item.title}`}>
+                        <button aria-pressed={item.rating === "up"} onClick={() => void rate(item.id, "up")}>Useful</button>
+                        <button aria-pressed={item.rating === "down"} onClick={() => void rate(item.id, "down")}>Missed</button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <aside className="memory-column">
+            <section id="preferences" className="preference-sheet" aria-labelledby="preferences-heading">
+              <header className="section-line">
+                <h2 id="preferences-heading">Preference memory</h2>
+                {profile && <span>Version {profile.version}</span>}
+              </header>
+              {profile ? (
+                <form onSubmit={saveProfile}>
+                  <label htmlFor="preference">What should feel unusually valuable?</label>
+                  <textarea id="preference" value={profile.preference_statement} onChange={(event) => setProfile({ ...profile, preference_statement: event.target.value })} maxLength={5000} required />
+                  <fieldset className="day-fieldset">
+                    <legend>Delivery days</legend>
+                    <div className="day-picker">{days.map((day, index) => (
+                      <button type="button" key={day} aria-pressed={profile.cadence_days.includes(index)} onClick={() => setProfile({ ...profile, cadence_days: profile.cadence_days.includes(index) ? profile.cadence_days.filter((value) => value !== index) : [...profile.cadence_days, index] })}>{day.slice(0, 2)}</button>
+                    ))}</div>
+                  </fieldset>
+                  <div className="delivery-fields">
+                    <label>Hour<input type="number" min="0" max="23" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })} /></label>
+                    <label>Time zone<input value={profile.timezone} onChange={(event) => setProfile({ ...profile, timezone: event.target.value })} /></label>
+                    <label>Picks<input type="number" min="1" max="5" value={profile.recommendation_count} onChange={(event) => setProfile({ ...profile, recommendation_count: Number(event.target.value) })} /></label>
+                  </div>
+                  <button className="save-action" disabled={busy}>{busy ? "Saving…" : "Shape my feed"}</button>
+                </form>
+              ) : <div className="sheet-skeleton" aria-label="Loading preference memory" />}
+            </section>
+
+            <section id="signals" className="quality-ledger" aria-labelledby="quality-heading">
+              <header className="section-line"><h2 id="quality-heading">Signal quality</h2></header>
+              <dl>
+                <div><dt>Positive ratings</dt><dd>{metrics ? `${Math.round(metrics.thumbs_up_share * 100)}%` : "—"}</dd></div>
+                <div><dt>Unique clicks</dt><dd>{metrics ? `${Math.round(metrics.click_through_rate * 100)}%` : "—"}</dd></div>
+                <div><dt>Talks indexed</dt><dd>{pipeline?.embedded_videos ?? "—"}</dd></div>
+                <div><dt>Worker sync</dt><dd>{pipeline?.last_ingestion_status ?? "Waiting"}</dd></div>
+              </dl>
+              <a className="quality-action" href="/match">Open Match Lab</a>
+            </section>
+
+            <section id="channels" className="source-ledger" aria-labelledby="sources-heading">
+              <header className="section-line"><h2 id="sources-heading">Tracked sources</h2><span>{channels.length}</span></header>
+              <div>
+                {channels.map((channel) => (
+                  <p key={channel.id}><a href={channel.url} target="_blank" rel="noreferrer">{channel.name}</a>{channel.is_default ? <span>Default</span> : <button aria-label={"Remove " + channel.name} onClick={() => void removeChannel(channel.id)}>Remove</button>}</p>
+                ))}
+              </div>
+              <form onSubmit={addChannel}>
+                <label><span>Channel name</span><input value={channelName} onChange={(event) => setChannelName(event.target.value)} required /></label>
+                <label><span>YouTube URL</span><input type="url" value={channelUrl} onChange={(event) => setChannelUrl(event.target.value)} required /></label>
+                <button disabled={busy}>Add source</button>
               </form>
-            ) : <div className="skeleton" />}
-          </section>
-
-          <section id="signals" className="panel signals">
-            <div className="section-heading compact"><div><span className="section-number">03</span><h2>Signal quality</h2></div></div>
-            <div className="metric-grid">
-              <div><strong>{metrics ? `${Math.round(metrics.thumbs_up_share * 100)}%` : "—"}</strong><span>positive ratings</span></div>
-              <div><strong>{metrics ? `${Math.round(metrics.click_through_rate * 100)}%` : "—"}</strong><span>unique clicks</span></div>
-              <div><strong>{metrics?.delivered ?? "—"}</strong><span>delivered</span></div>
-              <div><strong>{metrics ? metrics.rated_up + metrics.rated_down : "—"}</strong><span>rated</span></div>
-              <div><strong>{pipeline?.embedded_videos ?? "—"}</strong><span>talks indexed</span></div>
-              <div><strong>{pipeline?.last_ingestion_status ?? "waiting"}</strong><span>worker sync</span></div>
-            </div>
-            <p className="metric-note">Goals: 2:1 positive feedback and more than 50% unique clicks.</p>
-          </section>
+            </section>
+          </aside>
         </div>
-
-        <section id="channels" className="panel channels-panel">
-          <div className="section-heading compact"><div><span className="section-number">04</span><h2>Tracked sources</h2></div><span>{channels.length} channels</span></div>
-          <div className="channel-list">
-            {channels.map((channel) => <div className="channel" key={channel.id}><span className="channel-avatar">{channel.name.slice(0, 1)}</span><div><strong>{channel.name}</strong><a href={channel.url} target="_blank" rel="noreferrer">{channel.url.replace("https://www.youtube.com/", "")}</a></div>{channel.is_default ? <em>Default</em> : <button onClick={() => void removeChannel(channel.id)} aria-label={`Remove ${channel.name}`}>Remove</button>}</div>)}
-          </div>
-          <form className="channel-form" onSubmit={addChannel}>
-            <input aria-label="Channel name" placeholder="Channel name" value={channelName} onChange={(event) => setChannelName(event.target.value)} required />
-            <input aria-label="YouTube channel URL" type="url" placeholder="https://youtube.com/@channel" value={channelUrl} onChange={(event) => setChannelUrl(event.target.value)} required />
-            <button disabled={busy}>Add source</button>
-          </form>
-        </section>
       </main>
-    </div>
+    </SignalShell>
   );
 }
