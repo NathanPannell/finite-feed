@@ -98,7 +98,7 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <SignalShell className="match-page" mastheadTitle="Does this belong?">
+    <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
       <main className="match-main">
         {notice && <p className="signal-notice match-notice" role="status">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}

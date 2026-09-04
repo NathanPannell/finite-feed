@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import httpx
@@ -63,22 +63,39 @@ class VectorSearch(BaseModel):
 
 def parse_channel_reference(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").lower() not in {
-        "youtube.com", "www.youtube.com", "m.youtube.com"
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"} or hostname not in {
+        "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"
     }:
-        raise ValueError("Use a youtube.com channel URL")
+        raise ValueError("Use a YouTube channel or video URL")
     parts = [part for part in parsed.path.split("/") if part]
+    if hostname == "youtu.be" and len(parts) == 1:
+        return "video", parts[0]
     if len(parts) == 2 and parts[0] == "channel" and parts[1].startswith("UC") and len(parts[1]) == 24:
         return "id", parts[1]
     if len(parts) == 1 and parts[0].startswith("@") and len(parts[0]) > 1:
         return "forHandle", parts[0][1:]
-    raise ValueError("Use an unambiguous youtube.com/channel/... or youtube.com/@handle URL")
+    if parsed.path == "/watch":
+        video_ids = parse_qs(parsed.query).get("v", [])
+        if len(video_ids) == 1 and video_ids[0]:
+            return "video", video_ids[0]
+    if len(parts) == 2 and parts[0] in {"embed", "live", "shorts"}:
+        return "video", parts[1]
+    raise ValueError("Use a YouTube channel, handle, video, or youtu.be URL")
 
 
 def resolve_youtube_channel(url: str, settings: Settings) -> dict[str, Any]:
     filter_name, filter_value = parse_channel_reference(url)
     client = YouTubeClient(settings.youtube_api_key)
     try:
+        if filter_name == "video":
+            videos = client._get("/videos", part="snippet", id=filter_value).get("items", [])
+            if not videos:
+                raise ValueError("YouTube video was not found")
+            channel_id = videos[0].get("snippet", {}).get("channelId")
+            if not channel_id:
+                raise ValueError("The video's channel could not be identified")
+            filter_name, filter_value = "id", channel_id
         data = client._get(
             "/channels",
             part="snippet,contentDetails,statistics",
@@ -145,6 +162,7 @@ def upsert_admin_channel(
     details: dict[str, Any],
     max_video_age_days: int,
     actor: str | None,
+    commit: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     user_id = resolve_admin_owner(conn, user_id)
     existing = conn.execute(
@@ -180,7 +198,8 @@ def upsert_admin_channel(
             conn, action="reactivate", target_id=existing["id"], user_id=user_id, actor=actor,
             before=before, after={"is_active": True, "max_video_age_days": max_video_age_days},
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return row, True
     channel_id = uuid4()
     row = conn.execute(
@@ -202,7 +221,8 @@ def upsert_admin_channel(
         conn, action="add", target_id=channel_id, user_id=user_id, actor=actor,
         before=None, after={"is_active": True, "max_video_age_days": max_video_age_days},
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return row, False
 
 

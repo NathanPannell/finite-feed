@@ -106,7 +106,7 @@ test("operates the private admin dashboard through its server API contract", asy
   await expect(page.getByText("Existing Channel", { exact: true }).first()).toBeVisible();
 
   await page.getByLabel("Owner").selectOption("owner-2");
-  await page.getByLabel("YouTube channel URL").fill("https://youtube.com/@newchannel");
+  await page.getByLabel("YouTube URL").fill("https://youtube.com/@newchannel");
   await expect(page.getByText("New Channel", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Add channel/ }).click();
   await expect(page.getByRole("status")).toContainText("Channel added");

@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function MatchPage() {
   return (
-    <SignalShell className="match-page" mastheadTitle="Does this belong?">
+    <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
       <main className="match-main">
         <section className="match-intro" aria-labelledby="match-intro-title">
           <div className="match-intro-lead">
