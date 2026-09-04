@@ -126,6 +126,7 @@ test("keeps the public page inside a 320px viewport", async ({ page }) => {
 });
 
 test("shows caught up after the final reasoned match judgment", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
   let annotationBody: Record<string, unknown> | null = null;
   let saved = false;
   await page.route(apiOrigin + "/**", async (route) => {
@@ -164,12 +165,19 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   await expect(page.locator(".signal-masthead-title")).toHaveText("Does this belong?");
   await expect(page.locator(".match-progress")).toHaveCount(0);
   await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
-  const desktopGeometry = await page.locator(".signal-masthead, .signal-masthead-title").evaluateAll(([header, title]) => {
+  const desktopGeometry = await page.locator(".signal-masthead, .signal-masthead-title, .signal-masthead nav").evaluateAll(([header, title, nav]) => {
     const headerBox = header.getBoundingClientRect();
     const titleBox = title.getBoundingClientRect();
-    return { headerCenter: headerBox.left + headerBox.width / 2, titleCenter: titleBox.left + titleBox.width / 2 };
+    const navBox = nav.getBoundingClientRect();
+    return {
+      headerCenter: headerBox.left + headerBox.width / 2,
+      titleCenter: titleBox.left + titleBox.width / 2,
+      titleRight: titleBox.right,
+      navLeft: navBox.left,
+    };
   });
   expect(Math.abs(desktopGeometry.headerCenter - desktopGeometry.titleCenter)).toBeLessThanOrEqual(2);
+  expect(desktopGeometry.titleRight).toBeLessThan(desktopGeometry.navLeft);
   expect(await page.locator(".match-video-thumbnail").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Yes" }).click();
   await page.getByLabel("Reason Optional, but useful when it is close.").fill("The method directly matches the viewer's stated interest.");
