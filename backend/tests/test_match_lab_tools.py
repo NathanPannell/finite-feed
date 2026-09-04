@@ -29,7 +29,7 @@ def _snapshot(pair_count: int = 240) -> dict:
         "snapshot_id": "00000000-0000-0000-0000-000000000111",
         "snapshot_sha256": "a" * 64,
         "source_commit": "test",
-        "source_migrations": ["0010_match_lab_curated_queue.sql"],
+        "source_migrations": ["0011_match_lab_curated_queue.sql"],
         "profile_count": 30,
         "video_count": 80,
         "pair_count": pair_count,

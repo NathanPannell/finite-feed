@@ -6,7 +6,7 @@ def test_match_lab_migration_is_append_only_and_does_not_reset_data() -> None:
         Path(__file__).resolve().parents[2]
         / "database"
         / "migrations"
-        / "0010_match_lab_curated_queue.sql"
+        / "0011_match_lab_curated_queue.sql"
     ).read_text(encoding="utf-8")
     assert "DELETE FROM" not in migration.upper()
     assert "DROP TABLE" not in migration.upper()

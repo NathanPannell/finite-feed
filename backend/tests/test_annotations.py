@@ -27,7 +27,7 @@ def _prepare_pair(conn: psycopg.Connection, suffix: int, *, last_served: str | N
         INSERT INTO annotation_snapshots (
             id, snapshot_sha256, source_commit, source_migrations,
             profile_count, video_count, pair_count, provenance
-        ) VALUES (%s, %s, 'test', ARRAY['0010'], 1, 8, 8, '{}')
+        ) VALUES (%s, %s, 'test', ARRAY['0011'], 1, 8, 8, '{}')
         ON CONFLICT (id) DO NOTHING
         """,
         (SNAPSHOT_ID, f"{suffix:064x}"),

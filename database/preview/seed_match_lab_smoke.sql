@@ -10,7 +10,7 @@ SELECT
     '41000000-0000-4000-8000-000000000018',
     repeat('18', 32),
     'preview-smoke',
-    ARRAY['0010_match_lab_curated_queue.sql'],
+    ARRAY['0011_match_lab_curated_queue.sql'],
     (SELECT COUNT(*) FROM annotation_profiles WHERE active),
     (SELECT COUNT(*) FROM annotation_videos),
     (SELECT COUNT(*) FROM annotation_profiles WHERE active) * (SELECT COUNT(*) FROM annotation_videos),
