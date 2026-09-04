@@ -153,12 +153,24 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
     }
     return json(route, {});
   });
+  await page.route("**/_next/image?**", (route) => route.fulfill({
+    status: 200,
+    contentType: "image/png",
+    body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+  }));
 
   await page.goto("/match");
   await expect(page.getByRole("heading", { name: /Does this belong/ })).toBeVisible();
   await expect(page.locator(".signal-masthead-title")).toHaveText("Does this belong?");
   await expect(page.locator(".match-progress")).toHaveCount(0);
   await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
+  const desktopGeometry = await page.locator(".signal-masthead, .signal-masthead-title").evaluateAll(([header, title]) => {
+    const headerBox = header.getBoundingClientRect();
+    const titleBox = title.getBoundingClientRect();
+    return { headerCenter: headerBox.left + headerBox.width / 2, titleCenter: titleBox.left + titleBox.width / 2 };
+  });
+  expect(Math.abs(desktopGeometry.headerCenter - desktopGeometry.titleCenter)).toBeLessThanOrEqual(2);
+  expect(await page.locator(".match-video-thumbnail").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Yes" }).click();
   await page.getByLabel("Reason Optional, but useful when it is close.").fill("The method directly matches the viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();
@@ -173,6 +185,12 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
     rationale: "The method directly matches the viewer's stated interest.",
   });
   await page.setViewportSize({ width: 320, height: 800 });
+  const mobileGeometry = await page.locator(".signal-masthead, .signal-masthead-title").evaluateAll(([header, title]) => {
+    const headerBox = header.getBoundingClientRect();
+    const titleBox = title.getBoundingClientRect();
+    return { headerCenter: headerBox.left + headerBox.width / 2, titleCenter: titleBox.left + titleBox.width / 2 };
+  });
+  expect(Math.abs(mobileGeometry.headerCenter - mobileGeometry.titleCenter)).toBeLessThanOrEqual(2);
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
 });
