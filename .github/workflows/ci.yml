@@ -66,6 +66,8 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
           RAILWAY_API_BASE_URL: http://localhost:8000
+      - run: npm run test:proxy
+        working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run test:e2e
@@ -89,7 +91,6 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ADMIN_PROTECTION_CONFIRMED: ${{ vars.VERCEL_ADMIN_PROTECTION_CONFIRMED }}
       VERCEL_OIDC_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
       VERCEL_OIDC_PROJECT_NAME: ${{ vars.VERCEL_PROJECT_NAME }}
     steps:
@@ -99,12 +100,10 @@ jobs:
           node-version: 22
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
-      - name: Require private production deployment protection
+      - name: Verify route-scoped admin protection contract
+        run: npm --prefix frontend run test:proxy
+      - name: Require admin OIDC configuration
         run: |
-          [[ "$VERCEL_ADMIN_PROTECTION_CONFIRMED" == "true" ]] || {
-            echo 'Set VERCEL_ADMIN_PROTECTION_CONFIRMED=true only after Vercel Authentication protects All Deployments.' >&2
-            exit 1
-          }
           : "${VERCEL_OIDC_TEAM_SLUG:?VERCEL_TEAM_SLUG repository variable is required}"
           : "${VERCEL_OIDC_PROJECT_NAME:?VERCEL_PROJECT_NAME repository variable is required}"
       - name: Stamp and deploy Railway services
