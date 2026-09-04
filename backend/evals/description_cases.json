@@ -1,5 +1,6 @@
 [
   {
+    "source_ref": "current-sample-01-prose-promotions",
     "name": "prose-then-promotions",
     "title": "How small choices reshape a city",
     "description": "A planner explains how everyday street decisions accumulate into safer, more welcoming neighborhoods.\n\nSubscribe to TED: https://example.com/ted\n#TED #cities",
@@ -7,6 +8,7 @@
     "english_eligible": true
   },
   {
+    "source_ref": "current-sample-02-inline-source",
     "name": "useful-inline-link",
     "title": "The evidence behind healthier schools",
     "description": "Read the underlying study at https://example.org/study while the researcher explains what changed in classrooms.",
@@ -14,6 +16,7 @@
     "english_eligible": true
   },
   {
+    "source_ref": "current-sample-03-inline-hashtag",
     "name": "useful-inline-hashtag",
     "title": "How a hashtag became a movement",
     "description": "The #MeToo movement changed how workplaces discuss power and accountability.",
@@ -21,6 +24,7 @@
     "english_eligible": true
   },
   {
+    "source_ref": "current-sample-04-chapters-sponsor",
     "name": "chapters-and-sponsor",
     "title": "What stress does to attention",
     "description": "A neuroscientist shows why pressure narrows attention and how deliberate practice can help.\nChapters:\n00:00 Introduction\n03:42 The experiment\nThis video is sponsored by Example Corp.\nhttps://example.com",
@@ -28,6 +32,7 @@
     "english_eligible": true
   },
   {
+    "source_ref": "current-sample-05-boilerplate",
     "name": "ted-boilerplate-only",
     "title": "",
     "description": "This talk was given at a TEDx event using the TED conference format.\nIn the spirit of ideas worth spreading, TEDx is a program of local, self-organized events.\n#TEDx",
@@ -35,6 +40,7 @@
     "english_eligible": false
   },
   {
+    "source_ref": "current-sample-06-spanish",
     "name": "spanish",
     "title": "Cómo recuperar nuestros barrios",
     "description": "Una arquitecta explica cómo el transporte público puede crear ciudades más justas y saludables.\nSuscríbete para ver más charlas.",
@@ -42,6 +48,7 @@
     "english_eligible": false
   },
   {
+    "source_ref": "current-sample-07-french",
     "name": "french",
     "title": "Pourquoi notre mémoire nous trompe",
     "description": "Une chercheuse présente des expériences sur la mémoire, l'attention et les décisions quotidiennes.",
@@ -49,10 +56,70 @@
     "english_eligible": false
   },
   {
+    "source_ref": "current-sample-08-japanese",
     "name": "japanese",
     "title": "都市をもっと住みやすくする方法",
     "description": "建築家が公共空間と交通について説明します。",
     "expected_description": "建築家が公共空間と交通について説明します。",
+    "english_eligible": false
+  },
+  {
+    "source_ref": "regression-01-standalone-source",
+    "name": "standalone-source-between-prose",
+    "title": "What repeated experiments reveal",
+    "description": "The first experiment established a useful baseline.\nhttps://example.org/source\nA second experiment explained why the effect persists.",
+    "expected_description": "The first experiment established a useful baseline. A second experiment explained why the effect persists.",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-02-inline-sponsor",
+    "name": "same-line-sponsorship-tail",
+    "title": "Why the result matters",
+    "description": "A researcher explains what changed and why it matters. This video is sponsored by Example Corp.",
+    "expected_description": "A researcher explains what changed and why it matters.",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-03-short-french",
+    "name": "short-french",
+    "title": "Bonjour monde",
+    "description": "",
+    "expected_description": "",
+    "english_eligible": false
+  },
+  {
+    "source_ref": "regression-04-short-spanish",
+    "name": "short-spanish",
+    "title": "Hola amigos",
+    "description": "",
+    "expected_description": "",
+    "english_eligible": false
+  },
+  {
+    "source_ref": "regression-05-short-english",
+    "name": "short-english",
+    "title": "Hello world",
+    "description": "",
+    "expected_description": "",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-06-explicit-english",
+    "name": "youtube-english-language-hint",
+    "title": "AI systems",
+    "description": "",
+    "default_language": "en-GB",
+    "expected_description": "",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-07-audio-language-priority",
+    "name": "youtube-audio-language-priority",
+    "title": "The future",
+    "description": "",
+    "default_language": "en",
+    "default_audio_language": "es-MX",
+    "expected_description": "",
     "english_eligible": false
   }
 ]

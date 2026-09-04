@@ -14,10 +14,20 @@ def clean_display_text(value: str) -> str:
     return re.sub(r"\s+", " ", normalize_display_text(value)).strip()
 
 
+def _is_english_video(row: dict) -> bool:
+    return is_english_metadata(
+        row["title"],
+        row["description"],
+        row.get("default_language"),
+        row.get("default_audio_language"),
+    )
+
+
 def next_annotation(conn: Connection, annotator_id: UUID):
     rows = conn.execute(
         """
-        SELECT p.id AS profile_id, v.video_id, p.summary, p.topics, v.title, v.description
+        SELECT p.id AS profile_id, v.video_id, p.summary, p.topics, v.title, v.description,
+               v.default_language, v.default_audio_language
         FROM annotation_profiles p
         CROSS JOIN annotation_videos v
         LEFT JOIN annotation_pair_scores score
@@ -41,7 +51,7 @@ def next_annotation(conn: Connection, annotator_id: UUID):
         (annotator_id, annotator_id),
     ).fetchall()
     row = next(
-        (row for row in rows if is_english_metadata(row["title"], row["description"])),
+        (row for row in rows if _is_english_video(row)),
         None,
     )
     if row is None:
@@ -66,10 +76,11 @@ def record_annotation(
     annotator_kind: str = "anonymous",
 ):
     video = conn.execute(
-        "SELECT title, description FROM annotation_videos WHERE video_id = %s",
+        """SELECT title, description, default_language, default_audio_language
+           FROM annotation_videos WHERE video_id = %s""",
         (video_id,),
     ).fetchone()
-    if not video or not is_english_metadata(video["title"], video["description"]):
+    if not video or not _is_english_video(video):
         conn.rollback()
         return None
     row = conn.execute(
@@ -100,11 +111,14 @@ def record_annotation(
 
 
 def annotation_stats(conn: Connection, annotator_id: UUID) -> dict[str, int]:
-    videos = conn.execute("SELECT video_id, title, description FROM annotation_videos").fetchall()
+    videos = conn.execute(
+        """SELECT video_id, title, description, default_language, default_audio_language
+           FROM annotation_videos"""
+    ).fetchall()
     eligible_ids = [
         row["video_id"]
         for row in videos
-        if is_english_metadata(row["title"], row["description"])
+        if _is_english_video(row)
     ]
     active_profiles = conn.execute(
         "SELECT COUNT(*) AS count FROM annotation_profiles WHERE active"

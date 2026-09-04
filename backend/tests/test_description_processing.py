@@ -20,6 +20,23 @@ def test_inline_markers_preserve_surrounding_prose() -> None:
     )
 
 
+def test_standalone_source_link_does_not_truncate_later_prose() -> None:
+    description = (
+        "The first experiment established a useful baseline.\n"
+        "https://example.org/source\n"
+        "A second experiment explained why the effect persists."
+    )
+    assert clean_description(description) == (
+        "The first experiment established a useful baseline. "
+        "A second experiment explained why the effect persists."
+    )
+
+
+def test_same_line_sponsorship_tail_is_removed_without_losing_prose() -> None:
+    description = "A researcher explains what changed and why it matters. This video is sponsored by Example Corp."
+    assert clean_description(description) == "A researcher explains what changed and why it matters."
+
+
 def test_trailing_marker_starts_non_content_block() -> None:
     description = "Useful explanation of the result.\n#TED #science\nWatch another talk"
     assert clean_description(description) == "Useful explanation of the result."
@@ -56,9 +73,14 @@ def test_language_detection_is_local_deterministic_and_uses_cleaned_metadata() -
         "An engineer explains how reliable buses change access to work and education.",
     )
     assert not is_english_metadata("都市の未来", "公共交通について説明します。")
+    assert not is_english_metadata("Bonjour monde", "")
+    assert not is_english_metadata("Hola amigos", "")
+    assert is_english_metadata("Hello world", "")
+    assert is_english_metadata("AI systems", "", "en-GB", None)
+    assert not is_english_metadata("The future", "", "en", "es-MX")
 
 
 def test_document_fingerprint_versions_derived_text_without_mutating_raw_fingerprint() -> None:
     raw = "sha256:canonical-source-metadata"
-    assert document_fingerprint(raw) == "description-v1:sha256:canonical-source-metadata"
+    assert document_fingerprint(raw) == "description-v2:sha256:canonical-source-metadata"
     assert raw == "sha256:canonical-source-metadata"

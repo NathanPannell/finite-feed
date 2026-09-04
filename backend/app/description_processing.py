@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from langdetect import DetectorFactory, LangDetectException, detect_langs
 
-DESCRIPTION_PROCESSING_VERSION = "description-v1"
+DESCRIPTION_PROCESSING_VERSION = "description-v2"
 
 _MOJIBAKE = {
     "\u00e2\u20ac\u2122": "’",
@@ -43,6 +43,14 @@ _PROMOTION = re.compile(
     r")",
     re.IGNORECASE,
 )
+_INLINE_PROMOTION = re.compile(
+    r"(?:(?<=[.!?])|^)\s*(?:"
+    r"this (?:video|episode|talk) is (?:sponsored|presented|paid for) by|"
+    r"(?:sponsored|presented|paid for) by|"
+    r"(?:thanks?|thank you) to .+ for sponsor"
+    r")\b",
+    re.IGNORECASE,
+)
 _BOILERPLATE = re.compile(
     r"^\s*(?:"
     r"the ted talks channel features the best talks and performances|"
@@ -55,6 +63,12 @@ _BOILERPLATE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_ENGLISH_SHORT_CUES = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "for", "from",
+    "how", "i", "in", "is", "it", "of", "on", "or", "our", "the", "this", "to",
+    "we", "what", "when", "where", "why", "with", "you", "your",
+})
+_WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 DetectorFactory.seed = 0
 
@@ -81,14 +95,19 @@ def clean_description(value: str) -> str:
             continue
         if _TIMESTAMP.match(line) or _CHAPTER_HEADER.match(line) or _BOILERPLATE.match(line):
             continue
-        if _HASHTAG_BLOCK.match(line) or _BARE_LINK.match(line):
+        if _HASHTAG_BLOCK.match(line):
             if kept:
                 break
+            continue
+        if _BARE_LINK.match(line):
             continue
         if kept and _PROMOTION.match(line):
             break
         if _PROMOTION.match(line):
             continue
+        inline_promotion = _INLINE_PROMOTION.search(line)
+        if inline_promotion:
+            line = line[:inline_promotion.start()].strip()
         line = _URL.sub("", line)
         line = _HASHTAG.sub(r"\1", line)
         line = re.sub(r"\s+([,.;:!?])", r"\1", line)
@@ -103,8 +122,16 @@ def document_fingerprint(raw_fingerprint: str) -> str:
 
 
 @lru_cache(maxsize=4096)
-def is_english_metadata(title: str, description: str) -> bool:
+def is_english_metadata(
+    title: str,
+    description: str,
+    default_language: str | None = None,
+    default_audio_language: str | None = None,
+) -> bool:
     """Classify cleaned title/description for Match Lab eligibility only."""
+    language_hint = _primary_language(default_audio_language) or _primary_language(default_language)
+    if language_hint:
+        return language_hint == "en"
     sample = " ".join(
         part for part in (normalize_display_text(title), clean_description(description)) if part
     ).strip()
@@ -113,12 +140,23 @@ def is_english_metadata(title: str, description: str) -> bool:
         return False
     if any(not _is_latin_letter(character) for character in letters):
         return False
-    if len(letters) < 20:
-        return True
     try:
-        return detect_langs(sample)[0].lang == "en"
+        detected = detect_langs(sample)[0].lang == "en"
     except LangDetectException:
         return False
+    if detected:
+        return True
+    if len(letters) < 20:
+        words = {word.casefold() for word in _WORD.findall(sample)}
+        return bool(words & _ENGLISH_SHORT_CUES)
+    return False
+
+
+def _primary_language(value: str | None) -> str | None:
+    if not value:
+        return None
+    primary = value.strip().replace("_", "-").split("-", 1)[0].casefold()
+    return primary if primary.isalpha() else None
 
 
 def _is_latin_letter(character: str) -> bool:

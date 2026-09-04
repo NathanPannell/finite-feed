@@ -32,6 +32,8 @@ class YouTubeVideo:
     published_at: datetime | None
     duration_seconds: int | None
     view_count: int
+    default_language: str | None = None
+    default_audio_language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,8 @@ class YouTubeClient:
                     published_at=datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00")) if snippet.get("publishedAt") else None,
                     duration_seconds=parse_duration(item.get("contentDetails", {}).get("duration")),
                     view_count=int(item.get("statistics", {}).get("viewCount", 0)),
+                    default_language=snippet.get("defaultLanguage"),
+                    default_audio_language=snippet.get("defaultAudioLanguage"),
                 ))
         return UploadPage(videos=videos, next_page_token=page.get("nextPageToken"))
 

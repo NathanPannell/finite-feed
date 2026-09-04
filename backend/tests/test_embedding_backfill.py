@@ -79,7 +79,7 @@ def test_backfill_claims_locked_batch_and_records_exact_metadata() -> None:
         embedder.model_name,
         embedder.model_revision,
         384,
-        "description-v1",
+        "description-v2",
         5,
         [],
         [],
@@ -92,7 +92,7 @@ def test_backfill_claims_locked_batch_and_records_exact_metadata() -> None:
         embedder.model_name,
         embedder.model_revision,
         embedder.dimensions,
-        "description-v1:" + VIDEO["content_fingerprint"],
+        "description-v2:" + VIDEO["content_fingerprint"],
     )
     assert conn.commits == 1
 

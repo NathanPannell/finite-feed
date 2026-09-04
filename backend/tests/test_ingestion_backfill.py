@@ -6,7 +6,13 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from backend.app.ingestion import _mark_channel_sync_started, ingest_tracked_channels
+from backend.app.description_processing import document_fingerprint
+from backend.app.ingestion import (
+    _mark_channel_sync_started,
+    _store_videos,
+    ingest_tracked_channels,
+    video_fingerprint,
+)
 from backend.app.youtube import ChannelDetails, UploadPage, YouTubeVideo
 
 
@@ -111,10 +117,43 @@ class ConcurrentStopConnection:
         self.committed = True
 
 
+class StoreConnection:
+    def __init__(self):
+        self.upsert_params: list[tuple] = []
+
+    def execute(self, query, params):
+        sql = str(query)
+        if "FROM videos WHERE youtube_video_id" in sql:
+            return EmptyUpdateResult()
+        if "INSERT INTO videos" in sql:
+            self.upsert_params.append(params)
+            return EmptyUpdateResult()
+        raise AssertionError(sql)
+
+
 def test_sync_start_guard_skips_a_channel_stopped_after_initial_selection() -> None:
     conn = ConcurrentStopConnection()
     assert _mark_channel_sync_started(conn, uuid4()) is False
     assert conn.committed is True
+
+
+def test_store_videos_persists_each_videos_own_embedding_fingerprint() -> None:
+    now = datetime.now(UTC)
+    videos = [
+        _video("fingerprint-one", "Channel", now),
+        _video("fingerprint-two", "Channel", now),
+    ]
+    conn = StoreConnection()
+
+    assert _store_videos(conn, uuid4(), videos, FakeEmbedder()) == 2
+
+    stored_fingerprints = [params[-1] for params in conn.upsert_params]
+    expected_fingerprints = [
+        document_fingerprint(video_fingerprint(video.title, video.description))
+        for video in videos
+    ]
+    assert stored_fingerprints == expected_fingerprints
+    assert stored_fingerprints[0] != stored_fingerprints[1]
 
 
 @pytest.fixture
