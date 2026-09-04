@@ -148,9 +148,14 @@ def upsert_admin_channel(
 ) -> tuple[dict[str, Any], bool]:
     user_id = resolve_admin_owner(conn, user_id)
     existing = conn.execute(
-        "SELECT * FROM tracked_channels WHERE user_id = %s AND youtube_channel_id = %s FOR UPDATE",
-        (user_id, details["youtube_channel_id"]),
+        "SELECT * FROM tracked_channels WHERE youtube_channel_id = %s FOR UPDATE",
+        (details["youtube_channel_id"],),
     ).fetchone()
+    if existing and existing["user_id"] != user_id:
+        raise HTTPException(
+            status_code=409,
+            detail="That YouTube channel is already owned; shared channel ownership is not supported",
+        )
     if existing and existing["is_active"]:
         raise HTTPException(status_code=409, detail="That channel is already actively tracked")
     if existing:

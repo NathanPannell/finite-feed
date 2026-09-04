@@ -121,6 +121,28 @@ def test_active_duplicate_is_rejected_by_canonical_channel_id() -> None:
     assert error.value.status_code == 409
 
 
+
+def test_cross_owner_duplicate_is_rejected_without_reassignment() -> None:
+    existing = {
+        "id": uuid4(),
+        "user_id": uuid4(),
+        "is_active": True,
+        "max_video_age_days": 7,
+    }
+    conn = ChannelConnection(existing)
+    with pytest.raises(HTTPException) as error:
+        upsert_admin_channel(
+            conn,
+            user_id=USER_ID,
+            details=channel_details(),
+            max_video_age_days=7,
+            actor="verified-subject",
+        )
+    assert error.value.status_code == 409
+    assert "shared channel ownership is not supported" in error.value.detail
+    assert not any(query.startswith("UPDATE tracked_channels") for query in conn.queries)
+
+
 def test_inactive_duplicate_reactivates_same_record_and_audits() -> None:
     channel_id = uuid4()
     existing = {"id": channel_id, "user_id": USER_ID, "is_active": False, "max_video_age_days": 7}

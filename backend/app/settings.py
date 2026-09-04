@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     worker_poll_seconds: int = Field(default=60, ge=15, alias="WORKER_POLL_SECONDS")
     delivery_retry_minutes: int = Field(default=60, ge=15, alias="DELIVERY_RETRY_MINUTES")
     ingestion_interval_hours: int = Field(default=6, ge=1, alias="INGESTION_INTERVAL_HOURS")
+    ingestion_retry_minutes: int = Field(default=30, ge=5, le=1440, alias="INGESTION_RETRY_MINUTES")
     youtube_page_limit: int = Field(default=2, ge=1, le=10, alias="YOUTUBE_PAGE_LIMIT")
     youtube_api_key: str = Field(default="", alias="YOUTUBE_API_KEY")
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")

@@ -102,10 +102,18 @@ jobs:
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
       - name: Verify route-scoped admin protection contract
         run: npm --prefix frontend run test:proxy
-      - name: Require admin OIDC configuration
+      - name: Require admin OIDC and Vercel Standard Protection
         run: |
           : "${VERCEL_OIDC_TEAM_SLUG:?VERCEL_TEAM_SLUG repository variable is required}"
           : "${VERCEL_OIDC_PROJECT_NAME:?VERCEL_PROJECT_NAME repository variable is required}"
+          protection="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID" \
+            | jq -r '.ssoProtection.deploymentType // empty')"
+          [[ "$protection" == "all_except_custom_domains" ]] || {
+            echo 'Vercel Standard Protection (all_except_custom_domains) is required.' >&2
+            exit 1
+          }
       - name: Stamp and deploy Railway services
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -167,6 +175,12 @@ jobs:
             sleep 5
           done
           [[ -n "$production_url" ]] || { echo 'Vercel production URL was not available.' >&2; exit 1; }
+          admin_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$deployment_url/admin")"
+          case "$admin_status" in
+            301|302|303|307|308|401|403) ;;
+            *) echo "Generated deployment /admin did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
+          esac
+          curl --fail --location --silent --show-error "$production_url/match" >/dev/null
           origins="$(jq -nr --arg deployment "$deployment_url" --arg production "$production_url" '[$deployment, $production] | unique | join(",")')"
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
           echo "production_url=$production_url" >> "$GITHUB_OUTPUT"

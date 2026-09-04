@@ -1,22 +1,57 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("../proxy.ts", import.meta.url), "utf8");
+const { adminRouteDecision } = await import("../lib/admin-route-gate.ts");
 
-test("admin proxy is scoped to private UI and API routes", () => {
-  assert.match(source, /matcher:\s*\["\/admin\/:path\*", "\/api\/admin\/:path\*"\]/);
-  assert.doesNotMatch(source, /matcher:[^\n]*\/match/);
+test("local development and tests remain usable", () => {
+  assert.deepEqual(
+    adminRouteDecision({ nodeEnv: "development", requestHostname: "localhost" }),
+    { kind: "allow" },
+  );
+  assert.deepEqual(
+    adminRouteDecision({ nodeEnv: "test", requestHostname: "localhost" }),
+    { kind: "allow" },
+  );
 });
 
-test("production admin access redirects to the protected deployment host", () => {
-  assert.match(source, /VERCEL_ENV !== "production"/);
-  assert.match(source, /process\.env\.VERCEL_URL/);
-  assert.match(source, /request\.nextUrl\.clone\(\)/);
-  assert.match(source, /NextResponse\.redirect\(destination, 307\)/);
+test("production-like unknown state fails closed", () => {
+  assert.deepEqual(
+    adminRouteDecision({ nodeEnv: "production", requestHostname: "finite.example" }),
+    { kind: "deny" },
+  );
+  assert.deepEqual(
+    adminRouteDecision({
+      nodeEnv: "production",
+      vercelEnv: "production",
+      requestHostname: "finite.example",
+    }),
+    { kind: "deny" },
+  );
 });
 
-test("production fails closed when the generated deployment host is missing", () => {
-  assert.match(source, /if \(!deploymentHost\)/);
-  assert.match(source, /status: 503/);
+test("production custom aliases redirect while the protected host is allowed", () => {
+  const input = {
+    nodeEnv: "production",
+    vercelEnv: "production",
+    vercelUrl: "finite-generated.vercel.app",
+  };
+  assert.deepEqual(
+    adminRouteDecision({ ...input, requestHostname: "finite.example" }),
+    { kind: "redirect", host: "finite-generated.vercel.app" },
+  );
+  assert.deepEqual(
+    adminRouteDecision({ ...input, requestHostname: "FINITE-GENERATED.VERCEL.APP" }),
+    { kind: "allow" },
+  );
+});
+
+test("preview deployments remain available behind Vercel protection", () => {
+  assert.deepEqual(
+    adminRouteDecision({
+      nodeEnv: "production",
+      vercelEnv: "preview",
+      requestHostname: "preview.vercel.app",
+    }),
+    { kind: "allow" },
+  );
 });
