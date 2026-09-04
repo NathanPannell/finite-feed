@@ -15,6 +15,7 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 - Scheduled Telegram delivery, one-tap feedback, tracked redirects, and conversational profile updates.
 - A mobile-friendly redirect that records `clicked` before opening YouTube.
 - A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
+- A public match lab for collecting anonymous, reasoned human judgments on profile-video pairs.
 - A production-safe worker that ingests previews but disables preview delivery.
 
 Transcript ingestion, developer-bot preview routing, and a repeatable human-scored evaluation set remain post-baseline work.

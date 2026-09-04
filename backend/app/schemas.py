@@ -113,3 +113,38 @@ class PipelineStatus(BaseModel):
     last_ingestion_status: str | None
     last_ingestion_at: datetime | None
     last_ingestion_videos_seen: int
+
+
+class AnnotationCard(BaseModel):
+    profile_id: UUID
+    video_id: UUID
+    summary: str
+    topics: list[str]
+    title: str
+    description: str
+
+
+class AnnotationCreate(BaseModel):
+    annotator_id: UUID
+    profile_id: UUID
+    video_id: UUID
+    label: Literal["yes", "no", "unsure"]
+    rationale: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("rationale")
+    @classmethod
+    def normalize_rationale(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class AnnotationResult(AnnotationCreate):
+    id: UUID
+    annotator_kind: Literal["anonymous", "google"]
+    created_at: datetime
+
+
+class AnnotationStats(BaseModel):
+    completed: int
+    remaining: int
