@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:proxy": "node --test tests/admin-route-proxy.test.mjs"
+    "test:proxy": "node --test tests/admin-route-proxy.test.mjs tests/admin-navigation.test.mjs"
   },
   "dependencies": {
     "@vercel/oidc": "^3.8.5",
