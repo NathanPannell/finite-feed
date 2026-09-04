@@ -18,7 +18,18 @@ from backend.app.recommendations import (
     lock_recommendation_for_delivery,
     mark_recommendation_delivered,
 )
-from backend.app.schemas import Channel, ChannelCreate, FeedbackCreate, Metrics, PipelineStatus, Profile, ProfileUpdate, Recommendation
+from backend.app.schemas import (
+    Channel,
+    ChannelCreate,
+    DeliveryUpdate,
+    FeedbackCreate,
+    Metrics,
+    PipelineStatus,
+    PreferenceMemoryUpdate,
+    Profile,
+    ProfileUpdate,
+    Recommendation,
+)
 from backend.app.schemas import AnnotationCard, AnnotationCreate, AnnotationResult, AnnotationStats
 from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
@@ -120,6 +131,40 @@ def update_profile(payload: ProfileUpdate, conn: Connection = Depends(connection
         "UPDATE app_users SET timezone = %s, cadence_days = %s, delivery_hour = %s, recommendation_count = %s, updated_at = NOW() WHERE id = %s",
         (payload.timezone, payload.cadence_days, payload.delivery_hour, payload.recommendation_count, USER_ID),
     )
+    conn.execute(
+        "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'dashboard', %s)",
+        (uuid4(), USER_ID, version, payload.preference_statement, rendered, payload.preference_statement),
+    )
+    conn.execute(
+        "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'dashboard', %s)",
+        (uuid4(), USER_ID, Jsonb({"version": version})),
+    )
+    conn.commit()
+    return profile_row(conn)
+
+
+@app.put("/api/profile/delivery", response_model=Profile)
+def update_delivery(payload: DeliveryUpdate, conn: Connection = Depends(connection)):
+    if not profile_row(conn):
+        raise HTTPException(status_code=404, detail="Profile not found")
+    conn.execute(
+        "UPDATE app_users SET cadence_days = %s, recommendation_count = %s, updated_at = NOW() WHERE id = %s",
+        (payload.cadence_days, payload.recommendation_count, USER_ID),
+    )
+    conn.commit()
+    return profile_row(conn)
+
+
+@app.put("/api/profile/memory", response_model=Profile)
+def update_preference_memory(payload: PreferenceMemoryUpdate, conn: Connection = Depends(connection)):
+    owner = conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (USER_ID,)).fetchone()
+    current = profile_row(conn) if owner else None
+    if not current:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if current["version"] != payload.expected_version:
+        raise HTTPException(status_code=409, detail="Preference memory changed. Reload and try again.")
+    version = current["version"] + 1
+    rendered = f"# Current preferences\n\n{payload.preference_statement}\n\n## History\n\n- Version {version} saved from the dashboard."
     conn.execute(
         "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'dashboard', %s)",
         (uuid4(), USER_ID, version, payload.preference_statement, rendered, payload.preference_statement),

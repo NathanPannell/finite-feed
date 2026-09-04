@@ -12,6 +12,7 @@ function json(route: Route, payload: unknown) {
 async function mockPublicApi(page: Page) {
   let feedbackId = "";
   let profilePayload: Record<string, unknown> | null = null;
+  let memoryPayload: Record<string, unknown> | null = null;
   let channelPayload: Record<string, unknown> | null = null;
   await page.route(apiOrigin + "/**", async (route) => {
     const request = route.request();
@@ -38,9 +39,32 @@ async function mockPublicApi(page: Page) {
       return json(route, {});
     }
 
-    if (url.pathname === "/api/profile" && request.method() === "PUT") {
-      profilePayload = request.postDataJSON();
-      return json(route, { ...profilePayload, version: 5, updated_at: "2026-09-04T12:00:00Z" });
+    if (url.pathname === "/api/profile/delivery" && request.method() === "PUT") {
+      const payload = request.postDataJSON() as Record<string, unknown>;
+      profilePayload = payload;
+      return json(route, {
+        preference_statement: "Rigorous ideas about systems, human judgment, and better decisions.",
+        timezone: "America/Los_Angeles",
+        cadence_days: [2, 5],
+        delivery_hour: 9,
+        recommendation_count: payload.recommendation_count,
+        version: 4,
+        updated_at: "2026-09-04T12:00:00Z",
+      });
+    }
+
+    if (url.pathname === "/api/profile/memory" && request.method() === "PUT") {
+      const payload = request.postDataJSON() as Record<string, unknown>;
+      memoryPayload = payload;
+      return json(route, {
+        preference_statement: payload.preference_statement,
+        timezone: "America/Los_Angeles",
+        cadence_days: [2, 5],
+        delivery_hour: 9,
+        recommendation_count: 1,
+        version: 5,
+        updated_at: "2026-09-04T12:00:00Z",
+      });
     }
 
     if (url.pathname === "/api/profile") {
@@ -131,6 +155,7 @@ async function mockPublicApi(page: Page) {
   return {
     feedbackId: () => feedbackId,
     profilePayload: () => profilePayload,
+    memoryPayload: () => memoryPayload,
     channelPayload: () => channelPayload,
   };
 }
@@ -164,7 +189,7 @@ test("saves delivery values without exposing time controls and resolves a URL-on
   await expect(page.getByRole("button", { name: "Decrease picks" })).toBeDisabled();
   await page.getByRole("button", { name: "Increase picks" }).click();
   await page.getByRole("button", { name: "Save preferences" }).click();
-  expect(captured.profilePayload()).toMatchObject({ delivery_hour: 9, timezone: "America/Los_Angeles", recommendation_count: 2 });
+  expect(captured.profilePayload()).toEqual({ cadence_days: [2, 5], recommendation_count: 2 });
 
   const sourceUrl = "https://youtu.be/practical";
   await page.getByLabel("YouTube URL").fill(sourceUrl);
@@ -173,6 +198,21 @@ test("saves delivery values without exposing time controls and resolves a URL-on
   await page.getByRole("button", { name: "Add source" }).click();
   expect(captured.channelPayload()).toEqual({ url: sourceUrl });
   await expect(page.getByRole("button", { name: "Remove Practical Engineering" })).toBeVisible();
+});
+
+test("saves preference memory with an optimistic version and no delivery fields", async ({ page }) => {
+  const captured = await mockPublicApi(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Shape memory" }).click();
+  await page.getByLabel("Update preference memory").fill("Systems thinking with practical evidence.");
+  await page.getByRole("button", { name: "Save memory" }).click();
+
+  expect(captured.memoryPayload()).toEqual({
+    preference_statement: "Systems thinking with practical evidence.",
+    expected_version: 4,
+  });
+  await expect(page.getByText("Preference memory saved.")).toBeVisible();
 });
 
 test("shows invalid, lookup failure, duplicate, and removable-default source states", async ({ page }) => {

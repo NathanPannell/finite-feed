@@ -155,38 +155,62 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     };
   }, [apiBaseUrl, channelUrl]);
 
-  async function persistProfile(nextProfile: Profile, action: "delivery" | "memory") {
-    setBusyAction(action);
+  async function saveDelivery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!profile) return;
+    setBusyAction("delivery");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/profile`, {
+      const response = await fetch(`${apiBaseUrl}/api/profile/delivery`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextProfile),
+        body: JSON.stringify({
+          cadence_days: profile.cadence_days,
+          recommendation_count: profile.recommendation_count,
+        }),
       });
       if (!response.ok) {
-        setNotice({ message: "Preferences were not saved. Check the fields and try again.", tone: "error" });
+        setNotice({ message: "Delivery preferences were not saved. Try again.", tone: "error" });
         return;
       }
       const saved = (await response.json()) as Profile;
       setProfile(saved);
-      setMemoryDraft(saved.preference_statement);
-      if (action === "memory") setMemoryEditing(false);
-      setNotice({ message: action === "memory" ? "Preference memory saved." : "Delivery preferences saved.", tone: "success" });
+      setNotice({ message: "Delivery preferences saved.", tone: "success" });
     } catch {
-      setNotice({ message: "Preferences were not saved. Check your connection and try again.", tone: "error" });
+      setNotice({ message: "Delivery preferences were not saved. Check your connection and try again.", tone: "error" });
     } finally {
       setBusyAction(null);
     }
   }
 
-  function saveDelivery(event: FormEvent<HTMLFormElement>) {
+  async function saveMemory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (profile) void persistProfile(profile, "delivery");
-  }
-
-  function saveMemory(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (profile) void persistProfile({ ...profile, preference_statement: memoryDraft }, "memory");
+    if (!profile) return;
+    setBusyAction("memory");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/profile/memory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preference_statement: memoryDraft, expected_version: profile.version }),
+      });
+      if (!response.ok) {
+        setNotice({
+          message: response.status === 409
+            ? "Preference memory changed elsewhere. Reload and try again."
+            : "Preference memory was not saved. Check the field and try again.",
+          tone: "error",
+        });
+        return;
+      }
+      const saved = (await response.json()) as Profile;
+      setProfile(saved);
+      setMemoryDraft(saved.preference_statement);
+      setMemoryEditing(false);
+      setNotice({ message: "Preference memory saved.", tone: "success" });
+    } catch {
+      setNotice({ message: "Preference memory was not saved. Check your connection and try again.", tone: "error" });
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   function changeChannelUrl(value: string) {

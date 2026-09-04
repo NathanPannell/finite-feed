@@ -28,6 +28,35 @@ class ProfileUpdate(BaseModel):
         return sorted(set(value))
 
 
+class DeliveryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cadence_days: list[int] = Field(min_length=1, max_length=7)
+    recommendation_count: int = Field(ge=1, le=10)
+
+    @field_validator("cadence_days")
+    @classmethod
+    def validate_days(cls, value: list[int]) -> list[int]:
+        if any(day < 0 or day > 6 for day in value):
+            raise ValueError("Cadence days must be between 0 and 6")
+        return sorted(set(value))
+
+
+class PreferenceMemoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preference_statement: str = Field(min_length=1, max_length=5000)
+    expected_version: int = Field(ge=1)
+
+    @field_validator("preference_statement")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Value cannot be blank")
+        return normalized
+
+
 class Profile(ProfileUpdate):
     version: int
     rendered_markdown: str
