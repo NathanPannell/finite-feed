@@ -33,18 +33,27 @@ if [[ -z "$domain" ]]; then
 fi
 
 api_url="https://${domain}"
+expected_origin="${EXPECTED_FRONTEND_ORIGIN:-}"
 last_status=""
 last_commit=""
+last_origin_ready="not-required"
 for _ in $(seq 1 60); do
   response="$(curl --fail --silent --show-error --max-time 10 "${api_url}/ready" 2>/dev/null || true)"
   last_status="$(jq -r '.status // empty' <<<"$response" 2>/dev/null)"
   last_commit="$(jq -r '.commit // empty' <<<"$response" 2>/dev/null)"
-  if [[ "$last_status" == "ready" ]] && [[ "$last_commit" == "$EXPECTED_COMMIT_SHA" ]]; then
+  if [[ -n "$expected_origin" ]]; then
+    if jq -e --arg origin "$expected_origin" '(.allowed_origins // []) | index($origin) != null' <<<"$response" >/dev/null 2>&1; then
+      last_origin_ready="yes"
+    else
+      last_origin_ready="no"
+    fi
+  fi
+  if [[ "$last_status" == "ready" ]] && [[ "$last_commit" == "$EXPECTED_COMMIT_SHA" ]] && [[ "$last_origin_ready" != "no" ]]; then
     echo "api_url=${api_url}" >> "$GITHUB_OUTPUT"
     exit 0
   fi
   sleep 10
 done
 
-echo "Railway API never reported ready for commit ${EXPECTED_COMMIT_SHA} at ${api_url}; last status=${last_status:-unavailable}, last commit=${last_commit:-unavailable}" >&2
+echo "Railway API never reported the expected ready state at ${api_url}; status=${last_status:-unavailable}, commit=${last_commit:-unavailable}, frontend-origin-ready=${last_origin_ready}" >&2
 exit 1

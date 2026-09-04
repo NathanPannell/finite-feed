@@ -146,14 +146,31 @@ jobs:
           if ! neon neon-auth domain list --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color | jq -e --arg url "$PREVIEW_URL" '.. | scalars | select(. == $url)' >/dev/null; then
             neon neon-auth domain add "$PREVIEW_URL" --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --no-color
           fi
-          railway up --detach --yes --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          railway redeploy --yes --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
 
       - name: Verify final preview API readiness
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           RAILWAY_ENVIRONMENT: ${{ env.PREVIEW_ENVIRONMENT }}
           EXPECTED_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_FRONTEND_ORIGIN: ${{ steps.vercel.outputs.preview_url }}
         run: bash scripts/wait-for-railway-api.sh
+
+      - name: Smoke-test browser match data path
+        env:
+          API_URL: ${{ steps.railway.outputs.api_url }}
+          FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
+        run: |
+          curl --fail --silent --show-error "$FRONTEND_URL/match" >/dev/null
+          headers_file="$(mktemp)"
+          body_file="$(mktemp)"
+          annotator_id="50000000-0000-4000-8000-000000000008"
+          curl --fail --silent --show-error \
+            -D "$headers_file" -o "$body_file" \
+            -H "Origin: $FRONTEND_URL" \
+            "$API_URL/api/annotations/next?annotator_id=$annotator_id"
+          grep -Fqi "access-control-allow-origin: $FRONTEND_URL" "$headers_file"
+          jq -e '.profile_id and .video_id and (.topics | type == "array") and .title and .description' "$body_file" >/dev/null
 
       - name: Post or update preview summary
         uses: actions/github-script@v8

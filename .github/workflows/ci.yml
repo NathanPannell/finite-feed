@@ -156,4 +156,6 @@ jobs:
           done
           railway redeploy --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
       - name: Verify final production API readiness
+        env:
+          EXPECTED_FRONTEND_ORIGIN: ${{ steps.vercel.outputs.production_url }}
         run: bash scripts/wait-for-railway-api.sh

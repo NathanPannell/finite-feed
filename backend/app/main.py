@@ -47,9 +47,14 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/ready")
-def ready(conn: Connection = Depends(connection)) -> dict[str, str | int]:
+def ready(conn: Connection = Depends(connection)) -> dict[str, str | int | list[str]]:
     migration_count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()
-    return {"status": "ready", "commit": settings.app_commit_sha, "migrations": migration_count["count"]}
+    return {
+        "status": "ready",
+        "commit": settings.app_commit_sha,
+        "migrations": migration_count["count"],
+        "allowed_origins": settings.allowed_origins,
+    }
 
 
 @app.get("/api/annotations/next", response_model=AnnotationCard | None)
