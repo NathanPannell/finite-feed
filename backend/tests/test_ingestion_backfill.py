@@ -66,6 +66,20 @@ class TwoPhaseYouTube:
         )
 
 
+class FailOnceYouTube(TwoPhaseYouTube):
+    def __init__(self, now: datetime):
+        super().__init__(now)
+        self.resolve_calls: list[str] = []
+        self.failed_once = False
+
+    def resolve_channel(self, url: str, known_id: str | None = None) -> ChannelDetails:
+        self.resolve_calls.append(url)
+        if "retry" in url and not self.failed_once:
+            self.failed_once = True
+            raise RuntimeError("temporary recent-scan failure")
+        return super().resolve_channel(url, known_id)
+
+
 class FailingBackfillYouTube(TwoPhaseYouTube):
     def list_upload_page(
         self,
@@ -110,6 +124,70 @@ def database_connection():
         pytest.skip("DATABASE_URL is required for the PostgreSQL integration test")
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
         yield conn
+
+
+def test_retry_pass_scans_only_the_failed_channel(database_connection) -> None:
+    conn = database_connection
+    now = datetime.now(UTC)
+    healthy_id, retry_id = uuid4(), uuid4()
+    channel_ids = [healthy_id, retry_id]
+    original_active = conn.execute("SELECT id, is_active FROM tracked_channels").fetchall()
+    conn.execute("UPDATE tracked_channels SET is_active = FALSE")
+    for channel_id, slug in ((healthy_id, "healthy"), (retry_id, "retry")):
+        conn.execute(
+            """
+            INSERT INTO tracked_channels (
+                id, user_id, name, url, is_active, max_video_age_days
+            ) VALUES (%s, '00000000-0000-0000-0000-000000000001', %s, %s, TRUE, 365)
+            """,
+            (channel_id, f"Test {slug}", f"https://www.youtube.com/@issue7-{slug}"),
+        )
+    conn.commit()
+    youtube = FailOnceYouTube(now)
+    try:
+        first = ingest_tracked_channels(
+            conn,
+            youtube,
+            page_limit=1,
+            backfill_limit=5,
+            embedder=FakeEmbedder(),
+            sync_interval_hours=6,
+            retry_minutes=30,
+        )
+        assert first.channels_scanned == 2
+        assert first.channels_failed == 1
+        conn.execute(
+            """
+            UPDATE tracked_channels
+            SET last_sync_completed_at = NOW() - INTERVAL '31 minutes'
+            WHERE id = %s
+            """,
+            (retry_id,),
+        )
+        conn.commit()
+        youtube.resolve_calls.clear()
+
+        second = ingest_tracked_channels(
+            conn,
+            youtube,
+            page_limit=1,
+            backfill_limit=5,
+            embedder=FakeEmbedder(),
+            sync_interval_hours=6,
+            retry_minutes=30,
+        )
+        assert second.channels_scanned == 1
+        assert second.channels_failed == 0
+        assert youtube.resolve_calls == ["https://www.youtube.com/@issue7-retry"]
+    finally:
+        conn.execute("DELETE FROM videos WHERE tracked_channel_id = ANY(%s)", (channel_ids,))
+        conn.execute("DELETE FROM tracked_channels WHERE id = ANY(%s)", (channel_ids,))
+        for row in original_active:
+            conn.execute(
+                "UPDATE tracked_channels SET is_active = %s WHERE id = %s",
+                (row["is_active"], row["id"]),
+            )
+        conn.commit()
 
 
 def test_ingestion_checks_all_recent_uploads_before_bounded_backfill(database_connection) -> None:

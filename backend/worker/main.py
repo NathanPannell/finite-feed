@@ -71,7 +71,14 @@ def run_ingestion_pass(pool: ConnectionPool) -> None:
             return
         youtube = YouTubeClient(settings.youtube_api_key)
         try:
-            summary = ingest_tracked_channels(conn, youtube, settings.youtube_page_limit, embedder=embedder)
+            summary = ingest_tracked_channels(
+                conn,
+                youtube,
+                settings.youtube_page_limit,
+                embedder=embedder,
+                sync_interval_hours=settings.ingestion_interval_hours,
+                retry_minutes=settings.ingestion_retry_minutes,
+            )
             logger.info(
                 "Ingestion finished: %d channel(s), %d video(s), %d changed, %d failed",
                 summary.channels_scanned, summary.videos_seen, summary.videos_changed,

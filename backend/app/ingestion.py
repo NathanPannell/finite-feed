@@ -318,9 +318,15 @@ def ingest_tracked_channels(
     page_limit: int = 2,
     backfill_limit: int = DEFAULT_BACKFILL_LIMIT,
     embedder: Embedder | None = None,
+    sync_interval_hours: int | None = None,
+    retry_minutes: int = 30,
 ) -> IngestionSummary:
     if not 1 <= backfill_limit <= 10:
         raise ValueError("backfill_limit must be between 1 and 10")
+    if sync_interval_hours is not None and sync_interval_hours < 1:
+        raise ValueError("sync_interval_hours must be at least 1")
+    if retry_minutes < 1:
+        raise ValueError("retry_minutes must be at least 1")
     encoder = embedder or configured_embedder(get_settings())
     run_id = uuid4()
     conn.execute("INSERT INTO ingestion_runs (id, status) VALUES (%s, 'running')", (run_id,))
@@ -329,14 +335,35 @@ def ingest_tracked_channels(
     failures: list[str] = []
     recent_successes: list = []
     try:
-        channels = conn.execute(
+        due_filter = ""
+        due_params: tuple = ()
+        if sync_interval_hours is not None:
+            due_filter = """
+              AND (
+                    last_sync_started_at IS NULL
+                    OR (
+                        sync_status IN ('failed', 'running')
+                        AND COALESCE(last_sync_completed_at, last_sync_started_at)
+                            <= NOW() - (%s * INTERVAL '1 minute')
+                    )
+                    OR (
+                        sync_status NOT IN ('failed', 'running')
+                        AND COALESCE(last_sync_completed_at, last_sync_started_at)
+                            <= NOW() - (%s * INTERVAL '1 hour')
+                    )
+              )
             """
+            due_params = (retry_minutes, sync_interval_hours)
+        channels = conn.execute(
+            f"""
             SELECT id, name, url, youtube_channel_id, uploads_playlist_id,
                    max_video_age_days, backfill_page_token, backfill_completed_at
             FROM tracked_channels
             WHERE is_active = TRUE
+            {due_filter}
             ORDER BY created_at
-            """
+            """,
+            due_params,
         ).fetchall()
         now = datetime.now(UTC)
 
