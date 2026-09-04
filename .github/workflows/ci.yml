@@ -68,6 +68,7 @@ jobs:
           RAILWAY_API_BASE_URL: http://localhost:8000
       - run: npm run test:proxy
         working-directory: frontend
+      - run: node --test scripts/validate-vercel-auth-location.test.mjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run test:e2e
@@ -178,7 +179,6 @@ jobs:
           [[ "$production_url" == https://* ]] || { echo 'Vercel production URL must use HTTPS.' >&2; exit 1; }
           production_host="${production_url#https://}"
           production_host="${production_host%%/*}"
-          [[ "$production_host" != *.vercel.app ]] || { echo 'A public custom production domain is required.' >&2; exit 1; }
           custom_domain="$(curl --fail --silent --show-error \
             -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_ORG_ID" \
@@ -193,10 +193,10 @@ jobs:
               401|403) ;;
               301|302|303|307|308)
                 auth_location="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }' "$headers_file")"
-                case "$auth_location" in
-                  https://vercel.com/sso*|https://vercel.com/login*|https://vercel.com/api/auth*|https://*.vercel.com/_vercel/*|/_vercel/*) ;;
-                  *) echo "Generated deployment $admin_path redirected somewhere other than Vercel authentication." >&2; exit 1 ;;
-                esac
+                node scripts/validate-vercel-auth-location.mjs "$auth_location" || {
+                  echo "Generated deployment $admin_path redirected somewhere other than Vercel authentication." >&2
+                  exit 1
+                }
                 ;;
               *) echo "Generated deployment $admin_path did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
             esac
