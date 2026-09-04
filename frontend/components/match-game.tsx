@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { SignalShell } from "@/components/signal-shell";
 
 type MatchCard = {
@@ -10,9 +11,9 @@ type MatchCard = {
   topics: string[];
   title: string;
   description: string;
+  thumbnail_url: string | null;
 };
 
-type Stats = { completed: number; remaining: number };
 type Label = "yes" | "no" | "unsure";
 
 const storageKey = "finite-feed-annotator-id";
@@ -20,7 +21,6 @@ const storageKey = "finite-feed-annotator-id";
 export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [annotatorId, setAnnotatorId] = useState("");
   const [card, setCard] = useState<MatchCard | null>(null);
-  const [stats, setStats] = useState<Stats>({ completed: 0, remaining: 0 });
   const [selected, setSelected] = useState<Label | null>(null);
   const [rationale, setRationale] = useState("");
   const [busy, setBusy] = useState(true);
@@ -33,14 +33,10 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
     setNotice("");
     try {
       const query = new URLSearchParams({ annotator_id: id });
-      const [cardResponse, statsResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/api/annotations/next?${query}`, { cache: "no-store" }),
-        fetch(`${apiBaseUrl}/api/annotations/stats?${query}`, { cache: "no-store" }),
-      ]);
-      if (!cardResponse.ok || !statsResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
+      const cardResponse = await fetch(`${apiBaseUrl}/api/annotations/next?${query}`, { cache: "no-store" });
+      if (!cardResponse.ok) throw new Error("The next pair could not be loaded. Try again.");
       const nextCard: MatchCard | null = await cardResponse.json();
       setCard(nextCard);
-      setStats(await statsResponse.json());
       setSelected(null);
       return nextCard;
     } catch (error) {
@@ -100,19 +96,8 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <SignalShell className="match-page">
+    <SignalShell className="match-page" mastheadTitle="Does this belong?">
       <main className="match-main">
-        <header className="match-intro">
-          <h1>Does this<br /><span>belong?</span></h1>
-          <div className="match-progress" aria-live="polite">
-            <strong>{stats.completed}</strong>
-            <span>reviewed</span>
-            <i aria-hidden="true" />
-            <strong>{stats.remaining}</strong>
-            <span>left</span>
-          </div>
-        </header>
-
         {notice && <p className="signal-notice match-notice" role="status">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}
 
@@ -120,17 +105,29 @@ export function MatchGame({ apiBaseUrl }: { apiBaseUrl: string }) {
           <section className="match-workspace" aria-busy={busy} aria-labelledby="match-question">
             <div className="match-comparison">
               <article className="match-profile">
-                <h2>Viewer</h2>
-                <p className="profile-summary">{card.summary}</p>
+                <h2 className="sr-only">Viewer profile</h2>
                 <ul className="topic-list" aria-label="Viewer topics">
                   {card.topics.map((topic) => <li key={topic}>{topic}</li>)}
                 </ul>
+                <p className="profile-summary">{card.summary}</p>
+                <p className="match-content-label">Viewer</p>
               </article>
 
               <article className="match-video">
-                <h2>Candidate video</h2>
-                <h3 id="match-question">{card.title}</h3>
-                <p className="video-description">{card.description}</p>
+                <h2 className="sr-only">Candidate video</h2>
+                {card.thumbnail_url && (
+                  <Image
+                    className="match-video-thumbnail"
+                    src={card.thumbnail_url}
+                    alt=""
+                    width={640}
+                    height={360}
+                  />
+                )}
+                <div className="match-video-copy">
+                  <h3 id="match-question">{card.title}</h3>
+                  <p className="video-description">{card.description}</p>
+                </div>
               </article>
             </div>
 

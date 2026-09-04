@@ -140,6 +140,7 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
         topics: ["systems", "judgment"],
         title: "The hidden logic of everyday choices",
         description: "A researcher explains why small decisions compound into structural outcomes.",
+        thumbnail_url: "https://i.ytimg.com/vi/video-1/hqdefault.jpg",
       });
     }
     if (url.pathname === "/api/annotations/stats") {
@@ -155,6 +156,9 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
 
   await page.goto("/match");
   await expect(page.getByRole("heading", { name: /Does this belong/ })).toBeVisible();
+  await expect(page.locator(".signal-masthead-title")).toHaveText("Does this belong?");
+  await expect(page.locator(".match-progress")).toHaveCount(0);
+  await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
   await page.getByRole("button", { name: "Yes" }).click();
   await page.getByLabel("Reason Optional, but useful when it is close.").fill("The method directly matches the viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();
