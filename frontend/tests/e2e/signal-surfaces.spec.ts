@@ -126,6 +126,7 @@ test("keeps the public page inside a 320px viewport", async ({ page }) => {
 });
 
 test("shows caught up after the final reasoned match judgment", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
   let annotationBody: Record<string, unknown> | null = null;
   let saved = false;
   await page.route(apiOrigin + "/**", async (route) => {
@@ -139,7 +140,8 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
         summary: "Wants practical systems thinking without motivational filler.",
         topics: ["systems", "judgment"],
         title: "The hidden logic of everyday choices",
-        description: "A researcher explains why small decisions compound into structural outcomes.",
+        description: "A researcher explains why small decisions compound into structural outcomes and how viewers can apply the framework without losing the important context. ".repeat(4),
+        thumbnail_url: "https://i.ytimg.com/vi/video-1/hqdefault.jpg",
       });
     }
     if (url.pathname === "/api/annotations/stats") {
@@ -152,10 +154,68 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
     }
     return json(route, {});
   });
+  await page.route("**/_next/image?**", (route) => route.fulfill({
+    status: 200,
+    contentType: "image/png",
+    body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+  }));
 
   await page.goto("/match");
   await expect(page.getByRole("heading", { name: /Does this belong/ })).toBeVisible();
+  await expect(page.locator(".signal-masthead-title")).toHaveText("Does this belong?");
+  await expect(page.getByRole("heading", { name: "Make one clear call." })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  await page.getByRole("link", { name: "OK, let's begin" }).click();
+  await expect(page).toHaveURL(/\/match\/review$/);
+  await expect(page.locator(".match-progress")).toHaveCount(0);
+  await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
+  await expect(page.getByRole("button", { name: "Show full description" })).toBeVisible();
+  await page.getByRole("button", { name: "Show full description" }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toBeVisible();
+  await page.getByRole("button", { name: "Show less" }).click();
+  const desktopGeometry = await page.locator(".signal-masthead, .signal-masthead-title, .signal-masthead nav").evaluateAll(([header, title, nav]) => {
+    const headerBox = header.getBoundingClientRect();
+    const titleBox = title.getBoundingClientRect();
+    const navBox = nav.getBoundingClientRect();
+    return {
+      headerCenter: headerBox.left + headerBox.width / 2,
+      titleCenter: titleBox.left + titleBox.width / 2,
+      titleRight: titleBox.right,
+      navLeft: navBox.left,
+    };
+  });
+  expect(Math.abs(desktopGeometry.headerCenter - desktopGeometry.titleCenter)).toBeLessThanOrEqual(2);
+  expect(desktopGeometry.titleRight).toBeLessThan(desktopGeometry.navLeft);
+  await expect(page.getByRole("heading", { name: "Viewer" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Video" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Action" })).toBeVisible();
+  const workspaceGeometry = await page.locator(".match-workspace, .match-profile, .match-video, .match-response").evaluateAll(([workspace, viewer, video, action]) => {
+    const workspaceWidth = workspace.getBoundingClientRect().width;
+    return {
+      evidenceShare: (viewer.getBoundingClientRect().width + video.getBoundingClientRect().width) / workspaceWidth,
+      actionShare: action.getBoundingClientRect().width / workspaceWidth,
+    };
+  });
+  expect(workspaceGeometry.evidenceShare).toBeGreaterThan(.74);
+  expect(workspaceGeometry.actionShare).toBeLessThan(.26);
+  await expect(page.getByRole("button", { name: "Yes" })).toHaveCSS("background-color", "rgb(23, 93, 58)");
+  await expect(page.getByRole("button", { name: "No" })).toHaveCSS("background-color", "rgb(142, 40, 29)");
+  await expect(page.getByRole("button", { name: "Unsure" })).toHaveCSS("background-color", "rgb(250, 249, 242)");
+  await page.setViewportSize({ width: 320, height: 800 });
+  await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  const mobileOrder = await page.locator(".match-profile, .match-video, .match-response").evaluateAll(([viewer, video, action]) => ({
+    viewerTop: viewer.getBoundingClientRect().top,
+    videoTop: video.getBoundingClientRect().top,
+    actionTop: action.getBoundingClientRect().top,
+  }));
+  expect(mobileOrder.viewerTop).toBeLessThan(mobileOrder.videoTop);
+  expect(mobileOrder.videoTop).toBeLessThan(mobileOrder.actionTop);
+  const activeWidth = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
+  expect(activeWidth.scroll).toBeLessThanOrEqual(activeWidth.inner);
+  await page.setViewportSize({ width: 1024, height: 800 });
+  expect(await page.locator(".match-video-thumbnail").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Yes" }).click();
+  await expect(page.getByRole("button", { name: "Yes" })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Reason Optional, but useful when it is close.").fill("The method directly matches the viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();
 
@@ -169,6 +229,12 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
     rationale: "The method directly matches the viewer's stated interest.",
   });
   await page.setViewportSize({ width: 320, height: 800 });
+  const mobileGeometry = await page.locator(".signal-masthead, .signal-masthead-title").evaluateAll(([header, title]) => {
+    const headerBox = header.getBoundingClientRect();
+    const titleBox = title.getBoundingClientRect();
+    return { headerCenter: headerBox.left + headerBox.width / 2, titleCenter: titleBox.left + titleBox.width / 2 };
+  });
+  expect(Math.abs(mobileGeometry.headerCenter - mobileGeometry.titleCenter)).toBeLessThanOrEqual(2);
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
 });
