@@ -30,6 +30,11 @@ The local bootstrap identity uses broad credentials only long enough to create o
 
 `DATABASE_URL` and `PREVIEW_DATABASE_URL` are pooled runtime connections. `DATABASE_URL_UNPOOLED` and `PREVIEW_DATABASE_URL_UNPOOLED` are direct migration connections. A preview refuses to fall back to production credentials.
 
+Tracked YouTube channels have one global canonical row and one internal owner. The
+Control Room does not expose owner selection: an existing channel always retains
+its owner, while a new channel is assigned server-side to the earliest-created
+app user (`created_at`, then `id`) so multi-user databases behave deterministically.
+
 ## Recovery rules
 
 Re-running a failed workflow is safe because PR names are deterministic and migrations are append-only, checksummed, and advisory-locked. A Railway restart reuses the current image; it is not proof that new code deployed. Trust `/ready` only when its `commit` equals the requested Git SHA.

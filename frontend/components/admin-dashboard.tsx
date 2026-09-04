@@ -172,7 +172,7 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
           <button ref={closeRef} className="admin-icon-button" onClick={close} aria-label="Close details"><Icon name="close" /></button>
         </header>
         <div className="admin-detail-list">
-          {Object.entries(state.item).map(([key, data]) => (
+          {Object.entries(state.item).filter(([key]) => state.kind !== "channels" || !["user_id", "owner_name"].includes(key)).map(([key, data]) => (
             <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd><DetailsValue data={data} /></dd></div>
           ))}
         </div>

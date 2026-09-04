@@ -146,11 +146,11 @@ def upsert_admin_channel(
     max_video_age_days: int,
     actor: str | None,
 ) -> tuple[dict[str, Any], bool]:
-    user_id = resolve_admin_owner(conn, user_id)
     existing = conn.execute(
         "SELECT * FROM tracked_channels WHERE youtube_channel_id = %s FOR UPDATE",
         (details["youtube_channel_id"],),
     ).fetchone()
+    user_id = resolve_admin_owner(conn, user_id, existing_owner_id=existing["user_id"] if existing else None)
     if existing and existing["user_id"] != user_id:
         raise HTTPException(
             status_code=409,
@@ -206,18 +206,28 @@ def upsert_admin_channel(
     return row, False
 
 
-def resolve_admin_owner(conn: Connection, requested_user_id: UUID | None) -> UUID:
+def resolve_admin_owner(
+    conn: Connection,
+    requested_user_id: UUID | None,
+    *,
+    existing_owner_id: UUID | None = None,
+) -> UUID:
+    """Resolve the one server-side owner required by global channel ownership.
+
+    Existing canonical channels retain their owner. New ownerless admin requests
+    use the earliest-created app user, with the UUID as a stable tie-breaker.
+    """
     if requested_user_id is not None:
         owner = conn.execute("SELECT id FROM app_users WHERE id = %s", (requested_user_id,)).fetchone()
         if not owner:
             raise HTTPException(status_code=404, detail="Owner not found")
         return owner["id"]
-    owners = conn.execute("SELECT id FROM app_users ORDER BY created_at, id LIMIT 2").fetchall()
-    if not owners:
+    if existing_owner_id is not None:
+        return existing_owner_id
+    owner = conn.execute("SELECT id FROM app_users ORDER BY created_at, id LIMIT 1").fetchone()
+    if not owner:
         raise HTTPException(status_code=404, detail="No owner is configured")
-    if len(owners) > 1:
-        raise HTTPException(status_code=409, detail="Select an owner when multiple app users exist")
-    return owners[0]["id"]
+    return owner["id"]
 
 
 def delivery_state(delivered_at: datetime | None) -> Literal["queued", "delivered"]:
@@ -226,6 +236,11 @@ def delivery_state(delivered_at: datetime | None) -> Literal["queued", "delivere
 
 def _page(items: list[dict[str, Any]], total: int, page: int, page_size: int) -> dict[str, Any]:
     return {"items": items, "page": page, "page_size": page_size, "total": total}
+
+
+def _channel_response(row: dict[str, Any]) -> dict[str, Any]:
+    """Keep internal channel ownership out of Control Room payloads."""
+    return {key: value for key, value in row.items() if key not in {"user_id", "owner_name"}}
 
 
 @router.get("/summary")
@@ -241,9 +256,6 @@ def summary(conn: Connection = Depends(connection)):
             latest.status AS latest_ingestion_status,
             COALESCE(latest.completed_at, latest.started_at) AS latest_ingestion_at,
             latest.error_message AS latest_ingestion_error
-            ,(SELECT COALESCE(jsonb_agg(jsonb_build_object('id', u.id, 'name', u.display_name)
-                                        ORDER BY u.display_name), '[]'::jsonb)
-              FROM app_users u) AS owner_options
             ,(SELECT COALESCE(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name)
                                         ORDER BY c.name), '[]'::jsonb)
               FROM tracked_channels c WHERE c.is_active) AS channels
@@ -287,27 +299,34 @@ def performance(
                 CURRENT_DATE,
                 INTERVAL '1 day'
             )::date AS day
-        ), daily AS (
-            SELECT delivered_at::date AS day,
-                   COUNT(*) FILTER (WHERE rating = 'up') AS up_count,
-                   COUNT(*) FILTER (WHERE rating = 'down') AS down_count,
-                   COUNT(*) AS sent_count
+        ), feedback_daily AS (
+            SELECT created_at::date AS day,
+                   COUNT(*) FILTER (WHERE event_type = 'feedback_up') AS up_count,
+                   COUNT(*) FILTER (WHERE event_type = 'feedback_down') AS down_count
+            FROM interaction_events
+            WHERE event_type IN ('feedback_up', 'feedback_down')
+              AND created_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
+            GROUP BY created_at::date
+        ), sent_daily AS (
+            SELECT delivered_at::date AS day, COUNT(*) AS sent_count
             FROM recommendations
             WHERE delivered_at IS NOT NULL
               AND delivered_at >= CURRENT_DATE - (%s - 1) * INTERVAL '1 day'
             GROUP BY delivered_at::date
         )
         SELECT dates.day,
-               COALESCE(daily.up_count, 0) AS up_count,
-               COALESCE(daily.down_count, 0) AS down_count,
-               COALESCE(daily.sent_count, 0) AS sent_count,
-               CASE WHEN daily.sent_count > 0
-                    THEN ROUND(daily.up_count::numeric / daily.sent_count, 4)
+               COALESCE(feedback_daily.up_count, 0) AS up_count,
+               COALESCE(feedback_daily.down_count, 0) AS down_count,
+               COALESCE(sent_daily.sent_count, 0) AS sent_count,
+               CASE WHEN sent_daily.sent_count > 0
+                    THEN ROUND(COALESCE(feedback_daily.up_count, 0)::numeric / sent_daily.sent_count, 4)
                     ELSE NULL END AS up_share
-        FROM dates LEFT JOIN daily USING (day)
+        FROM dates
+        LEFT JOIN feedback_daily USING (day)
+        LEFT JOIN sent_daily USING (day)
         ORDER BY dates.day
         """,
-        (days, days),
+        (days, days, days),
     ).fetchall()
 
 
@@ -327,12 +346,12 @@ def channels(
     filters: list[str] = [] if include_inactive else ["c.is_active"]
     params: list[Any] = []
     if search and search.strip():
-        filters.append("(c.name ILIKE %s OR u.display_name ILIKE %s OR c.youtube_channel_id ILIKE %s)")
+        filters.append("(c.name ILIKE %s OR c.youtube_channel_id ILIKE %s)")
         term = f"%{search.strip()}%"
-        params.extend([term, term, term])
+        params.extend([term, term])
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     total = conn.execute(
-        f"SELECT COUNT(*) AS count FROM tracked_channels c JOIN app_users u ON u.id = c.user_id {where}",
+        f"SELECT COUNT(*) AS count FROM tracked_channels c {where}",
         params,
     ).fetchone()["count"]
     sort_sql = {
@@ -343,20 +362,19 @@ def channels(
     effective_direction = "desc" if sort.endswith("_desc") else direction
     rows = conn.execute(
         f"""
-        SELECT c.*, u.display_name AS owner_name, COUNT(v.id) AS ingested_video_count,
+        SELECT c.*, COUNT(v.id) AS ingested_video_count,
                MAX(v.published_at) AS latest_video_published_at, COUNT(v.id) AS video_count,
                MAX(v.ingested_at) AS latest_video_ingested_at
         FROM tracked_channels c
-        JOIN app_users u ON u.id = c.user_id
         LEFT JOIN videos v ON v.tracked_channel_id = c.id
         {where}
-        GROUP BY c.id, u.display_name
+        GROUP BY c.id
         ORDER BY {sort_sql} {effective_direction.upper()} NULLS LAST, c.id ASC
         LIMIT %s OFFSET %s
         """,
         [*params, page_size, (page - 1) * page_size],
     ).fetchall()
-    return _page(rows, total, page, page_size)
+    return _page([_channel_response(row) for row in rows], total, page, page_size)
 
 
 @router.post("/channels/resolve")
@@ -398,25 +416,25 @@ def add_channel(
     except httpx.HTTPError as exc:
         conn.rollback()
         raise HTTPException(status_code=502, detail="YouTube channel resolution failed") from exc
-    return {**row, "reactivated": reactivated}
+    return {**_channel_response(row), "reactivated": reactivated}
 
 
 @router.get("/channels/{channel_id}")
 def channel_detail(channel_id: UUID, conn: Connection = Depends(connection)):
     row = conn.execute(
         """
-        SELECT c.*, u.display_name AS owner_name, COUNT(v.id) AS video_count,
+        SELECT c.*, COUNT(v.id) AS video_count,
                MAX(v.published_at) AS latest_video_published_at,
                MAX(v.ingested_at) AS latest_video_ingested_at
-        FROM tracked_channels c JOIN app_users u ON u.id = c.user_id
+        FROM tracked_channels c
         LEFT JOIN videos v ON v.tracked_channel_id = c.id
-        WHERE c.id = %s GROUP BY c.id, u.display_name
+        WHERE c.id = %s GROUP BY c.id
         """,
         (channel_id,),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Channel not found")
-    return row
+    return _channel_response(row)
 
 
 @router.patch("/channels/{channel_id}")
@@ -433,7 +451,7 @@ def patch_channel(
     if payload.is_active is not None:
         if current["is_active"] == payload.is_active:
             conn.rollback()
-            return current
+            return _channel_response(current)
         field, value = "is_active", payload.is_active
         action = "restore" if value else "stop"
         extra = ""
@@ -454,7 +472,7 @@ def patch_channel(
         before={field: current[field]}, after={field: value},
     )
     conn.commit()
-    return row
+    return _channel_response(row)
 
 
 @router.get("/videos")

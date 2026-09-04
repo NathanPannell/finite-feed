@@ -69,6 +69,7 @@ test("operates the private admin dashboard through its server API contract", asy
     if (path === "channels") {
       await route.fulfill({ json: { items: [{
         id: "channel-1",
+        user_id: "owner-internal-id",
         name: "Existing Channel",
         owner_name: "Ada",
         thumbnail_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%233157e8'/%3E%3C/svg%3E",
@@ -153,6 +154,11 @@ test("operates the private admin dashboard through its server API contract", asy
   const syncText = await channelRow.locator(".admin-last-sync").innerText();
   expect(syncText).not.toContain("2026");
   expect(syncText).toContain("Sep");
+  await channelRow.getByRole("button", { name: "Details" }).click();
+  const channelDialog = page.getByRole("dialog");
+  await expect(channelDialog.getByText("owner name", { exact: true })).toHaveCount(0);
+  await expect(channelDialog.getByText("user id", { exact: true })).toHaveCount(0);
+  await channelDialog.getByRole("button", { name: "Close details" }).click();
 
   const stopButton = channelRow.getByRole("button", { name: "Stop" });
   const stopColor = await stopButton.evaluate((element) => getComputedStyle(element).color);
