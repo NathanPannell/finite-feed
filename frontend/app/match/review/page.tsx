@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function MatchReviewPage() {
-  return <MatchGame apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? ""} />;
+  return <MatchGame />;
 }

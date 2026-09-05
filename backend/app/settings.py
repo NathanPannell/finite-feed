@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     vercel_oidc_project_name: str = Field(default="", alias="VERCEL_OIDC_PROJECT_NAME")
     vercel_oidc_environment: str = Field(default="", alias="VERCEL_OIDC_ENVIRONMENT")
     vercel_oidc_issuer_mode: str = Field(default="team", alias="VERCEL_OIDC_ISSUER_MODE")
+    match_lab_cookie_secret: str = Field(
+        default="local-development-only-change-me",
+        alias="MATCH_LAB_COOKIE_SECRET",
+    )
+    match_lab_debug_assessment: bool = Field(default=False, alias="MATCH_LAB_DEBUG_ASSESSMENT")
+    match_lab_target_environment: str | None = Field(default=None, alias="MATCH_LAB_TARGET_ENVIRONMENT")
 
     @property
     def is_preview(self) -> bool:
@@ -77,6 +83,18 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         return [value.strip() for value in self.frontend_origins.split(",") if value.strip()]
+
+    @property
+    def match_lab_cookie_secure(self) -> bool:
+        return self.public_app_url.lower().startswith("https://") or bool(self.railway_environment_name)
+
+    @property
+    def validated_match_lab_cookie_secret(self) -> str:
+        if self.railway_environment_name and self.match_lab_cookie_secret == "local-development-only-change-me":
+            raise RuntimeError("MATCH_LAB_COOKIE_SECRET must be set in deployed environments")
+        if len(self.match_lab_cookie_secret.encode("utf-8")) < 32:
+            raise RuntimeError("MATCH_LAB_COOKIE_SECRET must contain at least 32 bytes")
+        return self.match_lab_cookie_secret
 
     @property
     def production_chat_id(self) -> int | None:

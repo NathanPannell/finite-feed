@@ -3,9 +3,13 @@ import { expect, Page, Route, test } from "@playwright/test";
 const apiOrigin = "http://api.finite-feed.test";
 
 function json(route: Route, payload: unknown) {
+  const appOrigin = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3107"}`;
   return route.fulfill({
     json: payload,
-    headers: { "access-control-allow-origin": "*" },
+    headers: {
+      "access-control-allow-origin": appOrigin,
+      "access-control-allow-credentials": "true",
+    },
   });
 }
 
@@ -254,10 +258,10 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   await page.setViewportSize({ width: 1024, height: 800 });
   let annotationBody: Record<string, unknown> | null = null;
   let saved = false;
-  await page.route(apiOrigin + "/**", async (route) => {
+  await page.route("**/api/match/annotations**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === "/api/annotations/next") {
+    if (url.pathname === "/api/match/annotations/next") {
       if (saved) return json(route, null);
       return json(route, {
         profile_id: "profile-1",
@@ -269,10 +273,10 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
         thumbnail_url: "https://i.ytimg.com/vi/video-1/hqdefault.jpg",
       });
     }
-    if (url.pathname === "/api/annotations/stats") {
+    if (url.pathname === "/api/match/annotations/stats") {
       return json(route, saved ? { completed: 4, remaining: 0 } : { completed: 3, remaining: 1 });
     }
-    if (url.pathname === "/api/annotations" && request.method() === "POST") {
+    if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
       annotationBody = request.postDataJSON();
       saved = true;
       return json(route, { saved: true });
@@ -293,6 +297,7 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   await page.getByRole("link", { name: "OK, let's begin" }).click();
   await expect(page).toHaveURL(/\/match\/review$/);
   await expect(page.locator(".match-progress")).toHaveCount(0);
+  await expect(page.getByText("What this person wants to watch.")).toBeVisible();
   await expect(page.locator(".match-video-thumbnail")).toHaveAttribute("src", /hqdefault\.jpg/);
   await expect(page.getByRole("button", { name: "Show full description" })).toBeVisible();
   await page.getByRole("button", { name: "Show full description" }).click();
@@ -362,4 +367,138 @@ test("shows caught up after the final reasoned match judgment", async ({ page })
   expect(Math.abs(mobileGeometry.headerCenter - mobileGeometry.titleCenter)).toBeLessThanOrEqual(2);
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
+});
+
+test("shows debug assessment only after save and advances automatically", async ({ page }) => {
+  let saved = false;
+  await page.route("**/api/match/annotations**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/api/match/annotations/next") {
+      return json(route, saved ? null : {
+        profile_id: "profile-debug",
+        video_id: "video-debug",
+        summary: "Wants careful explanations of decision systems.",
+        topics: ["decisions"],
+        title: "How judgment works",
+        description: "A practical account of evidence and decisions.",
+      });
+    }
+    if (url.pathname === "/api/match/annotations/stats") {
+      return json(route, saved ? { completed: 1, remaining: 0 } : { completed: 0, remaining: 1 });
+    }
+    if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
+      saved = true;
+      return json(route, {
+        assessment: {
+          predicted_fit: "yes",
+          close_call: true,
+          decision_summary: "Direct evidence makes this a useful close judgment call.",
+        },
+      });
+    }
+    return json(route, {});
+  });
+
+  await page.goto("/match/review");
+  await expect(page.getByText("Model assessment · debug")).toHaveCount(0);
+  await page.clock.install();
+  await page.getByRole("button", { name: "Yes" }).click();
+  await page.getByRole("button", { name: "Save judgment" }).click();
+  await expect(page.getByRole("heading", { name: "Predicted fit: yes" })).toBeVisible();
+  await expect(page.getByText(/Close call.*Direct evidence/)).toBeVisible();
+  await page.clock.fastForward(3_500);
+  await expect(page.getByRole("heading", { name: /caught up/ })).toBeVisible({ timeout: 5_000 });
+});
+
+test("replaces an unavailable pair after a 409 and clears its unsaved judgment", async ({ page }) => {
+  let stalePairSubmitted = false;
+  let annotationBody: Record<string, unknown> | null = null;
+  await page.route("**/api/match/annotations**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/api/match/annotations/next") {
+      return json(route, stalePairSubmitted ? {
+        profile_id: "profile-2",
+        video_id: "video-2",
+        summary: "Wants grounded explanations of complex systems.",
+        topics: ["systems"],
+        title: "A fresh pair to review",
+        description: "A second candidate that is still available for judgment.",
+      } : {
+        profile_id: "profile-1",
+        video_id: "video-1",
+        summary: "Wants practical decision frameworks.",
+        topics: ["judgment"],
+        title: "The stale pair",
+        description: "This candidate becomes unavailable before submission.",
+      });
+    }
+    if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
+      annotationBody = request.postDataJSON();
+      stalePairSubmitted = true;
+      return route.fulfill({ status: 409, json: { detail: "Pair is unavailable" } });
+    }
+    return json(route, {});
+  });
+
+  await page.goto("/match/review");
+  await expect(page.getByRole("heading", { name: "The stale pair" })).toBeVisible();
+  await page.getByRole("button", { name: "Yes" }).click();
+  await page.getByLabel("Reason Optional, but useful when it is close.").fill("This rationale belongs only to the stale pair.");
+  await page.getByRole("button", { name: "Save judgment" }).click();
+
+  await expect(page.getByRole("status")).toHaveText("This pair is no longer available; your answer was not saved.");
+  await expect(page.getByRole("heading", { name: "A fresh pair to review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Yes" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByLabel("Reason Optional, but useful when it is close.")).toHaveValue("");
+  expect(annotationBody).toEqual({
+    profile_id: "profile-1",
+    video_id: "video-1",
+    label: "yes",
+    rationale: "This rationale belongs only to the stale pair.",
+  });
+});
+
+test("preserves a judgment after a retryable 500 and resubmits the same payload", async ({ page }) => {
+  const annotationBodies: Record<string, unknown>[] = [];
+  let saved = false;
+  await page.route("**/api/match/annotations**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/api/match/annotations/next") {
+      return json(route, saved ? null : {
+        profile_id: "profile-retry",
+        video_id: "video-retry",
+        summary: "Wants evidence-led explanations.",
+        topics: ["evidence"],
+        title: "A judgment worth retrying",
+        description: "The same candidate remains available after a temporary failure.",
+      });
+    }
+    if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
+      annotationBodies.push(request.postDataJSON());
+      if (annotationBodies.length === 1) {
+        return route.fulfill({ status: 500, json: { detail: "Temporary failure" } });
+      }
+      saved = true;
+      return json(route, { saved: true });
+    }
+    return json(route, {});
+  });
+
+  await page.goto("/match/review");
+  await page.getByRole("button", { name: "No" }).click();
+  const reason = page.getByLabel("Reason Optional, but useful when it is close.");
+  await reason.fill("The evidence does not support this viewer's stated interest.");
+  await page.getByRole("button", { name: "Save judgment" }).click();
+
+  await expect(page.locator(".match-notice[role='alert']")).toHaveText("Your answer was not saved. Try again.");
+  await expect(page.getByRole("button", { name: "No" })).toHaveAttribute("aria-pressed", "true");
+  await expect(reason).toHaveValue("The evidence does not support this viewer's stated interest.");
+  await page.getByRole("button", { name: "Save judgment" }).click();
+
+  await expect(page.getByRole("heading", { name: /caught up/ })).toBeVisible();
+  expect(annotationBodies).toHaveLength(2);
+  expect(annotationBodies[1]).toEqual(annotationBodies[0]);
 });

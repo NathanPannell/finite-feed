@@ -72,3 +72,14 @@ def test_developer_ids_support_a_comma_separated_allowlist() -> None:
 def test_default_openrouter_model_is_a_general_purpose_free_model() -> None:
     settings = Settings(_env_file=None)
     assert settings.openrouter_model == "google/gemma-4-31b-it:free"
+
+
+def test_deployed_match_lab_requires_a_non_default_cookie_secret() -> None:
+    settings = Settings(_env_file=None, RAILWAY_ENVIRONMENT_NAME="production")
+    with pytest.raises(RuntimeError, match="MATCH_LAB_COOKIE_SECRET"):
+        _ = settings.validated_match_lab_cookie_secret
+
+
+def test_match_lab_debug_assessment_is_disabled_by_default() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.match_lab_debug_assessment is False

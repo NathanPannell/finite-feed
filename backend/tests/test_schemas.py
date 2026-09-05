@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas import ChannelCreate, DeliveryUpdate, PreferenceMemoryUpdate, ProfileUpdate
+from backend.app.schemas import AnnotationCreate, ChannelCreate, DeliveryUpdate, PreferenceMemoryUpdate, ProfileUpdate
 
 
 def test_profile_normalizes_schedule() -> None:
@@ -30,4 +30,14 @@ def test_scoped_profile_updates_normalize_without_accepting_hidden_fields() -> N
             cadence_days=[2, 5],
             recommendation_count=3,
             timezone="Stale/Timezone",
+        )
+
+
+def test_annotation_rejects_client_controlled_reviewer_identity() -> None:
+    with pytest.raises(ValidationError, match="annotator_id"):
+        AnnotationCreate(
+            profile_id="30000000-0000-4000-8000-000000000001",
+            video_id="40000000-0000-4000-8000-000000000001",
+            annotator_id="50000000-0000-4000-8000-000000000001",
+            label="yes",
         )

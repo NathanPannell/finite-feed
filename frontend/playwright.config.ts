@@ -24,6 +24,9 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}/admin`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: { NEXT_PUBLIC_API_BASE_URL: "http://api.finite-feed.test" },
+    env: {
+      NEXT_PUBLIC_API_BASE_URL: "http://api.finite-feed.test",
+      RAILWAY_API_BASE_URL: "http://api.finite-feed.test",
+    },
   },
 });

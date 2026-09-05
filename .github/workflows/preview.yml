@@ -71,6 +71,8 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_DEVELOPER_BOT_TOKEN: ${{ secrets.TELEGRAM_DEVELOPER_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          MATCH_LAB_COOKIE_SECRET: ${{ secrets.MATCH_LAB_COOKIE_SECRET }}
+          MATCH_LAB_DEBUG_ASSESSMENT: ${{ vars.MATCH_LAB_PREVIEW_DEBUG_ASSESSMENT }}
           DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
           EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
@@ -79,6 +81,10 @@ jobs:
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_DEVELOPER_BOT_TOKEN:?TELEGRAM_DEVELOPER_BOT_TOKEN is required}"
+          if [[ -z "$MATCH_LAB_COOKIE_SECRET" ]]; then
+            MATCH_LAB_COOKIE_SECRET="$(openssl rand -hex 32)"
+            echo "Using an ephemeral Match Lab signing secret for this preview deployment."
+          fi
           railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_BASE_ENVIRONMENT_ID"
           if railway environment list --json | jq -e --arg name "$PREVIEW_ENVIRONMENT" '.. | objects | select(.name? == $name)' >/dev/null; then
             echo "Railway environment already exists; updating it in place."
@@ -90,34 +96,7 @@ jobs:
               --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.PREVIEW_DATABASE_URL.value "$PREVIEW_DATABASE_URL"
           fi
 
-          for service in "$RAILWAY_API_SERVICE_ID" "$RAILWAY_WORKER_SERVICE_ID"; do
-            printf '%s' "$PREVIEW_DATABASE_URL" | railway variable set PREVIEW_DATABASE_URL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' "$EXPECTED_COMMIT_SHA" | railway variable set APP_COMMIT_SHA --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' "$YOUTUBE_API_KEY" | railway variable set YOUTUBE_API_KEY --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' "$TELEGRAM_DEVELOPER_BOT_TOKEN" | railway variable set TELEGRAM_DEVELOPER_BOT_TOKEN --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            for variable in OPENROUTER_API_KEY TELEGRAM_WEBHOOK_SECRET DEVELOPER_TELEGRAM_USER_IDS; do
-              value="${!variable:-}"
-              if [[ -n "$value" ]]; then
-                printf '%s' "$value" | railway variable set "$variable" --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-              elif railway variable list --json --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID" | jq -e --arg variable "$variable" 'has($variable)' >/dev/null; then
-                railway variable delete "$variable" --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-              fi
-            done
-            printf '%s' "${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}" | railway variable set OPENROUTER_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' "${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-xs}" | railway variable set EMBEDDING_MODEL --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' "${EMBEDDING_MODEL_REVISION:-d8c86521100d3556476a063fc2342036d45c106f}" | railway variable set EMBEDDING_MODEL_REVISION --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' "${EMBEDDING_BATCH_SIZE:-32}" | railway variable set EMBEDDING_BATCH_SIZE --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' '384' | railway variable set EMBEDDING_DIMENSIONS --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' 'true' | railway variable set EMBEDDING_OFFLINE --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            printf '%s' '/opt/huggingface' | railway variable set EMBEDDING_CACHE_DIR --stdin --skip-deploys --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            if railway variable list --json --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID" | jq -e 'has("TELEGRAM_PRODUCTION_BOT_TOKEN")' >/dev/null; then
-              railway variable delete TELEGRAM_PRODUCTION_BOT_TOKEN --service "$service" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-            fi
-          done
-          printf '%s' "$PREVIEW_DATABASE_URL_UNPOOLED" | railway variable set PREVIEW_DATABASE_URL_UNPOOLED --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-          printf '%s' "$VERCEL_OIDC_TEAM_SLUG" | railway variable set VERCEL_OIDC_TEAM_SLUG --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-          printf '%s' "$VERCEL_OIDC_PROJECT_NAME" | railway variable set VERCEL_OIDC_PROJECT_NAME --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
-          printf '%s' 'preview' | railway variable set VERCEL_OIDC_ENVIRONMENT --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          node scripts/set-railway-variables.mjs preview
 
       - name: Deploy Railway preview services
         timeout-minutes: 15
@@ -182,21 +161,35 @@ jobs:
           EXPECTED_FRONTEND_ORIGIN: ${{ steps.vercel.outputs.preview_url }}
         run: bash scripts/wait-for-railway-api.sh
 
+      - name: Seed isolated Match Lab preview fixture
+        env:
+          PREVIEW_DATABASE_URL_UNPOOLED: ${{ steps.neon.outputs.db_url }}
+        run: psql "$PREVIEW_DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -f database/preview/seed_match_lab_smoke.sql
+
       - name: Smoke-test browser match data path
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          curl --fail --silent --show-error "$FRONTEND_URL/match" >/dev/null
-          headers_file="$(mktemp)"
+          vercel curl /match --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- --fail --silent --show-error >/dev/null
+          cookie_file="$(mktemp)"
           body_file="$(mktemp)"
-          annotator_id="50000000-0000-4000-8000-000000000008"
-          curl --fail --silent --show-error \
-            -D "$headers_file" -o "$body_file" \
-            -H "Origin: $FRONTEND_URL" \
-            "$API_URL/api/annotations/next?annotator_id=$annotator_id"
-          grep -Fqi "access-control-allow-origin: $FRONTEND_URL" "$headers_file"
+          vercel curl /api/match/annotations/next --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error \
+            -c "$cookie_file" -b "$cookie_file" -o "$body_file"
+          grep -Fq 'finite_feed_match_reviewer' "$cookie_file"
           jq -e '.profile_id and .video_id and (.topics | type == "array") and .title and .description' "$body_file" >/dev/null
+          profile_id="$(jq -r '.profile_id' "$body_file")"
+          video_id="$(jq -r '.video_id' "$body_file")"
+          vercel curl /api/match/annotations --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error \
+            -c "$cookie_file" -b "$cookie_file" \
+            -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg profile "$profile_id" --arg video "$video_id" '{profile_id:$profile,video_id:$video,label:"yes",rationale:null}')" \
+            >/dev/null
+          vercel curl /api/match/annotations/stats --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" | jq -e '.completed >= 1' >/dev/null
 
       - name: Post or update preview summary
         uses: actions/github-script@v8

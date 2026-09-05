@@ -1,0 +1,1556 @@
+{
+  "profiles": [
+    {
+      "id": "30000000-0000-4000-8000-000000000051",
+      "summary": "I collect records and help a local archive preserve music. Show me why ownership and preservation matter, not advice about performing.",
+      "topics": [
+        "record collecting",
+        "media preservation",
+        "archives"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000052",
+      "summary": "I'm learning paper engineering with my teenager. We want demonstrations we can discuss at the kitchen table, rather than software predictions.",
+      "topics": [
+        "paper engineering",
+        "hands-on projects",
+        "family making"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000053",
+      "summary": "I'm a nurse educator looking for ways to help patients disclose embarrassing information without feeling judged.",
+      "topics": [
+        "patient trust",
+        "clinical communication",
+        "nursing education"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000054",
+      "summary": "I manage a small office and want practical ways to support colleagues with chronic conditions. Please avoid telling them to just become more resilient.",
+      "topics": [
+        "workplace accommodations",
+        "chronic conditions",
+        "people management"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000055",
+      "summary": "I volunteer with a children's charity and want concrete interventions against environmental toxins, especially lead exposure.",
+      "topics": [
+        "lead exposure",
+        "child health interventions",
+        "environmental toxins"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000056",
+      "summary": "I spend most of my day at a desk. I'd like simple movement habits I can try between meetings without buying equipment.",
+      "topics": [
+        "desk work",
+        "movement breaks",
+        "daily habits"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000057",
+      "summary": "I teach a community photography class. I want to discuss how an image communicates a point of view, not camera shopping.",
+      "topics": [
+        "fine art photography",
+        "visual meaning",
+        "community teaching"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000058",
+      "summary": "I'm planning a choir workshop on improvisation. Give me live examples of musicians building something together.",
+      "topics": [
+        "ensemble improvisation",
+        "choir workshops",
+        "live collaboration"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000059",
+      "summary": "I'm interested in community housing where older and younger residents support each other. I'd like actual examples rather than futuristic city pitches.",
+      "topics": [
+        "intergenerational housing",
+        "mutual support",
+        "housing case studies"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000060",
+      "summary": "I train volunteers to have respectful conversations about vaccines. I want approaches to trust, not a debate about whether science matters.",
+      "topics": [
+        "vaccine conversations",
+        "science trust",
+        "volunteer training"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000061",
+      "summary": "I work with small food producers and want to understand affordable ways to add missing nutrients to staple foods.",
+      "topics": [
+        "food fortification",
+        "micronutrients",
+        "small food producers"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000062",
+      "summary": "I run workshops for student councils. I need ways to include quiet pupils without requiring them to volunteer to speak.",
+      "topics": [
+        "student councils",
+        "inclusive participation",
+        "quiet pupils"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000063",
+      "summary": "I'm a software researcher interested in proof systems and the limits of AI reliability. High-level technical arguments are welcome.",
+      "topics": [
+        "formal verification",
+        "proof systems",
+        "AI reliability"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000064",
+      "summary": "I'm trying to understand what astronomical research says about the eventual fate of the universe. I don't need practical self-help.",
+      "topics": [
+        "cosmology",
+        "universe endings",
+        "astronomical research"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000065",
+      "summary": "I organize neighborhood mutual aid. Show me specific ways to ask for help and mobilize people who aren't already close friends.",
+      "topics": [
+        "mutual aid",
+        "weak ties",
+        "community requests"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000066",
+      "summary": "I'm researching the business model of independent websites as AI replaces search traffic. I want economics and compensation, not prompt tips.",
+      "topics": [
+        "web publishing",
+        "creator compensation",
+        "search traffic"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000067",
+      "summary": "I want to understand how climate shocks affect decisions inside families in South Asia, especially girls' futures.",
+      "topics": [
+        "South Asian families",
+        "climate shocks",
+        "child marriage"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000068",
+      "summary": "I'm a speech coach interested in how voice production can be learned. Please give me explanations beyond being confident.",
+      "topics": [
+        "voice production",
+        "speech coaching",
+        "vocal training"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000069",
+      "summary": "I make documentary exhibits and want examples of using spatial capture to tell stories about disaster recovery.",
+      "topics": [
+        "spatial capture",
+        "documentary exhibits",
+        "disaster reporting"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000070",
+      "summary": "I'm interested in how artists make environmental problems tangible. Show me installations or physical experiences, not only charts.",
+      "topics": [
+        "environmental art",
+        "installations",
+        "public engagement"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000071",
+      "summary": "I help parents of toddlers navigate developmental support. I want talks about service access and workforce gaps.",
+      "topics": [
+        "early intervention",
+        "developmental support",
+        "service capacity"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000072",
+      "summary": "I care about the economics that delay medical treatments. Show me research incentives and institutional obstacles, not personal wellness routines.",
+      "topics": [
+        "medical innovation",
+        "research incentives",
+        "treatment access"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000073",
+      "summary": "I want examples of sneaker designers turning an idea into a surprising physical product. Brand history alone isn't enough.",
+      "topics": [
+        "sneaker design",
+        "product storytelling",
+        "creative risk"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000074",
+      "summary": "I coordinate a peer tutoring club. I'd like examples of students learning through relationships with other students.",
+      "topics": [
+        "peer tutoring",
+        "student relationships",
+        "learning communities"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000075",
+      "summary": "I want to hear from people who have built a sense of self outside a demanding job. Hobbies and ordinary life matter more to me than promotions.",
+      "topics": [
+        "identity outside work",
+        "serious leisure",
+        "career transition"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000076",
+      "summary": "I'm helping a town decide whether to expand public cameras. I want competing arguments and enough detail to question vendors.",
+      "topics": [
+        "municipal cameras",
+        "vendor scrutiny",
+        "public accountability"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000077",
+      "summary": "I'm considering getting a health tracker, but I want a balanced account of false alarms and limitations before buying one.",
+      "topics": [
+        "health trackers",
+        "measurement limits",
+        "consumer decisions"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000078",
+      "summary": "I'm planning retirement and wondering how to find structure without a work identity. Advice aimed at people my age would help.",
+      "topics": [
+        "retirement transition",
+        "daily structure",
+        "purpose after work"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000079",
+      "summary": "I'm designing a science museum activity about satellite observations. I'd prefer enough detail to turn the idea into an exhibit.",
+      "topics": [
+        "Earth observation",
+        "museum activities",
+        "science exhibits"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000080",
+      "summary": "I'm a piano teacher looking for exercises that help beginners improvise together. Expert performances can be hard to adapt.",
+      "topics": [
+        "beginner piano",
+        "group improvisation",
+        "teaching exercises"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000081",
+      "summary": "I'm comparing ways local residents can influence budgets. I'd like concrete participation processes, not just encouragement to get involved.",
+      "topics": [
+        "participatory budgeting",
+        "resident voice",
+        "local processes"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000082",
+      "summary": "I'm trying to reduce compulsive phone checking as an adult. I want ideas that respect online friendships rather than a total digital detox.",
+      "topics": [
+        "adult phone habits",
+        "online friendships",
+        "screen dependence"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000083",
+      "summary": "I facilitate discussions for people dealing with bereavement. I want sensitive first-person stories, but not promises that loss is a gift.",
+      "topics": [
+        "bereavement groups",
+        "first-person stories",
+        "sensitive facilitation"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000084",
+      "summary": "I'm starting a small nonprofit and need help asking strangers for support without sounding transactional.",
+      "topics": [
+        "nonprofit outreach",
+        "asking for help",
+        "relationship building"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000085",
+      "summary": "I'm exploring solo parenthood and want candid accounts of the decision, including practical tradeoffs.",
+      "topics": [
+        "solo parenthood",
+        "family choices",
+        "lived experience"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000086",
+      "summary": "I teach teenagers about financial risk and want material about gambling that avoids glamorizing wins.",
+      "topics": [
+        "gambling literacy",
+        "teen financial risk",
+        "harm prevention"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000087",
+      "summary": "I want to understand whether AI can assist neonatal care. I prefer validation evidence over prototype excitement.",
+      "topics": [
+        "neonatal technology",
+        "clinical validation",
+        "care tools"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000088",
+      "summary": "I'm helping a school plan its AI policy. I want decisions staff can make now, not claims that all teaching will change.",
+      "topics": [
+        "school AI policy",
+        "staff decisions",
+        "classroom technology"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000089",
+      "summary": "I work in tourism and want methods for managing visitor pressure that protect residents. Technology is useful only if the tradeoffs are explained.",
+      "topics": [
+        "visitor management",
+        "resident impact",
+        "tourism tradeoffs"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000090",
+      "summary": "I'm taking up drawing again and want something I can try immediately. Please avoid turning art into another productivity goal.",
+      "topics": [
+        "beginner drawing",
+        "creative practice",
+        "low-pressure hobbies"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000091",
+      "summary": "I support first-generation engineering students through financial emergencies. I want examples of programs that help them finish their degrees.",
+      "topics": [
+        "engineering access",
+        "student emergency support",
+        "degree completion"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000092",
+      "summary": "I'm interested in privacy-preserving European digital infrastructure. I want concrete alternatives as well as criticism of dependency.",
+      "topics": [
+        "European infrastructure",
+        "digital sovereignty",
+        "privacy alternatives"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000093",
+      "summary": "I want to understand depression treatment research without being told a single explanation solves everything.",
+      "topics": [
+        "depression research",
+        "treatment mechanisms",
+        "scientific uncertainty"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000094",
+      "summary": "I'm a first-time manager trying to improve handoffs between remote colleagues. Give me concrete communication practices.",
+      "topics": [
+        "remote handoffs",
+        "team communication",
+        "new managers"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000095",
+      "summary": "I want to know whether clean energy has become affordable in poorer countries. Please distinguish generation prices from implementation barriers.",
+      "topics": [
+        "energy affordability",
+        "development constraints",
+        "implementation costs"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000096",
+      "summary": "I'm organizing a discussion about fairness in public services. I like arguments that connect ethical principles to institutional design.",
+      "topics": [
+        "public service fairness",
+        "ethical reasoning",
+        "institutional choices"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000097",
+      "summary": "I want to prepare a community talk about health inequity. I need approachable examples, but I don't want to present a personal story as proof.",
+      "topics": [
+        "health inequity communication",
+        "community education",
+        "evidence literacy"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000098",
+      "summary": "I lead an adult book group and want to discuss how technology changes our relationship with culture. We enjoy concrete examples more than predictions.",
+      "topics": [
+        "book groups",
+        "cultural ownership",
+        "technology discussion"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000099",
+      "summary": "I'm training volunteer group leaders to keep people engaged during long projects. I want advice that can work without workplace authority.",
+      "topics": [
+        "volunteer retention",
+        "long projects",
+        "shared motivation"
+      ]
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000100",
+      "summary": "I'm planning a reflective discussion for adults who feel stuck after a major life change. I want room for uncertainty rather than a quick reinvention formula.",
+      "topics": [
+        "life transitions",
+        "reflective discussion",
+        "uncertainty"
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000051",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.95,
+      "difficulty_score": 0.12,
+      "selection_rationale": "Rizzuto connects vinyl, Soviet bone records and a nearly lost film to the fragility of cloud-only access.",
+      "decision_summary": "Directly addresses preserving and owning recorded culture.",
+      "video_id": "ec98afb8-268f-4be5-9ef2-7100d52c2f8c"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000051",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.05,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Wilson explains vocal biology and training for speaking or performance; preserving recordings is outside the described talk.",
+      "decision_summary": "A music-adjacent speaker does not make this an archive talk.",
+      "video_id": "5ca791c8-9189-4b5f-8b71-6a7f1b84e419"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000052",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.97,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Wu demonstrates paper creations and folded structures that support large loads, giving this family a concrete project to explore.",
+      "decision_summary": "A physical demonstration fits both the subject and activity.",
+      "video_id": "57bd219a-a23a-4528-8f84-b899c4d5d4f9"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000052",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.04,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Achim proposes formal verification for scientific AI; the description offers no physical making or paper experiment.",
+      "decision_summary": "Abstract software research misses the requested activity.",
+      "video_id": "e6ee0505-bdc1-4b26-9927-390e08b56229"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000053",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.96,
+      "difficulty_score": 0.12,
+      "selection_rationale": "Ford directly discusses shame, withheld information and psychological safety in clinical decisions.",
+      "decision_summary": "The problem and professional setting align closely.",
+      "video_id": "700c1633-714e-447c-a9a6-b22ef7983098"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000053",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Bembury discusses sneaker designs and creative risk-taking, with no patient communication component.",
+      "decision_summary": "Creative footwear does not serve this clinical need.",
+      "video_id": "182c3459-6285-400e-88a9-08b64fd55dd8"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000054",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.96,
+      "difficulty_score": 0.11,
+      "selection_rationale": "McGonagle describes why workers hide chronic illness and changes employers can make to support them.",
+      "decision_summary": "Employer responsibility matches the viewer's constraint.",
+      "video_id": "57c1da6f-d2ff-43f0-a1b3-b86a13b72a8f"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000054",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.08,
+      "difficulty_score": 0.13,
+      "selection_rationale": "Aarons recounts endurance, uncertainty and community during a mountain challenge rather than workplace accommodations.",
+      "decision_summary": "An endurance story offers the sort of individual resilience framing the viewer excludes.",
+      "video_id": "7570ae5e-bb18-44f5-8e5b-a111011a46c6"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000055",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.07,
+      "selection_rationale": "McCartor presents Pure Earth's three-step response to lead poisoning with examples from Georgia and Ghana.",
+      "decision_summary": "A named intervention and implementation examples fit.",
+      "video_id": "8fd39b00-30bb-4f19-8028-ff30332e2c11"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000055",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Collier builds a song with an unrehearsed orchestra and audience; the performance does not address toxic exposure.",
+      "decision_summary": "Musical participation is unrelated to the intervention request.",
+      "video_id": "6451bc2d-f38e-44ce-8d61-d2f5b0ad5fd0"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000056",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Diaz proposes short walks and small doses of movement throughout the day.",
+      "decision_summary": "The suggested habit fits the available time and equipment constraint.",
+      "video_id": "cb061b4a-1253-43db-96d2-a2fc0005c023"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000056",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.04,
+      "selection_rationale": "Karunakaran discusses manned drones and drone ambulances, not movement practices for desk workers.",
+      "decision_summary": "Transport engineering is unrelated to daily exercise habits.",
+      "video_id": "848d8d13-2c6d-40ef-8e09-5f845e044e18"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000057",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.95,
+      "difficulty_score": 0.13,
+      "selection_rationale": "Mordi argues that fine art begins in how the photographer sees before raising the camera.",
+      "decision_summary": "The emphasis on intention fits a class about meaning.",
+      "video_id": "5504807d-b578-49a0-bb36-e6dd6fb8ba4d"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000057",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.07,
+      "selection_rationale": "Snyder advocates wearable health sensors for prediction and prevention rather than photographic expression.",
+      "decision_summary": "Consumer sensors are not a photography lesson.",
+      "video_id": "4e9aa32b-901b-49b6-ba7d-4dc8c8a720fc"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000058",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.96,
+      "difficulty_score": 0.12,
+      "selection_rationale": "Collier constructs a familiar song with an orchestra that does not know it in advance and involves the audience.",
+      "decision_summary": "A live collaborative exercise is directly useful.",
+      "video_id": "6451bc2d-f38e-44ce-8d61-d2f5b0ad5fd0"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000058",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Kohn argues for economic and political reform to address inequality; no musical workshop is described.",
+      "decision_summary": "Political reform misses the requested performance format.",
+      "video_id": "c470186e-1a0e-4eae-a843-1bf0480c4f2d"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000059",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Gleim examines intergenerational housing through cases in Germany and the Netherlands.",
+      "decision_summary": "The described cases match the requested housing model.",
+      "video_id": "cff0eefe-952b-4dfb-9d61-f33028c697e9"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000059",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.1,
+      "difficulty_score": 0.15,
+      "selection_rationale": "Belhoul presents Dubai as an innovation laboratory spanning technology and finance, without described intergenerational housing cases.",
+      "decision_summary": "This is the broad future-city pitch the viewer excludes.",
+      "video_id": "e11663f9-c72e-4080-b25e-f9d486c181c1"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000060",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.97,
+      "difficulty_score": 0.09,
+      "selection_rationale": "Corbett addresses honest vaccine questions and the gap between scientists and the public.",
+      "decision_summary": "The communication problem matches the volunteer task.",
+      "video_id": "a3b395d7-c409-43a4-b252-7eba3c616e25"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000060",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Resnick's comedic computer presentation concerns a desktop premise, not vaccine trust or health communication.",
+      "decision_summary": "The described comedy offers no relevant training.",
+      "video_id": "49255585-f098-4c9c-bd84-9322f71f95f0"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000061",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Brooks-church describes fortifying everyday foods to tackle hidden hunger.",
+      "decision_summary": "The intervention is precisely the subject requested.",
+      "video_id": "d1d808aa-f626-4f1b-916d-1f72bb20c524"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000061",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.01,
+      "difficulty_score": 0.03,
+      "selection_rationale": "Bird performs songs about grief and social struggle, not nutrition or production methods.",
+      "decision_summary": "A music performance is outside the stated interest.",
+      "video_id": "d461b6b8-c45a-4f88-b610-d7dae405a11a"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000062",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.1,
+      "selection_rationale": "Sanderson replaces opt-in voice with participation built into school decision-making.",
+      "decision_summary": "The structural remedy addresses quiet pupils directly.",
+      "video_id": "bd7b21cd-1e98-4bb7-92cc-05bdc1ffa3fb"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000062",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.07,
+      "selection_rationale": "Langley argues for police surveillance networks rather than student participation practices.",
+      "decision_summary": "Surveillance infrastructure does not answer this workshop need.",
+      "video_id": "0c5f3f18-b53b-4636-885f-784d501f9062"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000063",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.97,
+      "difficulty_score": 0.11,
+      "selection_rationale": "Achim proposes formal verification as a response to hallucination in scientific AI.",
+      "decision_summary": "The central technical idea matches the research interest.",
+      "video_id": "e6ee0505-bdc1-4b26-9927-390e08b56229"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000063",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.06,
+      "selection_rationale": "Robinson shares his son's life with a rare heart defect and unexpected wonder, rather than proof systems.",
+      "decision_summary": "A personal medical story is outside this technical request.",
+      "video_id": "afe6c9a5-d55e-48dc-9743-fcfa997c1706"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000064",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.94,
+      "difficulty_score": 0.15,
+      "selection_rationale": "Mack discusses ancient cosmic light and five possible endings of the universe, alongside some personal reflection.",
+      "decision_summary": "The scientific core fits despite a brief life-perspective tangent.",
+      "video_id": "3cc351f4-503e-441e-b205-a6fe9184f68b"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000064",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.06,
+      "selection_rationale": "Martin offers strategies for stalled personal or organizational change rather than cosmology.",
+      "decision_summary": "Goal-completion advice is explicitly outside scope.",
+      "video_id": "737d8232-b7d2-4847-8f88-46b591ea2656"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000065",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.96,
+      "difficulty_score": 0.13,
+      "selection_rationale": "Dalling describes clear asks, storytelling and trust in strangers, grounded in mobilizing help for a missing dog.",
+      "decision_summary": "The behaviors transfer directly to neighborhood organizing.",
+      "video_id": "3596d7a5-e33e-47c4-9cbf-3ade7ac91497"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000065",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Khullar traces GLP-1 discoveries and possible effects on craving, not volunteer mobilization.",
+      "decision_summary": "Medical drug research does not address community requests.",
+      "video_id": "2a99bcc8-8b7f-473d-9881-16f0a7c2a432"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000066",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.09,
+      "selection_rationale": "Prince connects declining website clicks to a proposed payment model for content used by AI companies.",
+      "decision_summary": "The economic mechanism is exactly the research topic.",
+      "video_id": "27882270-eef6-42ae-987c-02b9df7970cc"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000066",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.04,
+      "selection_rationale": "Wu shows origami constructions and paper strength rather than publishing revenue.",
+      "decision_summary": "A physical craft demonstration is unrelated.",
+      "video_id": "57bd219a-a23a-4528-8f84-b899c4d5d4f9"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000067",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Subramanian connects disrupted livelihoods to early marriage, migration and changing gender expectations in South Asia.",
+      "decision_summary": "The region, mechanism and affected group all align.",
+      "video_id": "abb8451a-5f79-4ed0-8464-99e2f143ab18"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000067",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.04,
+      "selection_rationale": "Bembury explains sneaker concepts and creative risk, with no described family or climate research.",
+      "decision_summary": "Footwear design does not address the requested social mechanism.",
+      "video_id": "182c3459-6285-400e-88a9-08b64fd55dd8"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000068",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.96,
+      "difficulty_score": 0.12,
+      "selection_rationale": "Wilson frames voice as a trainable system shaped by biology and behavior, informed by voice-training practice.",
+      "decision_summary": "The mechanism-focused approach meets the constraint.",
+      "video_id": "5ca791c8-9189-4b5f-8b71-6a7f1b84e419"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000068",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Kohn and Maurer debate political wealth and democratic reform; vocal training is not part of the description.",
+      "decision_summary": "A political conversation is not a voice-production explanation.",
+      "video_id": "0086f1ef-ed23-46cd-8c0c-5fcb874f3e84"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000069",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.97,
+      "difficulty_score": 0.1,
+      "selection_rationale": "De la Peña scans neighborhoods after the LA fires and finds stories in objects that survived.",
+      "decision_summary": "The capture method and reporting setting both match.",
+      "video_id": "567beed9-6b57-4a24-9866-8db7fa46f203"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000069",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Vrsalovic discusses gambling, the brain and recovery from addiction rather than documentary capture.",
+      "decision_summary": "The shared word recovery hides a different subject.",
+      "video_id": "64c9ce2d-ddc3-4288-856d-124a5b6802f2"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000070",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.97,
+      "difficulty_score": 0.11,
+      "selection_rationale": "Kang translates disappearing water and ecosystem crises into physical experiences.",
+      "decision_summary": "The described artistic method meets the format constraint.",
+      "video_id": "199d608c-35e4-43f1-8032-eb2fc1b7c94e"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000070",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.03,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Achim presents formal verification for AI rather than an environmental installation.",
+      "decision_summary": "A mathematical proposal does not meet the artistic brief.",
+      "video_id": "e6ee0505-bdc1-4b26-9927-390e08b56229"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000071",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Presley addresses growing early-intervention demand and a workforce too small to serve eligible children.",
+      "decision_summary": "The service bottleneck is the viewer's exact concern.",
+      "video_id": "f1b7ce63-9b3f-4b8f-a7ff-3f9f8d3845aa"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000071",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.04,
+      "selection_rationale": "Rizzuto argues for physical media preservation using records and films, not child support services.",
+      "decision_summary": "Media ownership is unrelated to access to developmental care.",
+      "video_id": "ec98afb8-268f-4be5-9ef2-7100d52c2f8c"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000072",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Dattani contrasts medical progress with incentives that delay lifesaving treatments.",
+      "decision_summary": "The institutional explanation directly matches the requested research incentives.",
+      "video_id": "bf5cc1de-72f5-4a58-9a37-08c7a69bac16"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000072",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.07,
+      "difficulty_score": 0.1,
+      "selection_rationale": "Diaz offers short walking breaks for brain and body benefits rather than research incentives.",
+      "decision_summary": "This is a personal routine, which the viewer excludes.",
+      "video_id": "cb061b4a-1253-43db-96d2-a2fc0005c023"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000073",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Bembury explains concrete concepts including sunset colors and a hiking whistle built into a heel.",
+      "decision_summary": "Specific product decisions satisfy the request.",
+      "video_id": "182c3459-6285-400e-88a9-08b64fd55dd8"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000073",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.01,
+      "difficulty_score": 0.04,
+      "selection_rationale": "Monteggia discusses depression research and possible rapid treatment, not physical product design.",
+      "decision_summary": "The subject has no meaningful connection to the design request.",
+      "video_id": "83005258-df6f-4037-a84a-2d5a4a6961a8"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000074",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.98,
+      "difficulty_score": 0.08,
+      "selection_rationale": "Wu describes Schoolhouse pairing students with peer tutors across the globe.",
+      "decision_summary": "The operational example matches the club's purpose.",
+      "video_id": "e32ef5ac-9fdf-423f-bb8b-ac85e3aa2700"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000074",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.05,
+      "selection_rationale": "McKibben discusses falling clean-energy costs and fossil-fuel replacement, not peer learning.",
+      "decision_summary": "Energy economics is outside this educational need.",
+      "video_id": "15fae0d7-3016-4ad6-9d8d-77850c8634e2"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000075",
+      "category": "strong_match",
+      "predicted_fit": "yes",
+      "close_call": false,
+      "relevance_score": 0.97,
+      "difficulty_score": 0.09,
+      "selection_rationale": "Bell discusses the risks of job-based identity and how hobbies help with career change and job loss.",
+      "decision_summary": "The talk addresses the desired change in self-definition.",
+      "video_id": "687eec34-8082-4d26-9855-dbbdc5567630"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000075",
+      "category": "hard_negative",
+      "predicted_fit": "no",
+      "close_call": false,
+      "relevance_score": 0.02,
+      "difficulty_score": 0.05,
+      "selection_rationale": "Langley presents surveillance tools for criminal investigations, with no described personal identity focus.",
+      "decision_summary": "Public safety technology does not address identity outside work.",
+      "video_id": "0c5f3f18-b53b-4636-885f-784d501f9062"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000076",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.65,
+      "difficulty_score": 0.84,
+      "selection_rationale": "Langley explains an actual surveillance network and addresses controversy, but he founded the company whose system he defends.",
+      "decision_summary": "Relevant vendor perspective; not an independent assessment.",
+      "video_id": "0c5f3f18-b53b-4636-885f-784d501f9062"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000076",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.38,
+      "difficulty_score": 0.64,
+      "selection_rationale": "Golbeck critiques broad corporate and government tracking, with advice about devices at home rather than municipal procurement.",
+      "decision_summary": "The privacy theme overlaps, but the decision context is less specific.",
+      "video_id": "2f85351a-9922-48f0-8cf6-ac151c49788c"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000077",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.62,
+      "difficulty_score": 0.87,
+      "selection_rationale": "Snyder gives concrete predictive-health examples, but the description is strongly enthusiastic and does not promise false-alarm analysis.",
+      "decision_summary": "Relevant device discussion with uncertain balance.",
+      "video_id": "4e9aa32b-901b-49b6-ba7d-4dc8c8a720fc"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000077",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.29,
+      "difficulty_score": 0.51,
+      "selection_rationale": "Diaz explains movement breaks without evaluating tracker accuracy or purchase tradeoffs.",
+      "decision_summary": "Healthy habits do not resolve the buying question.",
+      "video_id": "cb061b4a-1253-43db-96d2-a2fc0005c023"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000078",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.73,
+      "difficulty_score": 0.77,
+      "selection_rationale": "Bell discusses identity beyond work and meaningful leisure, but the description centers career change and job loss rather than retirement.",
+      "decision_summary": "The core issue fits, while the life stage is uncertain.",
+      "video_id": "687eec34-8082-4d26-9855-dbbdc5567630"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000078",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.32,
+      "difficulty_score": 0.6,
+      "selection_rationale": "Pappas uses Olympic training and later projects to explain bad days on the way to goals.",
+      "decision_summary": "Goal persistence is adjacent but does not address retirement structure.",
+      "video_id": "685560ff-c8a8-4a76-b604-5058086ed631"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000079",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.72,
+      "difficulty_score": 0.78,
+      "selection_rationale": "Schingler shows daily global imagery paired with AI to detect threats, but exhibit-ready methods are not promised.",
+      "decision_summary": "Strong subject fit with uncertain practical depth.",
+      "video_id": "01d73e24-112d-4b11-8bd9-a35c34e35422"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000079",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.39,
+      "difficulty_score": 0.67,
+      "selection_rationale": "Kang makes environmental crises tangible through art, but satellite observations are not specified.",
+      "decision_summary": "A useful exhibit approach still misses the scientific focus.",
+      "video_id": "199d608c-35e4-43f1-8032-eb2fc1b7c94e"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000080",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.71,
+      "difficulty_score": 0.8,
+      "selection_rationale": "Collier builds music collectively in real time, but he works with an orchestra rather than beginning pianists.",
+      "decision_summary": "Potential teaching material without a clear beginner exercise.",
+      "video_id": "6451bc2d-f38e-44ce-8d61-d2f5b0ad5fd0"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000080",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.36,
+      "difficulty_score": 0.61,
+      "selection_rationale": "ELEW combines a performance with reflections on moving from jazz piano to DJing.",
+      "decision_summary": "The pianist connection is real, but an introductory exercise is not described.",
+      "video_id": "6057f7b6-7bce-4777-8f2a-e44db6718342"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000081",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.69,
+      "difficulty_score": 0.79,
+      "selection_rationale": "Sanderson explains built-in participation through school councils, which could transfer to resident processes but is not about budgets.",
+      "decision_summary": "A relevant process with an uncertain municipal transfer.",
+      "video_id": "bd7b21cd-1e98-4bb7-92cc-05bdc1ffa3fb"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000081",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.4,
+      "difficulty_score": 0.68,
+      "selection_rationale": "Alexander offers stories of citizens improving communities, without a specified budget-decision process.",
+      "decision_summary": "The civic theme is broad rather than procedural enough.",
+      "video_id": "06f25ce5-4deb-4515-b062-81ab720cfa9a"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000082",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.78,
+      "difficulty_score": 0.7,
+      "selection_rationale": "May proposes analog fun rather than restriction, although her program experience is with young people.",
+      "decision_summary": "The approach fits; adult applicability needs judgment.",
+      "video_id": "6db78689-e0c7-4ee6-958e-105da467a02a"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000082",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.37,
+      "difficulty_score": 0.6,
+      "selection_rationale": "Odgers analyzes teen mental-health data and argues against bans, rather than offering an adult habit-change plan.",
+      "decision_summary": "A compatible viewpoint does not make it practical help for this viewer.",
+      "video_id": "9d73493a-f55c-41bf-a323-90454f6cc024"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000083",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.66,
+      "difficulty_score": 0.89,
+      "selection_rationale": "Robinson recounts his son's short life and medical challenges with gratitude and wonder, which may help some participants but feel difficult to others.",
+      "decision_summary": "Lived experience fits; the positive framing needs care.",
+      "video_id": "afe6c9a5-d55e-48dc-9743-fcfa997c1706"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000083",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.36,
+      "difficulty_score": 0.7,
+      "selection_rationale": "Juster's description gives personal thoughts on grief beyond death, with little detail about bereavement support.",
+      "decision_summary": "The broader definition may not provide the requested story or facilitation material.",
+      "video_id": "d7e2ec6d-ed02-493f-91dd-f29009599b75"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000084",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.79,
+      "difficulty_score": 0.72,
+      "selection_rationale": "Dalling gives specific behaviors for activating weak ties, using a missing-dog response rather than nonprofit fundraising.",
+      "decision_summary": "The asking skills may transfer, though the setting differs.",
+      "video_id": "3596d7a5-e33e-47c4-9cbf-3ade7ac91497"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000084",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.34,
+      "difficulty_score": 0.58,
+      "selection_rationale": "McDermott argues that independence rests on shared systems and other people's contributions.",
+      "decision_summary": "A case for accepting help is less useful than an outreach method.",
+      "video_id": "45fc5f77-7919-42e6-9572-410d0f7cd829"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000085",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.7,
+      "difficulty_score": 0.86,
+      "selection_rationale": "Monet uses her decision to become a single mother to discuss agency, but the description explicitly broadens beyond motherhood.",
+      "decision_summary": "The lived decision fits; practical tradeoffs may be missing.",
+      "video_id": "972c30a7-3baa-4a87-aa66-bae6c35f16ec"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000085",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.25,
+      "difficulty_score": 0.47,
+      "selection_rationale": "Williams studies children's bonds with AI toys and how parents can encourage critical thinking.",
+      "decision_summary": "Parenting content does not address the decision to parent alone.",
+      "video_id": "22164bae-79ec-4a4b-8197-30844e1a6f4e"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000086",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.74,
+      "difficulty_score": 0.8,
+      "selection_rationale": "Vrsalovic discusses gambling, the brain and staying stopped, but the description does not establish a teen education focus.",
+      "decision_summary": "The anti-harm subject fits; age suitability needs review.",
+      "video_id": "64c9ce2d-ddc3-4288-856d-124a5b6802f2"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000086",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.4,
+      "difficulty_score": 0.69,
+      "selection_rationale": "Baldacchino explains reward circuits and chronic addiction across substances and behaviors.",
+      "decision_summary": "The mechanism is related, but gambling-specific financial risk is not described.",
+      "video_id": "af691b8d-6aa6-46fe-a6d8-b515887b5635"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000087",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.64,
+      "difficulty_score": 0.91,
+      "selection_rationale": "Murugesan describes identifying needs from crying patterns, but the description does not provide clinical validation results.",
+      "decision_summary": "The application fits while evidence quality remains unresolved.",
+      "video_id": "35540e2c-932e-4cc9-ae76-1453851c493a"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000087",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.31,
+      "difficulty_score": 0.58,
+      "selection_rationale": "Snyder discusses watches and glucose monitors for predictive health, not neonatal cry interpretation.",
+      "decision_summary": "Another health sensor application does not answer this clinical question.",
+      "video_id": "4e9aa32b-901b-49b6-ba7d-4dc8c8a720fc"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000088",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.66,
+      "difficulty_score": 0.83,
+      "selection_rationale": "Williams examines children's relationships with AI toys and a playful way to question them, which informs policy but is not a school policy guide.",
+      "decision_summary": "Developmental insight may help without giving staff a decision framework.",
+      "video_id": "22164bae-79ec-4a4b-8197-30844e1a6f4e"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000088",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.38,
+      "difficulty_score": 0.65,
+      "selection_rationale": "Fontoura broadly considers what learning will and will not change with AI.",
+      "decision_summary": "The description is too general for the requested operational decisions.",
+      "video_id": "470f4646-ab87-4c6b-84de-e508aab14a50"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000089",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.8,
+      "difficulty_score": 0.78,
+      "selection_rationale": "Subudhi proposes technology for overtourism and recognizes pressure on locals, but the description does not establish how tradeoffs are evaluated.",
+      "decision_summary": "Direct topic fit with uncertain method and evidence detail.",
+      "video_id": "a81308d3-7153-44db-b748-f11286e0d028"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000089",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.28,
+      "difficulty_score": 0.55,
+      "selection_rationale": "Belhoul describes broad city experimentation and reduced bureaucracy rather than visitor-pressure management.",
+      "decision_summary": "The city setting overlaps without the resident-tourism problem.",
+      "video_id": "e11663f9-c72e-4080-b25e-f9d486c181c1"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000090",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.82,
+      "difficulty_score": 0.7,
+      "selection_rationale": "Whale gives a live doodling demonstration, though part of the talk argues about imagination and AI.",
+      "decision_summary": "The demonstration offers a low-pressure starting point.",
+      "video_id": "d9eab422-943d-48f7-b3e1-015075ed41a7"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000090",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.42,
+      "difficulty_score": 0.65,
+      "selection_rationale": "Bajaj argues for adult play over optimization but does not promise a drawing exercise.",
+      "decision_summary": "The philosophy fits better than the requested activity.",
+      "video_id": "933f143d-48d2-408d-8df0-f6d5ad92a6d5"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000091",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.84,
+      "difficulty_score": 0.68,
+      "selection_rationale": "Farmer discusses widening STEM access and leads a fund addressing low-income students' graduation gap, but the description gives limited program mechanics.",
+      "decision_summary": "Highly relevant experience with uncertain operational detail.",
+      "video_id": "8123b567-ad1a-4b38-95a0-ab7d8c13accb"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000091",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.38,
+      "difficulty_score": 0.61,
+      "selection_rationale": "Wu describes global peer tutoring and human connection rather than emergency financial support.",
+      "decision_summary": "Academic support is useful but misses the stated barrier.",
+      "video_id": "e32ef5ac-9fdf-423f-bb8b-ac85e3aa2700"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000092",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.79,
+      "difficulty_score": 0.82,
+      "selection_rationale": "Giussani argues for a European alternative to US-owned infrastructure, but the description is a strategic case rather than an implementation survey.",
+      "decision_summary": "The objective aligns; concrete alternatives may be too sparse.",
+      "video_id": "b703357f-5c60-4b7d-95bc-8736c38089a0"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000092",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.4,
+      "difficulty_score": 0.64,
+      "selection_rationale": "Golbeck explains surveillance and household-device responses without focusing on European infrastructure alternatives.",
+      "decision_summary": "Privacy concern alone is not the requested regional solution.",
+      "video_id": "2f85351a-9922-48f0-8cf6-ac151c49788c"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000093",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.81,
+      "difficulty_score": 0.76,
+      "selection_rationale": "Monteggia challenges the chemical-imbalance account using research on a decades-old drug, but the description cannot establish how fully limitations are treated.",
+      "decision_summary": "Research-oriented subject fits; balance should be assessed.",
+      "video_id": "83005258-df6f-4037-a84a-2d5a4a6961a8"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000093",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.34,
+      "difficulty_score": 0.61,
+      "selection_rationale": "Khullar discusses GLP-1s and craving, emphasizing possible addiction applications rather than depression treatment.",
+      "decision_summary": "An adjacent brain-drug story does not answer the specific research interest.",
+      "video_id": "2a99bcc8-8b7f-473d-9881-16f0a7c2a432"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000094",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.79,
+      "difficulty_score": 0.7,
+      "selection_rationale": "Mikus offers a small visible communication change, but the description does not specify remote handoffs.",
+      "decision_summary": "A practical technique may transfer to the actual problem.",
+      "video_id": "3d1503e3-5397-4645-8497-6a5f866daa90"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000094",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.35,
+      "difficulty_score": 0.6,
+      "selection_rationale": "Kriegel challenges controlling leadership and proposes an alternative tactic, without a handoff process.",
+      "decision_summary": "Leadership mindset is broader than the communication task.",
+      "video_id": "06fe03dc-3f2c-4736-baf4-09f0ce08bc60"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000095",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.69,
+      "difficulty_score": 0.86,
+      "selection_rationale": "McKibben explains falling clean-energy prices, but the description does not promise country-level barriers or full implementation costs.",
+      "decision_summary": "The price argument is relevant but may miss the required distinctions.",
+      "video_id": "15fae0d7-3016-4ad6-9d8d-77850c8634e2"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000095",
+      "category": "near_miss",
+      "predicted_fit": "no",
+      "close_call": true,
+      "relevance_score": 0.3,
+      "difficulty_score": 0.52,
+      "selection_rationale": "Subramanian examines climate shocks and early marriage in South Asia rather than energy deployment economics.",
+      "decision_summary": "The development context overlaps while the mechanism differs.",
+      "video_id": "abb8451a-5f79-4ed0-8464-99e2f143ab18"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000096",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.67,
+      "difficulty_score": 0.84,
+      "selection_rationale": "Sullivan and Ekblaw discuss what people owe one another and a rulebook for a better world, but range into space and the good life.",
+      "decision_summary": "Ethical foundations fit; public-service application is uncertain.",
+      "video_id": "aaaa187a-b2b2-4211-a76b-4ec7d1bb6087"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000096",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.77,
+      "difficulty_score": 0.73,
+      "selection_rationale": "Sanderson builds equal voice into participation processes rather than relying on confidence, using school councils as his setting.",
+      "decision_summary": "A concrete fairness mechanism could transfer beyond schools.",
+      "video_id": "bd7b21cd-1e98-4bb7-92cc-05bdc1ffa3fb"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000097",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.72,
+      "difficulty_score": 0.86,
+      "selection_rationale": "Huang links a Baltimore overdose map to deprivation and stress, but also uses a fictional person to explain the mechanisms.",
+      "decision_summary": "Accessible material whose illustrative story needs clear qualification.",
+      "video_id": "28bcbfb8-20e7-4d84-90a1-173f8e5d27ce"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000097",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.65,
+      "difficulty_score": 0.89,
+      "selection_rationale": "Stow uses caring for her daughter to question assumptions in health and other systems; it is explicitly a personal perspective.",
+      "decision_summary": "Useful testimony if framed as lived experience rather than general evidence.",
+      "video_id": "b16cde89-d742-4f47-b02d-dbfecedc2e20"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000098",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.84,
+      "difficulty_score": 0.67,
+      "selection_rationale": "Rizzuto supplies records, bone music and film-preservation examples to question streaming access.",
+      "decision_summary": "Concrete cultural history fits, though the medium is mostly music and film.",
+      "video_id": "ec98afb8-268f-4be5-9ef2-7100d52c2f8c"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000098",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.67,
+      "difficulty_score": 0.81,
+      "selection_rationale": "Prince proposes paying creators for content used by AI, giving the group a cultural-production question but emphasizing business economics.",
+      "decision_summary": "Relevant to culture's future with a narrower commercial lens.",
+      "video_id": "27882270-eef6-42ae-987c-02b9df7970cc"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000099",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.78,
+      "difficulty_score": 0.73,
+      "selection_rationale": "Martin offers three ways to recognize progress during stalled change; the description is not specific to volunteer teams.",
+      "decision_summary": "Practical persistence ideas may transfer to a group without formal authority.",
+      "video_id": "737d8232-b7d2-4847-8f88-46b591ea2656"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000099",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.66,
+      "difficulty_score": 0.83,
+      "selection_rationale": "Kriegel argues against control in leadership, which suits volunteers, but extraordinary workplace results are the described setting.",
+      "decision_summary": "The premise fits; practical relevance to unpaid groups is uncertain.",
+      "video_id": "06fe03dc-3f2c-4736-baf4-09f0ce08bc60"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000100",
+      "category": "close_call",
+      "predicted_fit": "unsure",
+      "close_call": true,
+      "relevance_score": 0.71,
+      "difficulty_score": 0.84,
+      "selection_rationale": "Ward recounts moving from guilt after tragedy toward purpose, which could support discussion but is centered on regret rather than all life changes.",
+      "decision_summary": "Potentially useful lived experience with a narrower emotional starting point.",
+      "video_id": "b6153108-12c9-49a1-bcec-6157e01d00d1"
+    },
+    {
+      "profile_id": "30000000-0000-4000-8000-000000000100",
+      "category": "close_call",
+      "predicted_fit": "yes",
+      "close_call": true,
+      "relevance_score": 0.76,
+      "difficulty_score": 0.75,
+      "selection_rationale": "Baum challenges treating life as an optimization project, aligning with a discussion that avoids pressured reinvention.",
+      "decision_summary": "The framing fits, though the speaker draws on a young person's social-media experience.",
+      "video_id": "3ba32906-7855-4b86-8408-727d33676350"
+    }
+  ]
+}

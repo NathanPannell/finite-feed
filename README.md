@@ -75,4 +75,5 @@ After configuring OpenRouter, add `--with-model` to exercise the live low-cost m
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for deployment lifecycle details and [INSTALLATION_ISSUES.md](INSTALLATION_ISSUES.md) for bootstrap problems found during initial setup.
 See [SEMANTIC_EMBEDDINGS.md](SEMANTIC_EMBEDDINGS.md) for semantic rollout, verification, benchmarking, and rollback.
+See [MATCH_LAB_DATASET.md](MATCH_LAB_DATASET.md) for reproducible curation, guarded replacement, reviewer identity, and debug-assessment operations.
 See [DESCRIPTION_PROCESSING.md](DESCRIPTION_PROCESSING.md) for deterministic description cleanup and Match Lab language eligibility.
