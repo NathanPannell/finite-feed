@@ -67,6 +67,52 @@ def test_common_ted_membership_call_to_action_starts_trailing_promotion() -> Non
     )
 
 
+def test_ted_event_promotion_is_removed_without_changing_raw_source() -> None:
+    description = (
+        "Streaming media gives us access to everything instantly — but at what cost? Music professor Tom "
+        "Rizzuto traces the history of physical media — from CDs and vinyl to bone music (Soviet-era "
+        "records pressed onto discarded X-rays) and the near-loss of “Nosferatu” — making the case that "
+        "art shouldn't just live in the cloud. (Recorded at TEDxMolloy University on ebruary 28, 2026)\n\n"
+        "Join us in person at a TED conference: https://tedtalks.social/events\n"
+        "Become a TED Member to support our mission: https://ted.com/membership"
+    )
+    raw_source = description
+
+    assert clean_description(description) == (
+        "Streaming media gives us access to everything instantly — but at what cost? Music professor Tom "
+        "Rizzuto traces the history of physical media — from CDs and vinyl to bone music (Soviet-era "
+        "records pressed onto discarded X-rays) and the near-loss of “Nosferatu” — making the case that "
+        "art shouldn't just live in the cloud. (Recorded at TEDxMolloy University on ebruary 28, 2026)"
+    )
+    assert description == raw_source
+
+
+def test_conference_and_membership_discussion_is_preserved() -> None:
+    description = (
+        "Join us in person at a TED conference: researchers explain how professional gatherings spread ideas. "
+        "The researchers also compare museum membership models and their effect on access."
+    )
+    assert clean_description(description) == description
+
+
+def test_inline_ted_publisher_promotion_is_removed_after_abstract() -> None:
+    description = (
+        "A historian explains why durable archives matter. (Recorded in 2026) "
+        "Join us in person at a TED conference: https://tedtalks.social/events"
+    )
+    assert clean_description(description) == (
+        "A historian explains why durable archives matter. (Recorded in 2026)"
+    )
+
+
+def test_inline_colon_conference_discussion_is_preserved() -> None:
+    description = (
+        "The program invites participation. Join us in person at a TED conference: "
+        "researchers explain how professional gatherings spread ideas."
+    )
+    assert clean_description(description) == description
+
+
 def test_boilerplate_only_description_is_empty() -> None:
     description = (
         "This talk was given at a TEDx event using the TED conference format.\n"
@@ -96,5 +142,5 @@ def test_language_detection_is_local_deterministic_and_uses_cleaned_metadata() -
 
 def test_document_fingerprint_versions_derived_text_without_mutating_raw_fingerprint() -> None:
     raw = "sha256:canonical-source-metadata"
-    assert document_fingerprint(raw) == "description-v4:sha256:canonical-source-metadata"
+    assert document_fingerprint(raw) == "description-v5:sha256:canonical-source-metadata"
     assert raw == "sha256:canonical-source-metadata"

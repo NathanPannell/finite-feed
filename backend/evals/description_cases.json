@@ -121,5 +121,37 @@
     "default_audio_language": "es-MX",
     "expected_description": "",
     "english_eligible": false
+  },
+  {
+    "source_ref": "match-lab-v2-problem-with-streaming",
+    "name": "ted-streaming-event-membership-footer",
+    "title": "The Problem with Streaming | Tom Rizzuto | TED",
+    "description": "Streaming media gives us access to everything instantly, but at what cost? (Recorded at TEDxMolloy University on ebruary 28, 2026)\nJoin us in person at a TED conference: https://tedtalks.social/events\nBecome a TED Member to support our mission: https://ted.com/membership\nThe TED Talks channel features the best talks and performances from the TED Conference.",
+    "expected_description": "Streaming media gives us access to everything instantly, but at what cost? (Recorded at TEDxMolloy University on ebruary 28, 2026)",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-08-conference-discussion",
+    "name": "semantic-conference-discussion",
+    "title": "Why conferences still matter",
+    "description": "Join us in person at a TED conference: researchers explain how professional gatherings spread ideas.",
+    "expected_description": "Join us in person at a TED conference: researchers explain how professional gatherings spread ideas.",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-09-membership-discussion",
+    "name": "semantic-membership-discussion",
+    "title": "Who gets access to culture",
+    "description": "The researchers compare museum membership models and their effect on public access.",
+    "expected_description": "The researchers compare museum membership models and their effect on public access.",
+    "english_eligible": true
+  },
+  {
+    "source_ref": "regression-10-inline-conference-discussion",
+    "name": "inline-semantic-conference-discussion",
+    "title": "Why conferences still matter",
+    "description": "The program invites participation. Join us in person at a TED conference: researchers explain how professional gatherings spread ideas.",
+    "expected_description": "The program invites participation. Join us in person at a TED conference: researchers explain how professional gatherings spread ideas.",
+    "english_eligible": true
   }
 ]

@@ -1,0 +1,32 @@
+.intro[class] h2 {
+  font-size: clamp(48px, 6vw, 88px);
+  max-width: 12ch;
+}
+
+.intro .disclosure {
+  color: var(--graphite);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 24px 0 0;
+  max-width: 44ch;
+}
+
+@media (max-width: 700px) {
+  .intro[class] > div {
+    padding: 28px 0;
+  }
+
+  .intro[class] h2 {
+    font-size: clamp(40px, 12vw, 56px);
+    margin-bottom: 16px;
+  }
+
+  .intro[class] > div > p:not(.disclosure) {
+    font-size: 16px;
+    margin-bottom: 22px;
+  }
+
+  .intro[class] li {
+    padding: 20px 0;
+  }
+}

@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from langdetect import DetectorFactory, LangDetectException, detect_langs
 
-DESCRIPTION_PROCESSING_VERSION = "description-v4"
+DESCRIPTION_PROCESSING_VERSION = "description-v5"
 
 _MOJIBAKE = {
     "\u00e2\u20ac\u2122": "’",
@@ -33,6 +33,7 @@ _PROMOTION = re.compile(
     r"(?:learn more|find out more|read more|watch more|sign up|get tickets|donate|support us)\s*(?:[:!]|\bat\b|\bhere\b)|"
     r"(?:visit|check out|go deeper)\b.+(?:https?://|www\.)|"
     r"(?:become|join)\s+(?:a\s+)?ted\s+member\b|"
+    r"join us in person at a ted conference\s*:\s*(?:https?://|www\.)|"
     r"if you (?:love|like|enjoy) (?:watching )?ted talks\b|"
     r"get ted talks recommended\b|"
     r"(?:this (?:video|episode|talk) is )?(?:sponsored|presented|paid for)\s+by\b|"
@@ -49,6 +50,14 @@ _INLINE_PROMOTION = re.compile(
     r"(?:sponsored|presented|paid for) by|"
     r"(?:thanks?|thank you) to .+ for sponsor"
     r")\b",
+    re.IGNORECASE,
+)
+_INLINE_TED_PUBLISHER_PROMOTION = re.compile(
+    r"(?:(?<=[.!?)])|^)\s*(?:"
+    r"join us in person at a ted conference|"
+    r"become a ted member to support our mission|"
+    r"subscribe to a ted newsletter"
+    r")\s*:\s*(?:https?://|www\.)",
     re.IGNORECASE,
 )
 _INLINE_BOILERPLATE = re.compile(
@@ -121,9 +130,14 @@ def clean_description(value: str) -> str:
         if _PROMOTION.match(line):
             continue
         inline_promotion = _INLINE_PROMOTION.search(line)
+        inline_ted_promotion = _INLINE_TED_PUBLISHER_PROMOTION.search(line)
         inline_boilerplate = _INLINE_BOILERPLATE.search(line)
         cut_at = min(
-            (match.start() for match in (inline_promotion, inline_boilerplate) if match),
+            (
+                match.start()
+                for match in (inline_promotion, inline_ted_promotion, inline_boilerplate)
+                if match
+            ),
             default=None,
         )
         if cut_at is not None:
