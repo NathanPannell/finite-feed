@@ -99,18 +99,45 @@ def build_migration(dataset: dict, source_commit: str, source_migrations: list[s
 DO $seed$
 DECLARE
     dataset JSONB := $dataset${encoded}$dataset$::jsonb;
+    resolved_dataset JSONB;
     seed_snapshot UUID := (dataset->>'snapshot_id')::uuid;
 BEGIN
-    LOCK TABLE annotation_pair_scores, annotation_labels IN SHARE ROW EXCLUSIVE MODE;
+    LOCK TABLE videos, annotation_pair_scores, annotation_labels IN SHARE ROW EXCLUSIVE MODE;
 
-    -- Fail on identity collisions rather than overwriting an existing source record.
+    -- A source UUID may not identify a different YouTube video in this database.
     IF EXISTS (
         SELECT 1 FROM jsonb_to_recordset(dataset->'videos') AS item(id uuid, youtube_video_id text)
-        JOIN videos existing ON existing.id = item.id OR existing.youtube_video_id = item.youtube_video_id
-        WHERE existing.id <> item.id OR existing.youtube_video_id <> item.youtube_video_id
+        JOIN videos existing ON existing.id = item.id
+        WHERE existing.youtube_video_id <> item.youtube_video_id
     ) THEN
         RAISE EXCEPTION 'Match Lab seed video identity conflicts with existing data';
     END IF;
+
+    -- Preserve independently ingested rows by resolving source UUIDs through the
+    -- globally unique YouTube video identity before inserting snapshots and pairs.
+    WITH identities AS (
+        SELECT source.item, source.ordinality,
+               (source.item->>'id')::uuid AS source_id,
+               COALESCE(existing.id, (source.item->>'id')::uuid) AS resolved_id
+        FROM jsonb_array_elements(dataset->'videos') WITH ORDINALITY AS source(item, ordinality)
+        LEFT JOIN videos existing ON existing.youtube_video_id = source.item->>'youtube_video_id'
+    ), resolved_videos AS (
+        SELECT item || jsonb_build_object('source_id', source_id, 'id', resolved_id) AS item,
+               ordinality
+        FROM identities
+    ), resolved_pairs AS (
+        SELECT source.item || jsonb_build_object(
+                   'source_video_id', source.item->>'video_id',
+                   'video_id', identities.resolved_id
+               ) AS item,
+               source.ordinality
+        FROM jsonb_array_elements(dataset->'pairs') WITH ORDINALITY AS source(item, ordinality)
+        JOIN identities ON identities.source_id = (source.item->>'video_id')::uuid
+    )
+    SELECT jsonb_set(
+        jsonb_set(dataset, '{{videos}}', (SELECT jsonb_agg(item ORDER BY ordinality) FROM resolved_videos)),
+        '{{pairs}}', (SELECT jsonb_agg(item ORDER BY ordinality) FROM resolved_pairs)
+    ) INTO resolved_dataset;
 
     INSERT INTO videos (
         id, youtube_video_id, channel_name, title, youtube_url, thumbnail_url,
@@ -120,7 +147,7 @@ BEGIN
            'https://www.youtube.com/watch?v=' || youtube_video_id,
            'https://i.ytimg.com/vi/' || youtube_video_id || '/hqdefault.jpg',
            description, published_at, duration_seconds, updated_at, content_fingerprint
-    FROM jsonb_to_recordset(dataset->'videos') AS item(
+    FROM jsonb_to_recordset(resolved_dataset->'videos') AS item(
         id uuid, youtube_video_id text, channel_name text, title text,
         description text, published_at timestamptz, duration_seconds integer, updated_at timestamptz,
         content_fingerprint text
@@ -135,7 +162,7 @@ BEGIN
     -- Existing profile versions and video snapshots remain untouched.
     INSERT INTO annotation_videos (video_id, title, description, channel_name, source_updated_at)
     SELECT id, title, description, channel_name, updated_at
-    FROM jsonb_to_recordset(dataset->'videos') AS item(
+    FROM jsonb_to_recordset(resolved_dataset->'videos') AS item(
         id uuid, title text, description text, channel_name text, updated_at timestamptz
     )
     ON CONFLICT (video_id) DO NOTHING;
@@ -153,6 +180,7 @@ BEGIN
             'category_counts', '{{"strong_match":50,"close_call":60,"near_miss":40,"hard_negative":50}}'::jsonb,
             'hash_contract', 'SHA256 of canonical source and curation artifact, excluding migration provenance',
             'existing_snapshots', 'Preserved; source extraction is recorded in source-snapshot.json',
+            'identity_mapping', 'Source video UUIDs resolve to existing rows by unique youtube_video_id; otherwise source UUIDs are retained',
             'scores', 'Assistant judgment estimates, not calibrated probabilities'
         )
     ) ON CONFLICT (id) DO NOTHING;
@@ -166,13 +194,15 @@ BEGIN
            dataset->>'scoring_model', TRUE, predicted_fit, close_call,
            selection_rationale, decision_summary, dataset->>'scoring_model_version', seed_snapshot,
            jsonb_build_object(
-               'stable_id', item.profile_id::text || ':' || item.video_id::text,
+               'stable_id', item.profile_id::text || ':' || item.source_video_id::text,
                'category', category, 'topic_area', profile.topics[1],
                'snapshot_sha256', dataset->>'snapshot_sha256',
+               'source_video_id', item.source_video_id,
+               'resolved_video_id', item.video_id,
                'assessment_source', 'assistant', 'human_adjudicated', false
            )
-    FROM jsonb_to_recordset(dataset->'pairs') AS item(
-        profile_id uuid, video_id uuid, relevance_score double precision,
+    FROM jsonb_to_recordset(resolved_dataset->'pairs') AS item(
+        profile_id uuid, video_id uuid, source_video_id uuid, relevance_score double precision,
         difficulty_score double precision, predicted_fit text, close_call boolean,
         selection_rationale text, decision_summary text, category text
     )

@@ -150,9 +150,66 @@ def test_seed_upgrade_preserves_nine_reviews_and_existing_records(seed_database)
 def test_seed_identity_collision_fails_without_overwriting_data(seed_database) -> None:
     conn = seed_database
     video = load_dataset()["videos"][0]
-    _insert_source(conn, {**video, "id": str(uuid4())})
+    _insert_source(conn, {**video, "youtube_video_id": "different-existing-youtube-id"})
     before = _counts(conn)
     with pytest.raises(psycopg.errors.RaiseException, match="video identity conflicts"):
         with conn.transaction():
             conn.execute(MIGRATION.read_text(encoding="utf-8"))
     assert _counts(conn) == before
+
+
+def test_seed_maps_existing_youtube_identity_without_overwriting_it(seed_database) -> None:
+    conn = seed_database
+    dataset = load_dataset()
+    pair = dataset["pairs"][0]
+    source_video = next(video for video in dataset["videos"] if video["id"] == pair["video_id"])
+    existing_id = uuid4()
+    _insert_source(conn, {**source_video, "id": str(existing_id)})
+    label_id = uuid4()
+    conn.execute(
+        """
+        INSERT INTO annotation_labels (id, profile_id, video_id, annotator_id, label, rationale)
+        VALUES (%s, %s, %s, %s, 'yes', 'Existing judgment on the independently ingested video')
+        """,
+        (label_id, pair["profile_id"], existing_id, uuid4()),
+    )
+    video_before = conn.execute("SELECT * FROM videos WHERE id = %s", (existing_id,)).fetchone()
+    annotation_before = conn.execute(
+        "SELECT * FROM annotation_videos WHERE video_id = %s", (existing_id,)
+    ).fetchone()
+    label_before = conn.execute("SELECT * FROM annotation_labels WHERE id = %s", (label_id,)).fetchone()
+
+    conn.execute(MIGRATION.read_text(encoding="utf-8"))
+
+    assert conn.execute("SELECT * FROM videos WHERE id = %s", (existing_id,)).fetchone() == video_before
+    assert conn.execute(
+        "SELECT * FROM annotation_videos WHERE video_id = %s", (existing_id,)
+    ).fetchone() == annotation_before
+    assert conn.execute("SELECT count(*) AS count FROM videos WHERE id = %s", (source_video["id"],)).fetchone()["count"] == 0
+    mapped_pairs = conn.execute(
+        """
+        SELECT snapshot_provenance
+        FROM annotation_pair_scores
+        WHERE video_id = %s AND snapshot_id = (SELECT id FROM annotation_snapshots)
+        """,
+        (existing_id,),
+    ).fetchall()
+    expected_pair_count = sum(item["video_id"] == source_video["id"] for item in dataset["pairs"])
+    assert len(mapped_pairs) == expected_pair_count
+    assert all(row["snapshot_provenance"]["source_video_id"] == source_video["id"] for row in mapped_pairs)
+    assert all(row["snapshot_provenance"]["resolved_video_id"] == str(existing_id) for row in mapped_pairs)
+    assert conn.execute("SELECT * FROM annotation_labels WHERE id = %s", (label_id,)).fetchone() == label_before
+    assert conn.execute(
+        "SELECT provenance->>'identity_mapping' AS policy FROM annotation_snapshots"
+    ).fetchone()["policy"] == (
+        "Source video UUIDs resolve to existing rows by unique youtube_video_id; otherwise source UUIDs are retained"
+    )
+
+    conn.execute(MIGRATION.read_text(encoding="utf-8"))
+    assert conn.execute("SELECT * FROM videos WHERE id = %s", (existing_id,)).fetchone() == video_before
+    assert conn.execute(
+        "SELECT * FROM annotation_videos WHERE video_id = %s", (existing_id,)
+    ).fetchone() == annotation_before
+    assert conn.execute("SELECT * FROM annotation_labels WHERE id = %s", (label_id,)).fetchone() == label_before
+    assert _counts(conn) == {"profiles": 100, "videos": 296, "snapshots": 296, "pairs": 200, "labels": 1}
+    assert conn.execute("SELECT count(*) AS count FROM annotation_snapshots").fetchone()["count"] == 1

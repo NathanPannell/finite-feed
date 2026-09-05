@@ -8,6 +8,8 @@ The full video inventory includes two records with empty descriptions. Selected 
 
 `0012_match_lab_golden_seed.sql` adds missing public videos, annotation snapshots, profiles, and curated pairs. It preserves existing source records, profile versions, annotation snapshots, and every human label. Existing labels determine consensus or escalation for seeded pairs. Source identity or pair-assessment collisions abort the transaction rather than overwrite existing data. Generated thumbnails are used only for missing public-video fixtures; existing production thumbnails remain intact.
 
+Videos already ingested under another database UUID are matched by their unique YouTube video ID, preserving the existing UUID and its references. New video fixtures use the same title-and-description fingerprint as ingestion so embedding backfill can complete.
+
 The snapshot records the 29,600 possible profile–video combinations and the 200 selected pairs separately. Its SHA-256 covers canonical JSON of the source records, synthetic profiles, assessments, extraction time, and curation provenance. It excludes the migration source commit and migration list, which are recorded separately. Existing database snapshots may be older than the extraction; preservation is explicit in the provenance. An applied migration is immutable.
 
 Before the migration is first applied, rebuild it with:
@@ -17,4 +19,4 @@ python -m backend.tools.build_match_lab_seed --source-commit <merged-source-sha>
 python -m pytest backend/tests/test_match_lab_seed.py
 ```
 
-Database tests require a disposable local PostgreSQL URL. They build isolated schemas inside transactions and roll back; they never commit test labels. Deployment applies the checked-in migration through the normal migration runner. Verify the deployed commit, migration checksum, dataset counts, preserved labels, and a real Match Lab browser journey afterward.
+Database tests require a disposable local PostgreSQL URL. They build isolated schemas inside transactions and roll back; they never commit test labels. Also run the full backend suite immediately after applying all migrations to a fresh database: reused databases may have had the seeded catalog removed by test fixtures. Deployment applies the checked-in migration through the normal migration runner. Verify the deployed commit, migration checksum, dataset counts, preserved labels, and a real Match Lab browser journey afterward.
