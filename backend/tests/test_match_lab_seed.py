@@ -89,6 +89,10 @@ def test_seed_migration_fresh_database_and_replay(seed_database) -> None:
     migration = MIGRATION.read_text(encoding="utf-8")
     conn.execute(migration)
     assert _counts(conn) == {"profiles": 100, "videos": 296, "snapshots": 296, "pairs": 200, "labels": 0}
+    from backend.app.ingestion import video_fingerprint
+
+    for video in conn.execute("SELECT title, description, content_fingerprint FROM videos").fetchall():
+        assert video["content_fingerprint"] == video_fingerprint(video["title"], video["description"])
     assert conn.execute("SELECT count(*) AS count FROM annotation_pair_scores WHERE queue_status = 'open'").fetchone()["count"] == 200
     conn.execute(migration)
     assert _counts(conn) == {"profiles": 100, "videos": 296, "snapshots": 296, "pairs": 200, "labels": 0}

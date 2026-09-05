@@ -28,6 +28,10 @@ def load_dataset(directory: Path = DATASET) -> dict:
     profiles = sorted([profile for shard in shards for profile in shard["profiles"]], key=lambda row: row["id"])
     pairs = sorted([pair for shard in shards for pair in shard["pairs"]], key=lambda row: (row["profile_id"], row["video_id"]))
     videos = sorted(source["videos"], key=lambda row: row["id"])
+    for video in videos:
+        video["content_fingerprint"] = hashlib.sha256(
+            f"{video['title']}\n{video['description']}".encode("utf-8")
+        ).hexdigest()
     if len(profiles) != 100 or len(videos) != 296 or len(pairs) != 200:
         raise ValueError("Seed must contain 100 profiles, 296 source videos, and 200 pairs")
     profile_ids = {row["id"] for row in profiles}
@@ -110,15 +114,16 @@ BEGIN
 
     INSERT INTO videos (
         id, youtube_video_id, channel_name, title, youtube_url, thumbnail_url,
-        description, published_at, duration_seconds, updated_at
+        description, published_at, duration_seconds, updated_at, content_fingerprint
     )
     SELECT id, youtube_video_id, channel_name, title,
            'https://www.youtube.com/watch?v=' || youtube_video_id,
            'https://i.ytimg.com/vi/' || youtube_video_id || '/hqdefault.jpg',
-           description, published_at, duration_seconds, updated_at
+           description, published_at, duration_seconds, updated_at, content_fingerprint
     FROM jsonb_to_recordset(dataset->'videos') AS item(
         id uuid, youtube_video_id text, channel_name text, title text,
-        description text, published_at timestamptz, duration_seconds integer, updated_at timestamptz
+        description text, published_at timestamptz, duration_seconds integer, updated_at timestamptz,
+        content_fingerprint text
     )
     ON CONFLICT DO NOTHING;
 
