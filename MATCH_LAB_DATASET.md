@@ -1,6 +1,6 @@
 # Match Lab dataset operations
 
-Match Lab serves only rows explicitly loaded as curated pairs. Dataset replacement is a deliberate three-stage operation; migrations never delete review data.
+Match Lab serves only rows explicitly loaded as curated pairs. The sample seed is loaded additively by migration `0012`; existing judgments and snapshots are preserved. See [the seed manifest](database/datasets/match-lab-v2/README.md) for counts, provenance, and verification. The replacement workflow below is a separate, destructive operator action.
 
 ## 1. Snapshot the full cross-product
 
@@ -53,7 +53,7 @@ python -m backend.tools.match_lab replace --curated artifacts/match-lab-curated.
 
 Production additionally requires `--allow-production`. Inspect the backup and reported exported/deleted/loaded counts before proceeding; never point an exploratory run at production or a shared database.
 
-The migration intentionally leaves the normal queue empty until this replacement command succeeds. Run snapshot, AI-assisted assessment, curation, and replacement against the intended environment before enabling reviewers. Preview deployments use an ephemeral signing secret when the repository secret is absent; production deployment requires an explicit `MATCH_LAB_COOKIE_SECRET` repository secret.
+Migration `0011` introduces the queue schema; `0012` supplies the sample pairs without running replacement. Preview deployments use an ephemeral signing secret when the repository secret is absent; production deployment requires an explicit `MATCH_LAB_COOKIE_SECRET` repository secret.
 
 ## Runtime identity and debug behavior
 

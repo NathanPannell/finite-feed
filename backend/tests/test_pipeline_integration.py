@@ -86,6 +86,10 @@ def test_ingest_retrieve_and_persist_recommendation() -> None:
         youtube.relevant_description += " Updated after a new coaching interview."
         refreshed = ingest_tracked_channels(conn, youtube, page_limit=1, embedder=embedder)
         assert refreshed.videos_changed == 1
+        # The golden seed now includes a real catalog on a fresh install, just as
+        # production does. Complete the worker's backfill before retrieval.
+        backfill = backfill_embeddings(conn, embedder, retry_delay_minutes=0)
+        assert backfill.failed == 0
         recommendation_id = generate_recommendation(
             conn, Settings(DATABASE_URL=database_url), USER_ID, embedder=embedder
         )
