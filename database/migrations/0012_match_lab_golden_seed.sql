@@ -6,7 +6,9 @@ DECLARE
     resolved_dataset JSONB;
     seed_snapshot UUID := (dataset->>'snapshot_id')::uuid;
 BEGIN
-    LOCK TABLE videos, annotation_pair_scores, annotation_labels IN SHARE ROW EXCLUSIVE MODE;
+    LOCK TABLE videos IN SHARE ROW EXCLUSIVE MODE;
+    LOCK TABLE annotation_pair_scores IN EXCLUSIVE MODE;
+    LOCK TABLE annotation_labels IN SHARE ROW EXCLUSIVE MODE;
 
     -- A source UUID may not identify a different YouTube video in this database.
     IF EXISTS (

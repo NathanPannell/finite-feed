@@ -2,7 +2,10 @@ import hashlib
 import json
 import os
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from threading import Event
+from time import monotonic, sleep
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -213,3 +216,122 @@ def test_seed_maps_existing_youtube_identity_without_overwriting_it(seed_databas
     assert conn.execute("SELECT * FROM annotation_labels WHERE id = %s", (label_id,)).fetchone() == label_before
     assert _counts(conn) == {"profiles": 100, "videos": 296, "snapshots": 296, "pairs": 200, "labels": 1}
     assert conn.execute("SELECT count(*) AS count FROM annotation_snapshots").fetchone()["count"] == 1
+
+
+def test_seed_migration_waits_for_active_annotation_without_deadlock() -> None:
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url or urlsplit(database_url).hostname not in {"localhost", "127.0.0.1", "::1"}:
+        pytest.skip("A local disposable PostgreSQL DATABASE_URL is required for seed integration tests")
+    schema = f"match_seed_concurrency_{uuid4().hex}"
+    profile_id = load_dataset()["profiles"][0]["id"]
+    video_id = uuid4()
+    label_id = uuid4()
+    migration_started = Event()
+    migration_state = {}
+
+    try:
+        with psycopg.connect(database_url, row_factory=dict_row) as setup:
+            setup.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+            setup.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+            for path in sorted((ROOT / "database" / "migrations").glob("*.sql")):
+                if path.name >= MIGRATION.name:
+                    break
+                setup.execute(path.read_text(encoding="utf-8"))
+            setup.execute(
+                """
+                INSERT INTO videos (id, youtube_video_id, channel_name, title, youtube_url, description)
+                VALUES (%s, 'concurrent-annotation-video', 'Test', 'Concurrent video',
+                        'https://youtube.com/watch?v=concurrent-annotation-video', 'Concurrent description')
+                """,
+                (video_id,),
+            )
+            setup.execute(
+                """
+                INSERT INTO annotation_videos (video_id, title, description, channel_name, source_updated_at)
+                VALUES (%s, 'Concurrent video', 'Concurrent description', 'Test', NOW())
+                """,
+                (video_id,),
+            )
+            setup.execute(
+                """
+                INSERT INTO annotation_pair_scores (
+                    profile_id, video_id, relevance_score, difficulty_score, scoring_model
+                ) VALUES (%s, %s, 0.5, 0.5, 'test')
+                """,
+                (profile_id, video_id),
+            )
+            setup.commit()
+
+        def run_migration() -> None:
+            with psycopg.connect(database_url, row_factory=dict_row) as migration_conn:
+                migration_conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+                migration_conn.commit()
+                migration_state["pid"] = migration_conn.execute("SELECT pg_backend_pid() AS pid").fetchone()["pid"]
+                migration_conn.commit()
+                migration_started.set()
+                migration_conn.execute(MIGRATION.read_text(encoding="utf-8"))
+                migration_conn.commit()
+
+        with (
+            psycopg.connect(database_url, row_factory=dict_row) as submit_conn,
+            psycopg.connect(database_url, row_factory=dict_row) as observer,
+            ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+            submit_conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+            observer.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+            observer.commit()
+            submit_conn.execute(
+                "SELECT 1 FROM annotation_pair_scores WHERE profile_id = %s AND video_id = %s FOR UPDATE",
+                (profile_id, video_id),
+            )
+            submit_conn.execute(
+                """
+                INSERT INTO annotation_labels (id, profile_id, video_id, annotator_id, label, rationale)
+                VALUES (%s, %s, %s, %s, 'yes', 'Concurrent judgment survives migration')
+                """,
+                (label_id, profile_id, video_id, uuid4()),
+            )
+            future = executor.submit(run_migration)
+            assert migration_started.wait(timeout=5)
+            deadline = monotonic() + 5
+            while monotonic() < deadline:
+                waiting = observer.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_locks
+                        WHERE pid = %s
+                          AND relation = 'annotation_pair_scores'::regclass
+                          AND mode = 'ExclusiveLock'
+                          AND NOT granted
+                    ) AS waiting
+                    """,
+                    (migration_state["pid"],),
+                ).fetchone()["waiting"]
+                observer.commit()
+                if waiting:
+                    break
+                sleep(0.02)
+            assert waiting, "Migration did not wait for the active pair lock"
+            submit_conn.execute(
+                """
+                UPDATE annotation_pair_scores
+                SET last_served_at = NOW()
+                WHERE profile_id = %s AND video_id = %s
+                """,
+                (profile_id, video_id),
+            )
+            submit_conn.commit()
+            future.result(timeout=10)
+
+            preserved = observer.execute(
+                "SELECT label, rationale FROM annotation_labels WHERE id = %s",
+                (label_id,),
+            ).fetchone()
+            assert preserved == {
+                "label": "yes",
+                "rationale": "Concurrent judgment survives migration",
+            }
+    finally:
+        if schema.startswith("match_seed_concurrency_"):
+            with psycopg.connect(database_url, autocommit=True) as cleanup:
+                cleanup.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
