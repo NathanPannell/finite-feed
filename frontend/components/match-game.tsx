@@ -79,6 +79,18 @@ export function MatchGame() {
           rationale: rationale.trim() || null,
         }),
       });
+      if (response.status === 409) {
+        setCard(null);
+        setSelected(null);
+        setRationale("");
+        setDescriptionExpanded(false);
+        setAssessment(null);
+        const nextCard = await load();
+        if (nextCard !== undefined) {
+          setNotice("This pair is no longer available; your answer was not saved.");
+        }
+        return;
+      }
       if (!response.ok) throw new Error("Your answer was not saved. Try again.");
       let result: AnnotationResult = { assessment: null };
       try {
