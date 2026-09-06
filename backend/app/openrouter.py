@@ -6,6 +6,7 @@ import httpx
 
 FREE_PRIMARY_MODEL = "google/gemma-4-31b-it:free"
 FREE_FALLBACK_MODEL = "google/gemma-4-26b-a4b-it:free"
+FREE_ALTERNATE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -37,9 +38,13 @@ class OpenRouterClient:
             f"USER PROFILE:\n{preference}\n\nCANDIDATES:\n{json.dumps(candidates, default=str)}"
         )
         # OpenRouter performs ordered failover inside one HTTP request, including
-        # provider rate limits. Both explicit routes are free; custom pins stay exact.
+        # provider rate limits. Every explicit route is free; custom pins stay exact.
         # https://openrouter.ai/docs/guides/routing/model-fallbacks
-        routing = {"models": [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL]} if self.model == FREE_PRIMARY_MODEL else {"model": self.model}
+        routing = {
+            "models": [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL, FREE_ALTERNATE_MODEL],
+            # Optional thinking must not consume the small JSON response budget.
+            "reasoning": {"enabled": False},
+        } if self.model == FREE_PRIMARY_MODEL else {"model": self.model}
         response = self.client.post("/chat/completions", json={
             **routing,
             "messages": [

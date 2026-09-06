@@ -3,10 +3,10 @@ import json
 import httpx
 import pytest
 
-from backend.app.openrouter import FREE_FALLBACK_MODEL, FREE_PRIMARY_MODEL, OpenRouterClient
+from backend.app.openrouter import FREE_ALTERNATE_MODEL, FREE_FALLBACK_MODEL, FREE_PRIMARY_MODEL, OpenRouterClient
 
 
-@pytest.mark.parametrize("resolved_model", [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL])
+@pytest.mark.parametrize("resolved_model", [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL, FREE_ALTERNATE_MODEL])
 def test_free_fallback_uses_one_request_and_preserves_actual_model(resolved_model):
     requests = []
     def respond(request):
@@ -19,9 +19,10 @@ def test_free_fallback_uses_one_request_and_preserves_actual_model(resolved_mode
         choice = client.choose("football", [{"video_id": "talk"}])
         assert choice.model == resolved_model
         assert len(requests) == 1
-        assert requests[0]["models"] == [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL]
+        assert requests[0]["models"] == [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL, FREE_ALTERNATE_MODEL]
         assert all(model.endswith(":free") for model in requests[0]["models"])
         assert requests[0]["max_tokens"] == 350
+        assert requests[0]["reasoning"] == {"enabled": False}
         assert "model" not in requests[0]
     finally:
         client.close()
@@ -41,6 +42,7 @@ def test_custom_model_pin_is_not_changed_and_exhaustion_is_not_retried():
         assert len(requests) == 1
         assert requests[0]["model"] == "custom/model"
         assert "models" not in requests[0]
+        assert "reasoning" not in requests[0]
     finally:
         client.close()
 
