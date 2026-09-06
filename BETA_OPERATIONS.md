@@ -6,7 +6,7 @@ Owner: NathanPannell. The implementation is intended for a small invited beta. A
 
 GitHub CI applies all checksummed migrations, runs backend integration checks and frontend build/journeys. A PR deploys isolated Neon/Railway/Vercel resources. Check the API `/ready` commit against the PR head before browser verification; repeat against the merge commit in production. Google identity is verified live against the matching Neon Auth branch. Both API and frontend require the same branch-specific `NEON_AUTH_BASE_URL`; only Vercel receives `NEON_AUTH_COOKIE_SECRET`. Logout/revocation must deny the next personal API request. Existing dogfood identity is never claimed by matching email.
 
-Personal routes are `/app` and `/app/settings`; `/match` stays public. Control Room remains behind Vercel SSO plus independently verified Vercel OIDC at Railway. Preview scheduled Telegram delivery stays disabled and production bot credentials are removed. Never change production webhook registration to a preview URL.
+Personal routes are `/app` and `/app/settings`; `/match` stays public. Control Room remains behind Vercel SSO plus independently verified Vercel OIDC at Railway. Preview scheduled Telegram delivery stays disabled and production bot credentials are removed. Never change production webhook registration to a preview URL. Preview Connect registers only the developer bot to that preview API, requires an allowlisted tester, and fails without secure webhook configuration. Telegram permits one webhook per bot: the most recent preview Connect owns developer routing, so reconnect in the intended preview before testing. Workers do not register the developer bot or reclaim it; production webhook recovery registers only the production bot every six hours, retrying setup failures after fifteen minutes.
 
 ## Pipeline and budgets
 
@@ -31,3 +31,9 @@ Restore into a new isolated Neon branch, verify account separation and record co
 ## Retention
 
 Preferences, follows, recommendation evidence and feedback support the account until the user deletes it. Export is available in settings. Account deletion removes personal application records and unlinks Telegram; an identity tombstone prevents a still-valid provider session from silently recreating the account. Shared source/video metadata is retained. Neon identity/session records, provider backups and messages already delivered to Telegram have separate lifecycles; the privacy page explains this boundary. Do not log auth cookies, link tokens or provider credentials.
+
+## Google OAuth operations
+
+Production and PR35 use a project-owned Google web OAuth client configured directly in Neon. Google must allow each branch's exact `${NEON_AUTH_BASE_URL}/callback/google` URI; a trusted frontend origin in Neon does not replace this Google callback registration. Before testing Google on a new preview branch, register that branch callback in the existing Google client and verify its provider configuration. Keep client secrets in the provider configuration, never in repository files or browser-visible frontend variables. The Next.js auth middleware must exchange the callback verifier before the personal API can receive a session.
+
+The default OpenRouter route tries the pinned free 31B model, then the explicit free 26B model inside the same request when a provider is unavailable or rate limited. Custom model pins remain exact. Shared account quota exhaustion can still stop both models; the app reports a recoverable unavailable state and keeps the persisted request budget.

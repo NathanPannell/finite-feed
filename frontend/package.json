@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:proxy": "node --test tests/admin-route-proxy.test.mjs tests/admin-navigation.test.mjs tests/match-route-proxy.test.mjs"
+    "test:proxy": "node --test tests/admin-route-proxy.test.mjs tests/admin-navigation.test.mjs tests/match-route-proxy.test.mjs tests/oauth-callback.test.mjs"
   },
   "dependencies": {
     "@neondatabase/auth": "^0.5.0-beta",

@@ -107,6 +107,11 @@ jobs:
 
           node scripts/set-railway-variables.mjs preview
 
+      - name: Check provider account quota
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python3 scripts/check-provider-quota.py
+
       - name: Deploy Railway preview services
         timeout-minutes: 15
         env:

@@ -12,7 +12,7 @@ export function SignInPrompt() {
   const [error, setError] = useState("");
   async function signIn() {
     setBusy(true); setError("");
-    try { const result = await authClient.signIn.social({ provider: "google", callbackURL: "/app" }); if (result.error) throw new Error("Sign-in could not start. Please try again."); }
+    try { const result = await authClient.signIn.social({ provider: "google", callbackURL: `${window.location.origin}/auth/callback` }); if (result.error) throw new Error("Sign-in could not start. Please try again."); }
     catch { setError("Google sign-in is unavailable right now. Please try again."); setBusy(false); }
   }
   return <main className="sign-in-page"><Link className="signal-wordmark" href="/"><span aria-hidden="true">F/</span>Finite Feed</Link><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><button className="landing-cta" disabled={busy} onClick={() => void signIn()}>{busy ? "Opening Google…" : "Continue with Google"}</button>{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. By continuing, you can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main>;

@@ -196,15 +196,13 @@ def configure_webhooks() -> None:
     settings = get_settings()
     if settings.is_preview or not settings.telegram_webhook_secret or not settings.public_app_url.startswith("https://"):
         return
-    for kind, token in (
-        ("production", settings.telegram_production_bot_token),
-        ("developer", settings.telegram_developer_bot_token),
-    ):
-        if token:
-            TelegramBot(token).set_webhook(
-                f"{settings.public_app_url.rstrip('/')}/telegram/webhook/{kind}", settings.telegram_webhook_secret,
-            )
-            logger.info("Configured %s Telegram webhook", kind)
+    # Developer routing belongs to the latest explicit preview Connect action.
+    # Periodic production recovery must not redirect that bot to another database.
+    if settings.telegram_production_bot_token:
+        TelegramBot(settings.telegram_production_bot_token).set_webhook(
+            f"{settings.public_app_url.rstrip('/')}/telegram/webhook/production", settings.telegram_webhook_secret,
+        )
+        logger.info("Configured production Telegram webhook")
 
 
 def main() -> None:

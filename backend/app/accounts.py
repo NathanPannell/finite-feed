@@ -43,7 +43,19 @@ def telegram_link(user_id: UUID = Depends(current_user), conn: Connection = Depe
     if not token:
         raise HTTPException(503, "Telegram is not configured for this environment")
     try:
-        username = TelegramBot(token)._call("getMe", {})["result"]["username"]
+        bot = TelegramBot(token)
+        if settings.is_preview:
+            if not settings.telegram_webhook_secret or not settings.public_app_url.startswith("https://") or not settings.developer_user_ids:
+                raise HTTPException(503, "Preview Telegram requires a secure webhook and an allowed tester.")
+            # One Telegram bot has one webhook. An explicit preview Connect action
+            # claims the developer bot; background workers never compete for it.
+            bot.set_webhook(
+                f"{settings.public_app_url.rstrip('/')}/telegram/webhook/developer",
+                settings.telegram_webhook_secret,
+            )
+        username = bot._call("getMe", {})["result"]["username"]
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(503, "Telegram is temporarily unavailable. Try again.") from exc
     raw = secrets.token_urlsafe(32)
