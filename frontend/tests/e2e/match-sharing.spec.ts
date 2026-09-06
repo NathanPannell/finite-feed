@@ -38,3 +38,11 @@ for (const viewport of [{ width: 320, height: 800 }, { width: 390, height: 844 }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   });
 }
+
+test("keeps the Match Lab page title visible at mobile and tablet widths", async ({ page }) => {
+  for (const width of [320, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/match");
+    await expect(page.getByRole("heading", { name: "Does this belong?", level: 1 })).toBeVisible();
+  }
+});

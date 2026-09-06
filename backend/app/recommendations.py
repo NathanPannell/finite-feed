@@ -160,6 +160,7 @@ def generate_recommendation(
     user_id: UUID,
     require_model: bool = False,
     embedder: Embedder | None = None,
+    expected_preference_version_id: UUID | None = None,
 ) -> UUID:
     if require_model and not settings.openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY is required")
@@ -169,6 +170,8 @@ def generate_recommendation(
     ).fetchone()
     if not profile:
         raise ValueError("Profile not found")
+    if expected_preference_version_id is not None and profile["id"] != expected_preference_version_id:
+        raise ValueError("Your preferences changed. Please request a new recommendation.")
     last_delivery = conn.execute(
         "SELECT MAX(delivered_at) AS delivered_at FROM recommendations WHERE user_id = %s",
         (user_id,),
@@ -227,8 +230,8 @@ def generate_recommendation(
         max(shortlist, key=lambda item: item.score),
     )
     rationale = choice.rationale if choice else (
-        f"This talk is the strongest current match for your profile. Its retrieval score combines "
-        f"{selected.relevance:.0%} semantic relevance with age-normalized momentum."
+        f"This one looks like your best match right now, with {selected.relevance:.0%} semantic relevance "
+        "plus strong age-adjusted momentum."
     )
     evidence = {
         "feedback_count": len(feedback),
@@ -271,8 +274,10 @@ def generate_recommendation(
         raise ValueError("Your sources changed. Please request a new recommendation.")
     recommendation_id = uuid4()
     conn.execute(
-        "INSERT INTO recommendations (id, user_id, video_id, rationale, evidence) VALUES (%s, %s, %s, %s, %s)",
-        (recommendation_id, user_id, selected.row["id"], rationale, Jsonb(evidence)),
+        """INSERT INTO recommendations
+           (id, user_id, video_id, preference_version_id, rationale, evidence)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (recommendation_id, user_id, selected.row["id"], profile["id"], rationale, Jsonb(evidence)),
     )
     conn.commit()
     return recommendation_id
@@ -309,6 +314,15 @@ def lock_recommendation_for_delivery(conn: Connection, user_id: UUID, recommenda
 
 
 def mark_recommendation_delivered(conn: Connection, user_id: UUID, recommendation_id: UUID, scheduled: bool) -> None:
+    conn.execute(
+        """
+        UPDATE telegram_recommendation_queue
+        SET recommendation_id = NULL, status = 'pending', generation_token = NULL, lease_expires_at = NULL,
+            retry_after = NULL, last_error = NULL, updated_at = NOW()
+        WHERE user_id = %s AND recommendation_id = %s
+        """,
+        (user_id, recommendation_id),
+    )
     conn.execute(
         "UPDATE recommendations SET delivered_at = COALESCE(delivered_at, NOW()) WHERE id = %s AND user_id = %s",
         (recommendation_id, user_id),

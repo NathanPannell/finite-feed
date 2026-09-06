@@ -155,6 +155,7 @@ async function mockPublicApi(page: Page) {
     }
 
     if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "beta@example.test", display_name: "Beta reader", telegram_connected: false, delivery_paused: false});
+    if (url.pathname === "/api/personal/account/telegram-link") return json(route, {url: "https://t.me/finitefeedbot?start=token", code: "824619", expires_at: "2026-09-06T22:10:00Z"});
     if (url.pathname === "/api/personal/account/preferences") return json(route, []);
     return json(route, {});
   });
@@ -173,7 +174,7 @@ test("renders personal recommendations and semantic feedback", async ({ page }) 
   await expect(page.locator(".signal-masthead-title")).toHaveText("For you");
   await expect(page.getByRole("heading", { name: "How to make hard choices" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The architecture of attention" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Match Lab", exact: true })).toHaveAttribute("href", "/match");
+  await expect(page.getByRole("link", { name: "Match Lab", exact: true })).toHaveAttribute("href", "/match");
   await expect(page.getByRole("link", { name: "Watch How to make hard choices on YouTube" })).toHaveAttribute("href", "/api/personal/r/rec-1");
   await expect(page.getByRole("heading", { name: "Signal quality" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Not useful" }).first()).toBeVisible();
@@ -203,6 +204,21 @@ test("saves delivery schedule and resolves a URL-only source", async ({ page }) 
   await page.getByRole("button", { name: "Add source" }).click();
   expect(captured.channelPayload()).toEqual({ url: sourceUrl });
   await expect(page.getByRole("button", { name: "Remove Practical Engineering" })).toBeVisible();
+});
+
+test("connects Telegram with a copyable code and an optional deep link", async ({ page }) => {
+  await mockPublicApi(page);
+  await page.goto("/app/settings");
+
+  await expect(page.getByRole("button", { name: "Connect manually" })).toBeEnabled();
+  await page.getByRole("button", { name: "Connect manually" }).click();
+  await expect(page.getByRole("heading", { name: "Connect in Telegram" })).toBeVisible();
+  await expect(page.getByLabel("Your six-digit Telegram connection code")).toHaveText("824619");
+  await expect(page.getByText("Open @finitefeedbot in Telegram.")).toBeVisible();
+  await expect(page.getByText("Copy and send this six-digit code as a message.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Prefer a link\? Open Telegram instead/ })).toHaveAttribute("href", "https://t.me/finitefeedbot?start=token");
+  await page.getByRole("button", { name: "Copy code" }).click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
 });
 
 test("saves preference memory with an optimistic version and no delivery fields", async ({ page }) => {
@@ -246,8 +262,8 @@ test("keeps the public page inside a 320px viewport", async ({ page }) => {
   await page.goto("/app/settings");
   const mobileNavigation = page.getByRole("navigation", { name: "Mobile navigation" });
   await expect(mobileNavigation).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "For you", exact: true })).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "Open Match Lab", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "My feed", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Match Lab", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
@@ -616,9 +632,9 @@ test("public landing explains the beta and links to private sign-in without acco
   let personalRequests = 0;
   await page.route("**/api/personal/**", route => { personalRequests++; return route.fulfill({status: 401,json:{detail:"Sign in"}}); });
   await page.goto("/");
-  await expect(page.getByRole("heading", {name: /Fewer things/})).toBeVisible();
-  await expect(page.getByText("An illustrative recommendation")).toBeVisible();
-  await expect(page.getByRole("link", {name: "Shape your feed"})).toHaveAttribute("href", "/login");
+  await expect(page.getByRole("heading", {name: "Your attention has better places to be."})).toBeVisible();
+  await expect(page.getByText("Illustrative interface and copy. This is not a real recommendation.")).toBeVisible();
+  await expect(page.getByRole("link", {name: "Build my finite feed"}).first()).toHaveAttribute("href", "/app");
   expect(personalRequests).toBe(0);
   await page.setViewportSize({width:320,height:800});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -749,8 +765,7 @@ test("lets an already-connected Telegram user confirm delivery or choose dashboa
 test("completes onboarding one saved step at a time", async ({ page }) => {
   const calls: { path: string; body: Record<string, unknown> | null }[] = [];
   const state = {
-    status: "not_started",
-    current_step: "question_1",
+    status: "not_started", current_step: "question_1",
     questions: [
       { id: 1, prompt: "What are you most interested in?", options: [{ value: "technology_ai", label: "Technology & AI" }, { value: "business_work", label: "Business & work" }, { value: "science_nature", label: "Science & nature" }, { value: "culture_society", label: "Culture & society" }, { value: "mind_behavior", label: "Mind & behavior" }, { value: "health_wellbeing", label: "Health & wellbeing" }] },
       { id: 2, prompt: "What do you want a good recommendation to give you?", options: [{ value: "practical_skills", label: "Practical skills" }, { value: "fresh_perspectives", label: "Fresh perspectives" }, { value: "deep_understanding", label: "Deeper understanding" }, { value: "inspiring_stories", label: "Inspiring stories" }] },
@@ -807,4 +822,31 @@ test("completes onboarding one saved step at a time", async ({ page }) => {
   expect(calls.map((call) => call.path)).toEqual(["/answers", "/answers", "/answers", "/open-response", "/synthesize", "/profile", "/delivery", "/complete"]);
   expect(calls.filter((call) => call.path === "/answers").map((call) => call.body?.question)).toEqual([1, 2, 3]);
   expect(calls.at(-1)?.body).toEqual({ telegram: "skipped" });
+});
+
+test("keeps the same navigation and footer across public routes", async ({ page }) => {
+  await page.route("**/api/personal/**", route => route.fulfill({status: 401, json: {detail: "Sign in"}}));
+  const routes = ["/", "/privacy", "/app", "/match"];
+
+  await page.setViewportSize({width: 1100, height: 800});
+  for (const route of routes) {
+    await page.goto(route);
+    const primary = page.getByRole("navigation", {name: "Primary navigation"});
+    await expect(primary.getByRole("link", {name: "My feed", exact: true})).toHaveAttribute("href", "/app");
+    await expect(primary.getByRole("link", {name: "Match Lab", exact: true})).toHaveAttribute("href", "/match");
+    await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/app/settings");
+    const footer = page.getByRole("contentinfo");
+    await expect(footer.getByRole("link", {name: "Privacy & your data"})).toHaveAttribute("href", "/privacy");
+    await expect(footer.getByText("Private beta", {exact: true})).toBeVisible();
+  }
+
+  await page.setViewportSize({width: 320, height: 800});
+  for (const route of routes) {
+    await page.goto(route);
+    const mobile = page.getByRole("navigation", {name: "Mobile navigation"});
+    await expect(mobile.getByRole("link", {name: "My feed", exact: true})).toBeVisible();
+    await expect(mobile.getByRole("link", {name: "Match Lab", exact: true})).toBeVisible();
+    await expect(mobile.getByRole("link", {name: "Settings", exact: true})).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
 });

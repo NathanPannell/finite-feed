@@ -14,6 +14,9 @@ class Connection:
         self.writes = []
     def execute(self, query, params=()):
         self.writes.append(query)
+        if "RETURNING token_hash" in query:
+            return SimpleNamespace(fetchone=lambda: {"token_hash": params[0]})
+        return SimpleNamespace(fetchone=lambda: None)
     def commit(self):
         pass
 
@@ -45,6 +48,8 @@ def test_preview_connect_claims_only_developer_webhook(monkeypatch):
     result = accounts.telegram_link(uuid4(), conn)
     assert calls == [("developer-test", "https://preview.example.com/telegram/webhook/developer")]
     assert result["url"].startswith("https://t.me/test_bot?start=")
+    assert len(result["code"]) == 6 and result["code"].isdigit()
+    assert any("'manual_code'" in query for query in conn.writes)
     worker.configure_webhooks()
     assert len(calls) == 1
 

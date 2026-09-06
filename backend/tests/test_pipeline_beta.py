@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -32,6 +33,19 @@ def test_model_can_abstain():
         client.close()
 
 
+def test_model_rationale_is_trimmed_to_one_sentence():
+    client = OpenRouterClient("test", "test", "https://example.com", "https://example.com")
+    client.client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={
+        "model": "test",
+        "choices": [{"message": {"content": '{"video_id": "fit", "rationale": "This fits you. A second sentence should go."}'}}],
+    })), base_url="https://example.com")
+    try:
+        choice = client.choose("useful talks", [{"video_id": "fit"}])
+        assert choice.rationale == "This fits you."
+    finally:
+        client.close()
+
+
 def test_dst_repeated_hour_and_pause():
     user = {"timezone": "America/Los_Angeles", "cadence_days": [0], "delivery_hour": 1}
     first = datetime(2026, 11, 1, 8, 15, tzinfo=UTC)
@@ -48,6 +62,53 @@ def test_telegram_failure_never_exposes_token(monkeypatch):
     with pytest.raises(RuntimeError, match="retry after cooldown") as exc:
         TelegramBot("SECRET").send_text(1, "hello")
     assert "SECRET" not in str(exc.value)
+
+
+def test_telegram_recommendation_uses_thumbnail_and_bounded_caption(monkeypatch):
+    calls = []
+    recommendation_id = uuid4()
+
+    class Result:
+        def fetchone(self):
+            return {
+                "id": recommendation_id,
+                "title": "A <useful> title",
+                "speaker": "Speaker",
+                "channel_name": "Channel",
+                "rationale": "😀" * 1200,
+                "youtube_url": "https://youtu.be/example",
+                "thumbnail_url": "https://i.ytimg.com/example.jpg",
+            }
+
+    bot = TelegramBot("test")
+    monkeypatch.setattr(TelegramBot, "_call", lambda self, method, payload: calls.append((method, payload)))
+    bot.send_recommendation(SimpleNamespace(execute=lambda *args: Result()), recommendation_id, 123, "https://app.test")
+
+    method, payload = calls[0]
+    assert method == "sendPhoto"
+    assert payload["photo"] == "https://i.ytimg.com/example.jpg"
+    assert len(payload["caption"].encode("utf-16-le")) // 2 <= 1024
+    assert payload["reply_markup"]["inline_keyboard"][0][0]["url"] == "https://youtu.be/example"
+
+
+def test_preference_confirmation_has_exact_copy_and_bounded_callbacks(monkeypatch):
+    calls = []
+    confirmation_id = uuid4()
+    bot = TelegramBot("test")
+    monkeypatch.setattr(TelegramBot, "_call", lambda self, method, payload: calls.append((method, payload)))
+    bot.send_preference_confirmation(123, confirmation_id, "more practical engineering")
+
+    method, payload = calls[0]
+    assert method == "sendMessage"
+    assert payload["text"] == "Adding 'more practical engineering' to preferences, is that okay?"
+    buttons = payload["reply_markup"]["inline_keyboard"][0]
+    assert [button["text"] for button in buttons] == ["Yes, update", "No, don't update"]
+    assert all(len(button["callback_data"].encode()) <= 64 for button in buttons)
+
+    calls.clear()
+    bot.send_preference_confirmation(123, confirmation_id, "😀" * 4096)
+    assert len(calls[0][1]["text"].encode("utf-16-le")) // 2 <= 4096
+    assert calls[0][1]["text"].endswith("' to preferences, is that okay?")
 
 
 @pytest.mark.parametrize("current_chat,current_completed", [
@@ -67,7 +128,9 @@ def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch
             if "COUNT(*)" in query:
                 return SimpleNamespace(fetchone=lambda: {"count": 1})
             return SimpleNamespace(fetchone=lambda: {
-                "delivery_paused": False, "deleted_at": None, "telegram_user_id": current_chat,
+                "delivery_paused": False,
+                "deleted_at": None,
+                "telegram_user_id": current_chat,
                 "onboarding_completed_at": datetime.now(UTC) if current_completed else None,
             })
         def commit(self):
@@ -79,13 +142,13 @@ def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch
         def connection(self):
             yield Connection()
     sent = []
-    def generate(conn, settings, user, require_model):
+    def claim(conn, user, require_model):
         if user == "blocked":
             raise RuntimeError("blocked")
         return "recommendation"
     monkeypatch.setattr(worker, "get_settings", lambda: Settings(_env_file=None, OPENROUTER_API_KEY="test", TELEGRAM_PRODUCTION_BOT_TOKEN="test"))
     monkeypatch.setattr(worker, "claim_delivery_attempt", lambda *args: True)
-    monkeypatch.setattr(worker, "get_or_create_pending_recommendation", generate)
+    monkeypatch.setattr(worker, "claim_queued_recommendation", claim)
     monkeypatch.setattr(worker, "lock_recommendation_for_delivery", lambda *args: True)
     monkeypatch.setattr(worker, "mark_recommendation_delivered", lambda *args, **kwargs: None)
     monkeypatch.setattr(worker, "TelegramBot", lambda _: SimpleNamespace(send_recommendation=lambda *args: sent.append(args[2])))
@@ -179,8 +242,8 @@ def test_generation_rechecks_account_after_provider_call(monkeypatch, mutation):
             conn.commit()
 
 
-@pytest.mark.parametrize("outcome", ["abstain", "unavailable", "unlink"])
-def test_telegram_command_is_handled_once_and_rechecks_unlink(monkeypatch, outcome):
+@pytest.mark.parametrize("outcome", ["empty", "unavailable"])
+def test_telegram_command_is_handled_once_when_queue_is_empty_or_unavailable(monkeypatch, outcome):
     import os
     from uuid import uuid4
     import psycopg
@@ -197,23 +260,18 @@ def test_telegram_command_is_handled_once_and_rechecks_unlink(monkeypatch, outco
     with psycopg.connect(database_url, row_factory=dict_row) as conn, psycopg.connect(database_url, row_factory=dict_row) as other:
         conn.execute("INSERT INTO app_users (id, display_name, telegram_user_id) VALUES (%s, 'Webhook test', %s)", (user_id, chat_id))
         conn.commit()
-        def generate(*args, **kwargs):
+        def claim(*args, **kwargs):
             calls.append(1)
-            if outcome == "abstain":
-                raise ValueError("No strong match this time")
             if outcome == "unavailable":
                 raise RuntimeError("provider unavailable")
-            other.execute("SET LOCAL lock_timeout = '1s'")
-            other.execute("UPDATE app_users SET telegram_user_id = NULL WHERE id = %s", (user_id,))
-            other.commit()
-            return uuid4()
-        monkeypatch.setattr(api, "get_or_create_pending_recommendation", generate)
+            return None
+        monkeypatch.setattr(api, "claim_queued_recommendation", claim)
         update = {"update_id": update_id, "message": {"chat": {"id": chat_id, "type": "private"}, "text": "/recommend"}}
         try:
             assert api.telegram_webhook("production", update, "test", conn) == {"ok": True}
             assert api.telegram_webhook("production", update, "test", conn) == {"ok": True, "duplicate": True}
             assert len(calls) == 1
-            assert len(messages) == (0 if outcome == "unlink" else 1)
+            assert len(messages) == 1
         finally:
             conn.rollback()
             conn.execute("DELETE FROM telegram_updates WHERE bot_kind = 'production' AND update_id = %s", (update_id,))

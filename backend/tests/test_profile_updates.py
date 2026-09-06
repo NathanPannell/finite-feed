@@ -59,6 +59,10 @@ class ProfileConnection:
         if "INSERT INTO interaction_events" in sql:
             self.revision_events += 1
             return Result()
+        if "SELECT id FROM preference_versions" in sql:
+            return Result({"id": "profile-version"})
+        if "telegram_recommendation_queue" in sql:
+            return Result()
         raise AssertionError(sql)
 
     def commit(self):

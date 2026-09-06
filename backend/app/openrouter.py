@@ -40,7 +40,7 @@ class OpenRouterClient:
     def choose(self, preference: str, candidates: list[dict]) -> ModelChoice:
         prompt = (
             "Choose at most one YouTube talk for this user. Explicit exclusions are mandatory. Return video_id: null if no candidate is a strong fit. Prefer a precise, surprising fit over broad popularity. "
-            "Use only the supplied evidence. Return JSON with video_id and a concise two-sentence rationale.\n\n"
+            "Use only the supplied evidence. Return JSON with video_id and a casual, concise one-sentence rationale.\n\n"
             f"USER PROFILE:\n{preference}\n\nCANDIDATES:\n{json.dumps(candidates, default=str)}"
         )
         # OpenRouter performs ordered failover inside one HTTP request, including
@@ -73,6 +73,10 @@ class OpenRouterClient:
         rationale = str(parsed.get("rationale", "")).strip()
         if not rationale:
             raise ValueError("OpenRouter response omitted its rationale")
+        # Retain one complete sentence if a provider ignores the requested shape.
+        rationale = re.split(r"(?<=[.!?])\s+", rationale, maxsplit=1)[0]
+        if rationale[-1] not in ".!?":
+            rationale += "."
         resolved_model = payload.get("model")
         if "models" in routing and (not isinstance(resolved_model, str) or not resolved_model.strip()):
             raise ValueError("OpenRouter response omitted the model used for its selection")

@@ -11,6 +11,32 @@ from psycopg import Connection
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+LINK_ATTEMPT_RETENTION_DAYS = 1
+PREFERENCE_CONFIRMATION_RETENTION_DAYS = 30
+
+
+def cleanup_telegram_ephemera(conn: Connection) -> tuple[int, int]:
+    """Delete globally stale Telegram security and confirmation state."""
+    attempts = conn.execute(
+        """DELETE FROM telegram_link_attempts
+           WHERE window_started_at < NOW() - (%s * INTERVAL '1 day')""",
+        (LINK_ATTEMPT_RETENTION_DAYS,),
+    ).rowcount
+    confirmations = conn.execute(
+        """DELETE FROM telegram_preference_confirmations
+           WHERE COALESCE(resolved_at, expires_at) <
+                 NOW() - (%s * INTERVAL '1 day')""",
+        (PREFERENCE_CONFIRMATION_RETENTION_DAYS,),
+    ).rowcount
+    return attempts, confirmations
+
+
+def _truncate_utf16(value: str, maximum_units: int) -> str:
+    encoded = value.encode("utf-16-le")
+    if len(encoded) <= maximum_units * 2:
+        return value
+    return encoded[: (maximum_units - 1) * 2].decode("utf-16-le", errors="ignore").rstrip() + "…"
+
 
 @dataclass(frozen=True)
 class TelegramBot:
@@ -36,13 +62,30 @@ class TelegramBot:
     def send_text(self, chat_id: str | int, text: str) -> None:
         self._call("sendMessage", {"chat_id": chat_id, "text": text})
 
+    def send_preference_confirmation(
+        self, chat_id: str | int, confirmation_id: UUID, proposed_text: str,
+    ) -> None:
+        prefix = "Adding '"
+        suffix = "' to preferences, is that okay?"
+        available = 4096 - len((prefix + suffix).encode("utf-16-le")) // 2
+        prompt = prefix + _truncate_utf16(proposed_text, available) + suffix
+        self._call("sendMessage", {
+            "chat_id": chat_id,
+            "text": _truncate_utf16(prompt, 4096),
+            "reply_markup": {"inline_keyboard": [[
+                {"text": "Yes, update", "callback_data": f"preference:yes:{confirmation_id}"},
+                {"text": "No, don't update", "callback_data": f"preference:no:{confirmation_id}"},
+            ]]},
+        })
+
     def answer_callback(self, callback_query_id: str, text: str) -> None:
         self._call("answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text})
 
     def send_recommendation(self, conn: Connection, recommendation_id: UUID, chat_id: str | int, public_app_url: str) -> None:
         row = conn.execute(
             """
-            SELECT r.id, r.rationale, v.title, v.speaker, v.channel_name, v.youtube_url
+            SELECT r.id, r.rationale, v.title, v.speaker, v.channel_name, v.youtube_url,
+                   v.thumbnail_url
             FROM recommendations r JOIN videos v ON v.id = r.video_id
             WHERE r.id = %s
             """,
@@ -50,15 +93,18 @@ class TelegramBot:
         ).fetchone()
         if not row:
             raise ValueError("Recommendation not found")
-        speaker = f"\n{html.escape(row['speaker'])}" if row["speaker"] else ""
-        text = (
-            f"<b>{html.escape(row['title'])}</b>{speaker}\n"
-            f"{html.escape(row['channel_name'])}\n\n{html.escape(row['rationale'])}"
+        speaker = f"\n{row['speaker']}" if row["speaker"] else ""
+        caption = _truncate_utf16(
+            f"{row['title']}{speaker}\n{row['channel_name']}\n\n{row['rationale']}", 1000,
         )
+        first_line, _, remainder = caption.partition("\n")
+        text = f"<b>{html.escape(first_line)}</b>"
+        if remainder:
+            text += "\n" + html.escape(remainder)
         watch_url = row["youtube_url"]
-        self._call("sendMessage", {
+        payload = {
             "chat_id": chat_id,
-            "text": text,
+            "caption" if row["thumbnail_url"] else "text": text,
             "parse_mode": "HTML",
             "reply_markup": {"inline_keyboard": [
                 [{"text": "Watch on YouTube", "url": watch_url}],
@@ -67,4 +113,7 @@ class TelegramBot:
                     {"text": "👎 Less like this", "callback_data": f"feedback:down:{row['id']}"},
                 ],
             ]},
-        })
+        }
+        if row["thumbnail_url"]:
+            payload["photo"] = row["thumbnail_url"]
+        self._call("sendPhoto" if row["thumbnail_url"] else "sendMessage", payload)

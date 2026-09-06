@@ -57,3 +57,11 @@ Success: Auth-scoped persistent steps/audits, meaningful frontend/backend tests,
 - BLOCKER: Google auth returns400 redirect_uri_mismatch for preview callback https://ep-lingering-star-ar67ueea.neonauth.c-4.us-west-2.aws.neon.tech/app/auth/callback/google . Prior private-beta task documents the same preview OAuth registration dependency. Production/Google OAuth configuration not modified.
 - PR body records exact callback and next action: register preview callback on existing Google OAuth client, repeat authenticated preview onboarding/settings, then mark ready. End-to-end authenticated live verification remains unclaimed; automated flow verification is green.
 - Local screenshots .impeccable/review retained for review; this ledger final outcome remains local to avoid a documentation-only preview redeploy.
+
+## Main integration after PR #41
+- Fresh resolution worktree: `.worktrees/onboarding-resolve`, based on remote `codex/onboarding`; the prior onboarding QA checkout remains untouched.
+- Merged `origin/main` at `78f804db9c195f8ab9209e73637b0851e9582e95` after landing refresh #41 and Telegram improvements #39.
+- Preserved the refreshed landing page, shared site chrome/footer, manual Telegram connection codes, durable recommendation queue, Google OAuth-start verification, and all onboarding/auth behavior.
+- Added onboarding completion gates to both scheduled delivery and background queue refill so incomplete accounts cannot consume model quota or receive recommendations.
+- Verification complete: no conflict markers or diff errors; backend focused suite 34 passed / 23 database-dependent skipped; native-auth smoke tests 6 passed; frontend lint, typecheck and production build passed; proxy 14 passed; deployment/auth scripts 21 passed; focused browser suite 21/22 passed under 10-worker load with the lone loading-state timing test passing immediately in isolation; the two merge regressions passed together; Impeccable detector returned no findings.
+- Merge fixes found during verification: restored the `scheduled_delivery_users` helper retained by onboarding tests, updated the merged feed-title assertion for the shared masthead, and removed a 584px mobile settings overflow caused by selector specificity.

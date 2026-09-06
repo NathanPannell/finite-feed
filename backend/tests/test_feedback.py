@@ -24,6 +24,12 @@ class FeedbackConnection:
             return Result({"id": self.recommendation_id})
         if sql.startswith("INSERT INTO interaction_events"):
             return Result()
+        if sql.startswith("SELECT id FROM preference_versions"):
+            return Result({"id": "profile-version"})
+        if sql.startswith("SELECT id FROM app_users"):
+            return Result({"id": USER_ID})
+        if "telegram_recommendation_queue" in sql:
+            return Result()
         assert "WHERE r.user_id = %s AND r.id = %s" in sql
         assert params == (USER_ID, self.recommendation_id)
         return Result({"id": self.recommendation_id, "rating": "up"})

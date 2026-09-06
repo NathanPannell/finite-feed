@@ -12,12 +12,12 @@ from backend.app.embedding_backfill import backfill_embeddings
 from backend.app.embeddings import configured_embedder
 from backend.app.ingestion import ingest_tracked_channels
 from backend.app.recommendations import (
-    get_or_create_pending_recommendation,
     lock_recommendation_for_delivery,
     mark_recommendation_delivered,
 )
+from backend.app.recommendation_queue import claim_queued_recommendation, refill_recommendation_queue
 from backend.app.settings import get_settings
-from backend.app.telegram import TelegramBot
+from backend.app.telegram import TelegramBot, cleanup_telegram_ephemera
 from backend.app.youtube import YouTubeClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -127,10 +127,45 @@ def claim_delivery_attempt(conn, user_id, now: datetime, retry_minutes: int) -> 
 def scheduled_delivery_users(conn):
     return conn.execute(
         """SELECT id, telegram_user_id, timezone, cadence_days, delivery_hour,
-                  recommendation_count, delivery_paused
+                  recommendation_count, delivery_paused, onboarding_completed_at
            FROM app_users WHERE telegram_user_id IS NOT NULL AND NOT delivery_paused
              AND deleted_at IS NULL AND onboarding_completed_at IS NOT NULL"""
     ).fetchall()
+
+
+def run_recommendation_queue_pass(pool: ConnectionPool) -> None:
+    settings = get_settings()
+    with pool.connection() as conn:
+        cleanup_telegram_ephemera(conn)
+        conn.commit()
+    if not settings.openrouter_api_key:
+        logger.info("Recommendation queue paused until OPENROUTER_API_KEY is configured")
+        return
+    with pool.connection() as conn:
+        users = conn.execute(
+            """SELECT id FROM app_users
+               WHERE telegram_user_id IS NOT NULL AND deleted_at IS NULL
+                 AND onboarding_completed_at IS NOT NULL"""
+        ).fetchall()
+    for user in users:
+        try:
+            with pool.connection() as conn:
+                filled = refill_recommendation_queue(
+                    conn, settings, user["id"], settings.delivery_retry_minutes,
+                )
+                if filled:
+                    logger.info("Prepared %d Telegram recommendation(s) for user %s", filled, user["id"])
+        except Exception as exc:
+            logger.warning("Recommendation queue repair failed for user %s (%s)", user["id"], type(exc).__name__)
+
+
+def run_recommendation_queue_loop(pool: ConnectionPool) -> None:
+    while not stop_event.is_set():
+        try:
+            run_recommendation_queue_pass(pool)
+        except Exception as exc:
+            logger.warning("Recommendation queue pass failed (%s)", type(exc).__name__)
+        stop_event.wait(get_settings().worker_poll_seconds)
 
 
 def run_delivery_pass(pool: ConnectionPool) -> None:
@@ -166,18 +201,34 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
                         AND (delivered_at AT TIME ZONE %s)::date = (%s AT TIME ZONE %s)::date""",
                         (user["id"], user["timezone"], now, user["timezone"]),
                     ).fetchone()["count"]
+                    queue_deferred = False
                     for _ in range(max(0, user["recommendation_count"] - count)):
                         active = conn.execute(
-                            "SELECT delivery_paused,deleted_at,onboarding_completed_at FROM app_users WHERE id=%s",
+                            "SELECT delivery_paused, deleted_at, onboarding_completed_at FROM app_users WHERE id = %s",
                             (user["id"],),
                         ).fetchone()
                         if not active or active["delivery_paused"] or active["deleted_at"] or not active["onboarding_completed_at"]:
                             break
-                        recommendation_id = get_or_create_pending_recommendation(conn, settings, user["id"], require_model=True)
-                        # Generation may commit and call the model. Lock the current account
-                        # only after it returns, serializing this send against unlink/deletion.
+                        recommendation_id = claim_queued_recommendation(conn, user["id"], require_model=True)
+                        if recommendation_id is None:
+                            # Scheduled batches may exceed the two-item instant queue.
+                            # Refill through the same durable lease path after releasing
+                            # the account lock; interactive /recommend never does this.
+                            conn.commit()
+                            refill_recommendation_queue(
+                                conn, settings, user["id"], settings.delivery_retry_minutes,
+                            )
+                            recommendation_id = claim_queued_recommendation(
+                                conn, user["id"], require_model=True,
+                            )
+                            if recommendation_id is None:
+                                queue_deferred = True
+                                logger.info("Telegram recommendation queue is empty for user %s", user["id"])
+                                break
+                        # The queue claim never calls the model. Lock the current account to
+                        # serialize this send against unlink and deletion.
                         current = conn.execute(
-                            "SELECT telegram_user_id,delivery_paused,deleted_at,onboarding_completed_at FROM app_users WHERE id=%s FOR UPDATE",
+                            "SELECT telegram_user_id, delivery_paused, deleted_at, onboarding_completed_at FROM app_users WHERE id = %s FOR UPDATE",
                             (user["id"],),
                         ).fetchone()
                         if (not current or current["delivery_paused"] or current["deleted_at"]
@@ -187,7 +238,13 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
                         if lock_recommendation_for_delivery(conn, user["id"], recommendation_id):
                             bot.send_recommendation(conn, recommendation_id, current["telegram_user_id"], settings.public_app_url)
                             mark_recommendation_delivered(conn, user["id"], recommendation_id, scheduled=True)
-                    conn.execute("UPDATE app_users SET delivery_status = 'ready', delivery_error = NULL WHERE id = %s AND deleted_at IS NULL", (user["id"],))
+                    conn.execute(
+                        """UPDATE app_users
+                           SET delivery_status = %s, delivery_error = NULL,
+                               last_delivery_attempt_at = CASE WHEN %s THEN NULL ELSE last_delivery_attempt_at END
+                           WHERE id = %s AND deleted_at IS NULL""",
+                        ("waiting" if queue_deferred else "ready", queue_deferred, user["id"]),
+                    )
                     conn.commit()
                 except Exception as exc:
                     conn.rollback()
@@ -221,6 +278,13 @@ def main() -> None:
         settings.effective_database_url,
         kwargs={"row_factory": dict_row}, min_size=1, max_size=3,
     ) as pool:
+        queue_thread = threading.Thread(
+            target=run_recommendation_queue_loop,
+            args=(pool,),
+            name="recommendation-queue",
+            daemon=True,
+        )
+        queue_thread.start()
         webhook_retry_at = datetime.min.replace(tzinfo=UTC)
         while not stop_event.is_set():
             errors = []
@@ -248,6 +312,7 @@ def main() -> None:
             except Exception as exc:
                 logger.warning("Worker heartbeat failed (%s)", type(exc).__name__)
             stop_event.wait(settings.worker_poll_seconds)
+        queue_thread.join(timeout=5)
 
 
 if __name__ == "__main__":
