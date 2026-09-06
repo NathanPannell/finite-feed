@@ -4,7 +4,8 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 
 ## What is implemented
 
-- Google sign-in with isolated accounts, self-service settings, Telegram linking, export and deletion.
+- Google and email/password sign-in with isolated accounts, self-service settings, Telegram linking, export and deletion.
+- Resumable onboarding with structured interests, an open response, profile review, delivery setup, and optional Telegram linking.
 - Public landing page at `/`, personal feed at `/app`, settings at `/app/settings`, and separate protected `/admin`.
 - Versioned preference profiles with an auditable Markdown view.
 - Editable delivery cadence, time, timezone, and recommendation volume.

@@ -111,8 +111,10 @@ def test_preference_confirmation_has_exact_copy_and_bounded_callbacks(monkeypatc
     assert calls[0][1]["text"].endswith("' to preferences, is that okay?")
 
 
-@pytest.mark.parametrize("current_chat", [None, "healthy", "relinked-chat"])
-def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch, current_chat):
+@pytest.mark.parametrize("current_chat,current_completed", [
+    (None, True), ("healthy", True), ("relinked-chat", True), ("healthy", False),
+])
+def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch, current_chat, current_completed):
     from contextlib import contextmanager
     from backend.worker import main as worker
     from backend.app.settings import Settings
@@ -125,7 +127,12 @@ def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch
                 return SimpleNamespace(fetchall=lambda: users)
             if "COUNT(*)" in query:
                 return SimpleNamespace(fetchone=lambda: {"count": 1})
-            return SimpleNamespace(fetchone=lambda: {"delivery_paused": False, "deleted_at": None, "telegram_user_id": current_chat})
+            return SimpleNamespace(fetchone=lambda: {
+                "delivery_paused": False,
+                "deleted_at": None,
+                "telegram_user_id": current_chat,
+                "onboarding_completed_at": datetime.now(UTC) if current_completed else None,
+            })
         def commit(self):
             pass
         def rollback(self):
@@ -146,7 +153,7 @@ def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch
     monkeypatch.setattr(worker, "mark_recommendation_delivered", lambda *args, **kwargs: None)
     monkeypatch.setattr(worker, "TelegramBot", lambda _: SimpleNamespace(send_recommendation=lambda *args: sent.append(args[2])))
     worker.run_delivery_pass(Pool())
-    assert sent == ([current_chat, current_chat] if current_chat is not None else [])
+    assert sent == ([current_chat, current_chat] if current_chat is not None and current_completed else [])
 
 
 def test_persisted_quota_counts_failures_and_stops_at_limit():

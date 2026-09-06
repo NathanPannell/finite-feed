@@ -6,17 +6,40 @@ import { authClient } from "@/lib/auth/client";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 
 type Revision = { version: number; preference_statement: string; source: string; created_at: string };
-type Account = { id: string; email: string; display_name: string; telegram_connected: boolean; delivery_paused: boolean; delivery_status?: string; delivery_error?: string | null };
+type Account = { id: string; email: string; display_name: string; telegram_connected: boolean; delivery_paused: boolean; delivery_status?: string; delivery_error?: string | null; onboarding_completed?: boolean };
+
+function GoogleLogo() {
+  return <svg className="google-logo" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.797 2.716v2.258h2.909c1.703-1.568 2.684-3.878 2.684-6.614Z"/><path fill="#34A853" d="M9 18c2.43 0 4.468-.806 5.956-2.181l-2.909-2.258c-.806.54-1.836.859-3.047.859-2.344 0-4.328-1.584-5.037-3.71H.956v2.332A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.963 10.71A5.41 5.41 0 0 1 3.682 9c0-.594.102-1.172.281-1.71V4.958H.956A9 9 0 0 0 0 9c0 1.453.348 2.828.956 4.042l3.007-2.332Z"/><path fill="#EA4335" d="M9 3.58c1.322 0 2.508.454 3.441 1.346l2.581-2.581C13.464.892 11.426 0 9 0A9 9 0 0 0 .956 4.958L3.963 7.29C4.672 5.164 6.656 3.58 9 3.58Z"/></svg>;
+}
 
 export function SignInPrompt() {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [credentialMode, setCredentialMode] = useState<"sign-in" | "create">("sign-in");
   async function signIn() {
-    setBusy(true); setError("");
+    setBusy("google"); setError("");
     try { const result = await authClient.signIn.social({ provider: "google", callbackURL: `${window.location.origin}/auth/callback` }); if (result.error) throw new Error("Sign-in could not start. Please try again."); }
-    catch { setError("Google sign-in is unavailable right now. Please try again."); setBusy(false); }
+    catch { setError("Google sign-in is unavailable right now. Please try again."); setBusy(""); }
   }
-  return <div className="signal-shell"><SiteHeader /><main className="sign-in-page"><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><button className="landing-cta" disabled={busy} onClick={() => void signIn()}>{busy ? "Opening Google…" : "Continue with Google"}</button>{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. You can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main><SiteFooter /></div>;
+  async function submitEmailCredentials(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const email = String(form.get("email") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    const name = String(form.get("name") ?? "").trim();
+    setBusy(credentialMode); setError("");
+    try {
+      const result = credentialMode === "create"
+        ? await authClient.signUp.email({ email, password, name })
+        : await authClient.signIn.email({ email, password });
+      if (result.error) throw new Error();
+      window.location.assign("/onboarding");
+    } catch {
+      setError(credentialMode === "create" ? "Account creation failed. Check the details or sign in if this account already exists." : "Sign-in failed. Check the email and password, then try again.");
+      setBusy("");
+    }
+  }
+  return <div className="signal-shell"><SiteHeader /><main className="sign-in-page"><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><section className="sign-in-methods" aria-label="Sign-in options"><div className="google-auth-option"><h2>Use Google</h2><button className="google-signin" disabled={!!busy} onClick={() => void signIn()}><GoogleLogo />{busy === "google" ? "Opening Google…" : "Continue with Google"}</button></div><div className="email-auth-option"><div className="email-auth-heading"><h2>Use email</h2><div className="email-auth-modes" aria-label="Email account action"><button type="button" disabled={!!busy} aria-pressed={credentialMode === "sign-in"} onClick={() => { setCredentialMode("sign-in"); setError(""); }}>Sign in</button><button type="button" disabled={!!busy} aria-pressed={credentialMode === "create"} onClick={() => { setCredentialMode("create"); setError(""); }}>Create account</button></div></div><form onSubmit={(event) => void submitEmailCredentials(event)}>{credentialMode === "create" && <><label htmlFor="account-name">Name</label><input id="account-name" name="name" autoComplete="name" required /></>}<label htmlFor="account-email">Email</label><input id="account-email" name="email" type="email" autoComplete="email" required /><label htmlFor="account-password">Password</label><input key={credentialMode} id="account-password" name="password" type="password" autoComplete={credentialMode === "create" ? "new-password" : "current-password"} minLength={8} required /><button className="email-auth-submit" disabled={!!busy}>{busy === credentialMode ? credentialMode === "create" ? "Creating account…" : "Signing in…" : credentialMode === "create" ? "Create account" : "Sign in with email"}</button></form></div></section>{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. By continuing, you can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main><SiteFooter /></div>;
 }
 
 export function AccountControls() {

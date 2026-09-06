@@ -4,7 +4,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AccountControls, SignInPrompt } from "@/components/account-controls";
+import { AccountControls } from "@/components/account-controls";
 import { SignalShell } from "@/components/signal-shell";
 
 type Profile = {
@@ -71,7 +71,7 @@ async function responseMessage(response: Response, fallback: string) {
 }
 
 export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseUrl: string; settings?: boolean }) {
-  const [signedOut, setSignedOut] = useState(false);
+  const [routeReady, setRouteReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -89,14 +89,20 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
     if (!apiBaseUrl) return;
     setLoading(true);
     try {
+      const accountResponse = await fetch(`${apiBaseUrl}/account`, { cache: "no-store" });
+      if (accountResponse.status === 401) { window.location.replace("/login"); return; }
+      if (!accountResponse.ok) throw new Error("Your account could not be checked. Try again in a moment.");
+      const account = await accountResponse.json() as { onboarding_completed?: boolean };
+      if (account.onboarding_completed === false) { window.location.replace("/onboarding"); return; }
+      setRouteReady(true);
       const responses = await Promise.all([
         fetch(`${apiBaseUrl}/profile`, { cache: "no-store" }),
         fetch(`${apiBaseUrl}/channels`, { cache: "no-store" }),
-        fetch(`${apiBaseUrl}/recommendations`, { cache: "no-store" }),
+        ...(!settings ? [fetch(`${apiBaseUrl}/recommendations`, { cache: "no-store" })] : []),
       ]);
-      if (responses.some((response) => response.status === 401)) { setSignedOut(true); return; }
+      if (responses.some((response) => response.status === 401)) { window.location.replace("/login"); return; }
       if (responses.some((response) => !response.ok)) throw new Error("The feed could not reach its source. Try again in a moment.");
-      const [nextProfile, nextChannels, nextRecommendations] = await Promise.all(responses.map((response) => response.json()));
+      const [nextProfile, nextChannels, nextRecommendations = []] = await Promise.all(responses.map((response) => response.json()));
       setProfile(nextProfile);
       setMemoryDraft(nextProfile.preference_statement);
       setChannels(nextChannels);
@@ -107,7 +113,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, settings]);
 
   useEffect(() => {
     const task = window.setTimeout(() => void load(), 0);
@@ -312,24 +318,23 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
     }
   }
 
-  if (signedOut) return <SignInPrompt />;
+  if (!routeReady) return <main className="route-loading"><span className="onboarding-mark" aria-hidden="true">F/</span><p role={notice ? "alert" : "status"}>{notice?.message || "Opening your feed…"}</p>{notice && <button onClick={() => void load()}>Try again</button>}</main>;
   if (!loading && !profile) return <SignalShell active={settings ? "settings" : "feed"}><main className="public-main"><h1>We couldn’t load your feed.</h1><p role="alert">{notice?.message}</p><button className="save-action" onClick={() => void load()}>Try again</button><p><Link href="/">Return home</Link></p></main></SignalShell>;
 
   return (
     <SignalShell active={settings ? "settings" : "feed"}>
       <main id="top" className={`public-main ${settings ? "personal-settings" : "personal-feed"}`}>
-        <header className="public-hero">
-          <h1>{settings ? <>Make it<br /><span>your feed.</span></> : <>Your next<br /><span>worthwhile watch.</span></>}</h1>
-          <p>{settings ? "Your interests, your sources, your schedule. Keep them in tune with what matters now." : "Selected from your sources and shaped by what you find useful."}</p>
-          {!settings && <button className="signal-action" onClick={() => void generate()} disabled={busyAction === "generate" || loading}>
+        {!settings && <header className="feed-toolbar">
+          <p>Selected from your sources and shaped by what you find useful.</p>
+          <button className="signal-action" onClick={() => void generate()} disabled={busyAction === "generate" || loading}>
             {busyAction === "generate" ? "Choosing…" : "Choose one now"}
-          </button>}
-        </header>
+          </button>
+        </header>}
 
         {notice && <p className={notice.tone === "error" ? "signal-error" : "signal-notice"} role={notice.tone === "error" ? "alert" : "status"}>{notice.message}</p>}
 
         {settings && <AccountControls />}
-        {!settings && <p className="feed-settings-link"><Link href="/app/settings">Shape your interests, sources, and Telegram delivery</Link></p>}
+        {!settings && <p className="feed-settings-link"><Link href="/settings">Shape your interests, sources, and Telegram delivery</Link></p>}
         <div className="reading-grid">
           <section id="recommendations" className="feed-column" aria-labelledby="recommendations-heading">
             <header className="section-line">
@@ -363,7 +368,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
             ) : (
               <div className="signal-empty">
                 <h3>A fresh start for your attention.</h3>
-                <p><Link href="/app/settings">Tell us your interests and check your sources</Link>, then choose your first recommendation. New sources may need a refresh before videos are ready.</p>
+                <p><Link href="/settings">Tell us your interests and check your sources</Link>, then choose your first recommendation. New sources may need a refresh before videos are ready.</p>
               </div>
             )}
           </section>
