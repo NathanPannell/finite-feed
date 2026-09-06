@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from backend.app.main import USER_ID, record_feedback
+from backend.app.main import record_feedback
+USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 from backend.app.schemas import FeedbackCreate
 
 
@@ -37,6 +38,6 @@ class FeedbackConnection:
 def test_feedback_returns_the_requested_recommendation() -> None:
     recommendation_id = UUID("40000000-0000-4000-8000-000000000008")
     conn = FeedbackConnection(recommendation_id)
-    row = record_feedback(recommendation_id, FeedbackCreate(rating="up"), conn)
+    row = record_feedback(recommendation_id, FeedbackCreate(rating="up"), USER_ID, conn)
     assert row["id"] == recommendation_id
     assert conn.committed is True

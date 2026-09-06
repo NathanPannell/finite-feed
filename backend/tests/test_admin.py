@@ -240,7 +240,7 @@ def test_soft_stop_is_audited_without_delete() -> None:
     assert not any("DELETE" in query for query in conn.queries)
 
 
-class LegacyChannelConnection:
+class FollowConnection:
     def __init__(self):
         self.channel_id = uuid4()
         self.active = True
@@ -261,10 +261,14 @@ class LegacyChannelConnection:
     def execute(self, query, params=None):
         sql = str(query)
         self.queries.append(sql)
-        if "UPDATE tracked_channels SET is_active = FALSE" in sql:
+        if "DELETE FROM user_channel_follows" in sql:
             self.active = False
-            self.row["is_active"] = False
             return Result({"url": self.row["url"]})
+        if "pg_advisory_xact_lock" in sql:
+            return Result()
+        if "INSERT INTO user_channel_follows" in sql:
+            self.active = True
+            return Result()
         if "SELECT id FROM app_users" in sql:
             return Result({"id": USER_ID})
         if "SELECT * FROM tracked_channels" in sql:
@@ -275,7 +279,7 @@ class LegacyChannelConnection:
             return Result(dict(self.row))
         if "INSERT INTO interaction_events" in sql or "INSERT INTO admin_audit_events" in sql:
             return Result()
-        if "FROM tracked_channels WHERE" in sql:
+        if "JOIN user_channel_follows" in sql:
             rows = [dict(self.row)] if self.active else []
             return Result(rows=rows)
         raise AssertionError(sql)
@@ -287,19 +291,20 @@ class LegacyChannelConnection:
         pass
 
 
-def test_public_stop_then_readd_restores_same_channel_without_delete(monkeypatch) -> None:
+def test_unfollow_then_refollow_preserves_canonical_channel(monkeypatch) -> None:
     import backend.app.main as main_module
     from backend.app.schemas import ChannelCreate as PublicChannelCreate
 
-    conn = LegacyChannelConnection()
+    conn = FollowConnection()
     monkeypatch.setattr(main_module, "settings", Settings(_env_file=None, YOUTUBE_API_KEY="test-key"))
     monkeypatch.setattr(main_module, "resolve_youtube_channel", lambda _url, _settings: channel_details())
-    main_module.remove_channel(conn.channel_id, conn)
-    assert main_module.list_channels(conn) == []
-    restored = main_module.add_channel(PublicChannelCreate(url="https://youtube.com/@FiniteFeed"), conn)
+    main_module.remove_channel(conn.channel_id, USER_ID, conn)
+    assert main_module.list_channels(USER_ID, conn) == []
+    restored = main_module.add_channel(PublicChannelCreate(url="https://youtube.com/@FiniteFeed"), USER_ID, conn)
     assert restored["id"] == conn.channel_id
-    assert main_module.list_channels(conn)[0]["id"] == conn.channel_id
-    assert not any("DELETE" in query for query in conn.queries)
+    assert main_module.list_channels(USER_ID, conn)[0]["id"] == conn.channel_id
+    assert conn.row["is_active"] is True
+    assert not any("DELETE FROM tracked_channels" in query or "UPDATE tracked_channels" in query for query in conn.queries)
 
 
 def test_queued_and_delivered_are_derived_only_from_delivered_at() -> None:

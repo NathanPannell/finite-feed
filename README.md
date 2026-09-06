@@ -4,6 +4,8 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 
 ## What is implemented
 
+- Google sign-in with isolated accounts, self-service settings, Telegram linking, export and deletion.
+- Public landing page at `/`, personal feed at `/app`, settings at `/app/settings`, and separate protected `/admin`.
 - Versioned preference profiles with an auditable Markdown view.
 - Editable delivery cadence, time, timezone, and recommendation volume.
 - Idempotent tracked-channel storage with TED and TEDx defaults.
@@ -13,7 +15,7 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 - Self-hosted Arctic Embed XS vectors with pgvector HNSW cosine retrieval and no hosted embedding service.
 - Recent and evergreen shortlists followed by an OpenRouter final selection and grounded rationale.
 - Scheduled Telegram delivery, one-tap feedback, tracked redirects, and conversational profile updates.
-- A mobile-friendly redirect that records `clicked` before opening YouTube.
+- An authenticated dashboard redirect that records `clicked`; Telegram opens YouTube directly.
 - A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
 - A public match lab for collecting anonymous, reasoned human judgments on profile-video pairs.
 - A production-safe worker that ingests previews but disables preview delivery.
@@ -77,3 +79,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for deployment lifecycle details and [INS
 See [SEMANTIC_EMBEDDINGS.md](SEMANTIC_EMBEDDINGS.md) for semantic rollout, verification, benchmarking, and rollback.
 See [MATCH_LAB_DATASET.md](MATCH_LAB_DATASET.md) for reproducible curation, guarded replacement, reviewer identity, and debug-assessment operations.
 See [DESCRIPTION_PROCESSING.md](DESCRIPTION_PROCESSING.md) for deterministic description cleanup and Match Lab language eligibility.
+See [BETA_OPERATIONS.md](BETA_OPERATIONS.md) for budgets, worker status, safe retry, privacy boundaries and recovery. The invited soak, human-quality study and recovery rehearsal are follow-ups #32–34, not completed release evidence.

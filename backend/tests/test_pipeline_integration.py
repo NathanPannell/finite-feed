@@ -76,6 +76,8 @@ def test_ingest_retrieve_and_persist_recommendation() -> None:
         conn.execute("DELETE FROM videos WHERE youtube_video_id LIKE 'test-%'")
         conn.execute("UPDATE app_users SET last_delivery_attempt_at = NULL WHERE id = %s", (USER_ID,))
         conn.commit()
+        conn.execute("UPDATE tracked_channels SET is_active = (url IN ('https://www.youtube.com/@TED', 'https://www.youtube.com/@TEDx'))")
+        conn.commit()
         youtube = FakeYouTube()
         embedder = FakeEmbedder()
         summary = ingest_tracked_channels(conn, youtube, page_limit=1, embedder=embedder)
@@ -171,6 +173,8 @@ def test_hnsw_iterative_scan_reaches_eligible_rows_after_filtered_decoys() -> No
                 document_fingerprint(eligible_fingerprint),
             ),
         )
+        conn.execute("UPDATE videos SET tracked_channel_id = (SELECT id FROM tracked_channels WHERE url = 'https://www.youtube.com/@TED')")
+        conn.execute("UPDATE tracked_channels SET is_active = TRUE WHERE url = 'https://www.youtube.com/@TED'")
         conn.execute("ANALYZE videos")
         conn.commit()
         conn.execute("SET LOCAL enable_seqscan = off")

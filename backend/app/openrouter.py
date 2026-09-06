@@ -9,7 +9,7 @@ JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 @dataclass(frozen=True)
 class ModelChoice:
-    video_id: str
+    video_id: str | None
     rationale: str
     model: str
 
@@ -29,7 +29,7 @@ class OpenRouterClient:
 
     def choose(self, preference: str, candidates: list[dict]) -> ModelChoice:
         prompt = (
-            "Choose exactly one YouTube talk for this user. Prefer a precise, surprising fit over broad popularity. "
+            "Choose at most one YouTube talk for this user. Explicit exclusions are mandatory. Return video_id: null if no candidate is a strong fit. Prefer a precise, surprising fit over broad popularity. "
             "Use only the supplied evidence. Return JSON with video_id and a concise two-sentence rationale.\n\n"
             f"USER PROFILE:\n{preference}\n\nCANDIDATES:\n{json.dumps(candidates, default=str)}"
         )
@@ -40,6 +40,7 @@ class OpenRouterClient:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
+            "max_tokens": 350,
         })
         response.raise_for_status()
         payload = response.json()
@@ -49,12 +50,12 @@ class OpenRouterClient:
             raise ValueError("OpenRouter response did not contain a JSON object")
         parsed = json.loads(match.group(0))
         allowed_ids = {candidate["video_id"] for candidate in candidates}
-        if parsed.get("video_id") not in allowed_ids:
+        if parsed.get("video_id") is not None and parsed.get("video_id") not in allowed_ids:
             raise ValueError("OpenRouter selected a video outside the supplied shortlist")
         rationale = str(parsed.get("rationale", "")).strip()
         if not rationale:
             raise ValueError("OpenRouter response omitted its rationale")
-        return ModelChoice(parsed["video_id"], rationale, payload.get("model", self.model))
+        return ModelChoice(parsed.get("video_id"), rationale, payload.get("model", self.model))
 
     def close(self) -> None:
         self.client.close()

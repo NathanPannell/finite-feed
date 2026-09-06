@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from backend.app.budgets import reserve_request
 from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION, clean_description
 from backend.app.embeddings import Embedder, configured_embedder
 from backend.app.openrouter import OpenRouterClient
@@ -74,6 +75,10 @@ def _nearest_rows(
           AND semantic_embedding_dimensions = %s
           AND semantic_embedding_fingerprint IS NOT DISTINCT FROM (%s || ':' || content_fingerprint)
           AND id NOT IN (SELECT video_id FROM recommendations WHERE user_id = %s)
+          AND is_available = TRUE
+          AND (COALESCE(default_audio_language, default_language, 'en') ~* '^en(-|$)')
+          AND EXISTS (SELECT 1 FROM tracked_channels c JOIN user_channel_follows f ON f.channel_id = c.id
+                      WHERE c.id = videos.tracked_channel_id AND c.is_active AND f.user_id = %s)
           AND (%s::timestamptz IS NULL OR published_at >= %s::timestamptz)
           AND (cardinality(%s::uuid[]) = 0 OR id <> ALL(%s::uuid[]))
         ORDER BY semantic_embedding <=> %s::vector
@@ -85,6 +90,7 @@ def _nearest_rows(
             embedder.model_revision,
             embedder.dimensions,
             DESCRIPTION_PROCESSING_VERSION,
+            user_id,
             user_id,
             published_since,
             published_since,
@@ -116,8 +122,6 @@ def retrieve_shortlist(
 ) -> list[ScoredVideo]:
     current_time = now or datetime.now(UTC)
     encoder = embedder or configured_embedder(settings)
-    if semantic_backfill_remaining(conn, encoder):
-        raise ValueError("Semantic embedding backfill is not verified yet")
     conn.execute("SET LOCAL hnsw.iterative_scan = strict_order")
     conn.execute("SET LOCAL hnsw.ef_search = 100")
     conn.execute("SET LOCAL hnsw.max_scan_tuples = 20000")
@@ -135,7 +139,19 @@ def retrieve_shortlist(
         "evergreen",
         10,
     )
-    return recent + evergreen
+    return [item for item in recent + evergreen if item.relevance >= settings.minimum_relevance]
+
+
+def apply_feedback(shortlist: list[ScoredVideo], feedback: list[dict], encoder: Embedder) -> list[ScoredVideo]:
+    if not feedback:
+        return shortlist
+    vectors = encoder.embed_documents([clean_description(row['description'])[:1200] or row['title'] for row in feedback])
+    candidate_vectors = encoder.embed_documents([item.row['title'] + "\n" + clean_description(item.row['description'])[:1200] for item in shortlist])
+    adjusted = []
+    for item, vector in zip(shortlist, candidate_vectors):
+        influence = sum((1 if row['rating'] == 'up' else -1) * max(0, sum(a*b for a,b in zip(vector, old))) for row, old in zip(feedback, vectors)) / len(feedback)
+        adjusted.append(ScoredVideo(item.row, item.relevance, item.momentum, item.score + 0.12 * influence, item.pool))
+    return sorted(adjusted, key=lambda item: item.score, reverse=True)
 
 
 def generate_recommendation(
@@ -162,7 +178,18 @@ def generate_recommendation(
         conn, settings, user_id, profile["preference_statement"], last_delivery, embedder=encoder
     )
     if not shortlist:
-        raise ValueError("No embedded, unsent videos are available")
+        raise ValueError("No strong matches yet. Try broadening your interests or following another source.")
+    feedback = conn.execute(
+        """SELECT r.rating, v.title, v.description FROM recommendations r
+        JOIN videos v ON v.id = r.video_id WHERE r.user_id = %s AND r.rating IS NOT NULL
+        ORDER BY r.created_at DESC LIMIT 20""", (user_id,),
+    ).fetchall()
+    # Bound learned influence; the written profile and explicit exclusions stay primary.
+    feedback_text = "\n".join(f"{'More' if row['rating'] == 'up' else 'Less'} like: {row['title']}" for row in feedback)
+    judge_profile = profile["preference_statement"]
+    if feedback_text:
+        judge_profile += "\n\nSecondary feedback (never override explicit preferences):\n" + feedback_text
+        shortlist = apply_feedback(shortlist, feedback, encoder)
     model_candidates = [{
         "video_id": item.row["youtube_video_id"],
         "title": item.row["title"],
@@ -173,24 +200,28 @@ def generate_recommendation(
         "semantic_relevance": round(item.relevance, 4),
         "relative_momentum": round(item.momentum, 4),
         "candidate_pool": item.pool,
+        "feedback_adjusted_score": round(item.score, 4),
     } for item in shortlist]
     choice = None
     model_error = None
     if settings.openrouter_api_key:
+        reserve_request(conn, "openrouter", settings.model_daily_request_limit)
         client = OpenRouterClient(
             settings.openrouter_api_key, settings.openrouter_model,
             settings.openrouter_base_url, settings.public_app_url,
         )
         try:
-            choice = client.choose(profile["preference_statement"], model_candidates)
+            choice = client.choose(judge_profile, model_candidates)
         except Exception as exc:
-            model_error = f"{type(exc).__name__}: {exc}"
+            model_error = type(exc).__name__
             if require_model:
                 raise
         finally:
             client.close()
     elif require_model:
         raise ValueError("OPENROUTER_API_KEY is required")
+    if choice and choice.video_id is None:
+        raise ValueError("No strong match this time. Your preferences are saved; we will try again later.")
     selected = next(
         (item for item in shortlist if choice and item.row["youtube_video_id"] == choice.video_id),
         max(shortlist, key=lambda item: item.score),
@@ -200,6 +231,9 @@ def generate_recommendation(
         f"{selected.relevance:.0%} semantic relevance with age-normalized momentum."
     )
     evidence = {
+        "feedback_count": len(feedback),
+        "feedback_influence_limit": 0.12,
+        "feedback_summary": feedback_text,
         "pipeline": "pgvector-cosine-openrouter-rerank-v2",
         "embedding_model": encoder.model_name,
         "embedding_revision": encoder.model_revision,
@@ -208,6 +242,9 @@ def generate_recommendation(
         "reranker_fallback": choice is None,
         "reranker_error": model_error,
         "selected_pool": selected.pool,
+        "final_score": round(selected.score, 4),
+        "feedback_delta": round(selected.score - (selected.relevance * 0.72 + selected.momentum * 0.28), 4),
+        "candidate_scores": [{"video_id": item.row["youtube_video_id"], "score": round(item.score, 4)} for item in shortlist],
         "semantic_relevance": round(selected.relevance, 4),
         "age_normalized_momentum": round(selected.momentum, 4),
         "shortlist_size": len(shortlist),
@@ -227,10 +264,15 @@ def get_or_create_pending_recommendation(
 ) -> UUID:
     pending = conn.execute(
         """
-        SELECT id FROM recommendations
-        WHERE user_id = %s AND delivered_at IS NULL
+        SELECT r.id FROM recommendations r JOIN videos v ON v.id = r.video_id
+        JOIN tracked_channels c ON c.id = v.tracked_channel_id
+        JOIN user_channel_follows f ON f.channel_id = c.id AND f.user_id = r.user_id
+        WHERE r.user_id = %s AND delivered_at IS NULL AND c.is_active AND v.is_available
+          AND COALESCE(v.default_audio_language, v.default_language, 'en') ~* '^en(-|$)'
+          AND r.created_at >= COALESCE((SELECT MAX(created_at) FROM preference_versions WHERE user_id = r.user_id), r.created_at)
+          AND r.created_at >= COALESCE((SELECT MAX(created_at) FROM interaction_events WHERE user_id = r.user_id AND event_type IN ('feedback_up', 'feedback_down')), r.created_at)
           AND (NOT %s OR evidence->>'reranker_fallback' = 'false')
-        ORDER BY created_at LIMIT 1
+        ORDER BY r.created_at LIMIT 1
         """,
         (user_id, require_model),
     ).fetchone()

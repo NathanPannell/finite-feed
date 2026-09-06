@@ -129,7 +129,13 @@ jobs:
           EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
           EMBEDDING_MODEL_REVISION: ${{ vars.EMBEDDING_MODEL_REVISION }}
           EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE }}
+          DELIVERY_ENABLED: ${{ vars.DELIVERY_ENABLED }}
+          MODEL_DAILY_REQUEST_LIMIT: ${{ vars.MODEL_DAILY_REQUEST_LIMIT }}
+          YOUTUBE_DAILY_REQUEST_LIMIT: ${{ vars.YOUTUBE_DAILY_REQUEST_LIMIT }}
         run: |
+          auth_url="$(neon neon-auth status --project-id "$NEON_PROJECT_ID" --branch "$NEON_PARENT_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          export NEON_AUTH_BASE_URL="$auth_url"
+          echo "NEON_AUTH_BASE_URL=$auth_url" >> "$GITHUB_ENV"
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_PRODUCTION_BOT_TOKEN:?TELEGRAM_PRODUCTION_BOT_TOKEN is required}"
           : "${MATCH_LAB_COOKIE_SECRET:?MATCH_LAB_COOKIE_SECRET is required}"
@@ -143,11 +149,16 @@ jobs:
         id: vercel
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
+          NEON_AUTH_COOKIE_SECRET: ${{ secrets.NEON_AUTH_COOKIE_SECRET }}
         run: |
           deployment_url="$(vercel deploy --prod --yes --cwd frontend \
             --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
             --build-env RAILWAY_API_BASE_URL="$API_URL" \
             --env RAILWAY_API_BASE_URL="$API_URL" \
+            --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
+            --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           production_url=""
           for _ in $(seq 1 12); do

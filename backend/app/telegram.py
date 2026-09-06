@@ -17,10 +17,14 @@ class TelegramBot:
     token: str
 
     def _call(self, method: str, payload: dict) -> dict:
-        response = httpx.post(
-            f"https://api.telegram.org/bot{self.token}/{method}", json=payload, timeout=20.0,
-        )
-        response.raise_for_status()
+        try:
+            response = httpx.post(
+                f"https://api.telegram.org/bot{self.token}/{method}", json=payload, timeout=20.0,
+            )
+        except httpx.HTTPError:
+            raise RuntimeError("Telegram request failed; retry after cooldown") from None
+        if response.is_error:
+            raise RuntimeError(f"Telegram request failed (HTTP {response.status_code})")
         result = response.json()
         if not result.get("ok"):
             raise RuntimeError(f"Telegram {method} failed: {result.get('description', 'unknown error')}")
@@ -38,7 +42,7 @@ class TelegramBot:
     def send_recommendation(self, conn: Connection, recommendation_id: UUID, chat_id: str | int, public_app_url: str) -> None:
         row = conn.execute(
             """
-            SELECT r.id, r.rationale, v.title, v.speaker, v.channel_name
+            SELECT r.id, r.rationale, v.title, v.speaker, v.channel_name, v.youtube_url
             FROM recommendations r JOIN videos v ON v.id = r.video_id
             WHERE r.id = %s
             """,
@@ -51,7 +55,7 @@ class TelegramBot:
             f"<b>{html.escape(row['title'])}</b>{speaker}\n"
             f"{html.escape(row['channel_name'])}\n\n{html.escape(row['rationale'])}"
         )
-        watch_url = f"{public_app_url.rstrip('/')}/r/{row['id']}"
+        watch_url = row["youtube_url"]
         self._call("sendMessage", {
             "chat_id": chat_id,
             "text": text,

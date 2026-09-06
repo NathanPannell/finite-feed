@@ -61,6 +61,13 @@ jobs:
           : "${VERCEL_OIDC_TEAM_SLUG:?VERCEL_TEAM_SLUG repository variable is required}"
           : "${VERCEL_OIDC_PROJECT_NAME:?VERCEL_PROJECT_NAME repository variable is required}"
 
+      - name: Resolve isolated Neon Auth endpoint
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          echo "NEON_AUTH_BASE_URL=$auth_url" >> "$GITHUB_ENV"
+
       - name: Create or update isolated Railway environment
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -78,6 +85,8 @@ jobs:
           EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
           EMBEDDING_MODEL_REVISION: ${{ vars.EMBEDDING_MODEL_REVISION }}
           EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE }}
+          MODEL_DAILY_REQUEST_LIMIT: ${{ vars.MODEL_DAILY_REQUEST_LIMIT }}
+          YOUTUBE_DAILY_REQUEST_LIMIT: ${{ vars.YOUTUBE_DAILY_REQUEST_LIMIT }}
         run: |
           : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
           : "${TELEGRAM_DEVELOPER_BOT_TOKEN:?TELEGRAM_DEVELOPER_BOT_TOKEN is required}"
@@ -130,11 +139,16 @@ jobs:
           API_URL: ${{ steps.railway.outputs.api_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NEON_AUTH_COOKIE_SECRET: ${{ secrets.NEON_AUTH_COOKIE_SECRET }}
         run: |
           preview_url="$(vercel deploy --yes --target preview --cwd frontend \
             --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
             --build-env RAILWAY_API_BASE_URL="$API_URL" \
             --env RAILWAY_API_BASE_URL="$API_URL" \
+            --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
+            --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --meta githubCommitSha="$HEAD_SHA" \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           deployment_id="$(vercel inspect "$preview_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r '.id')"

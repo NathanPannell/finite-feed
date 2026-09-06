@@ -86,6 +86,7 @@ def main() -> int:
     passed = passed and all(
         result["legacy_expected_failure_pass"] is not False for result in results
     )
+    passed = passed and all(result["model_pass"] is not False for result in results)
     return 0 if passed else 1
 
 

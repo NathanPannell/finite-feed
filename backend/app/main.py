@@ -35,8 +35,10 @@ from backend.app.schemas import (
 from backend.app.schemas import AnnotationCard, AnnotationCreate, AnnotationResult, AnnotationStats
 from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
+from backend.app.user_auth import current_user
+from backend.app.accounts import router as account_router, consume_telegram_link
+from backend.app.rate_limits import RequestLimitsMiddleware
 
-USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
 @asynccontextmanager
@@ -49,6 +51,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(title="Finite Feed API", version="0.1.0", lifespan=lifespan)
 app.include_router(admin_router)
+app.include_router(account_router)
+app.add_middleware(RequestLimitsMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -112,7 +116,7 @@ def create_annotation(
     return row
 
 
-def profile_row(conn: Connection):
+def profile_row(conn: Connection, user_id: UUID):
     return conn.execute(
         """
         SELECT p.version, p.preference_statement, p.rendered_markdown, p.created_at AS updated_at,
@@ -124,57 +128,58 @@ def profile_row(conn: Connection):
         ) p ON TRUE
         WHERE u.id = %s
         """,
-        (USER_ID,),
+        (user_id,),
     ).fetchone()
 
 
 @app.get("/api/profile", response_model=Profile)
-def get_profile(conn: Connection = Depends(connection)):
-    row = profile_row(conn)
+def get_profile(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    row = profile_row(conn, user_id)
     if not row:
         raise HTTPException(status_code=404, detail="Profile not found")
     return row
 
 
 @app.put("/api/profile", response_model=Profile)
-def update_profile(payload: ProfileUpdate, conn: Connection = Depends(connection)):
-    current = profile_row(conn)
+def update_profile(payload: ProfileUpdate, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,))
+    current = profile_row(conn, user_id)
     if not current:
         raise HTTPException(status_code=404, detail="Profile not found")
     version = current["version"] + 1
     rendered = f"# Current preferences\n\n{payload.preference_statement}\n\n## History\n\n- Version {version} saved from the dashboard."
     conn.execute(
         "UPDATE app_users SET timezone = %s, cadence_days = %s, delivery_hour = %s, recommendation_count = %s, updated_at = NOW() WHERE id = %s",
-        (payload.timezone, payload.cadence_days, payload.delivery_hour, payload.recommendation_count, USER_ID),
+        (payload.timezone, payload.cadence_days, payload.delivery_hour, payload.recommendation_count, user_id),
     )
     conn.execute(
         "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'dashboard', %s)",
-        (uuid4(), USER_ID, version, payload.preference_statement, rendered, payload.preference_statement),
+        (uuid4(), user_id, version, payload.preference_statement, rendered, payload.preference_statement),
     )
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'dashboard', %s)",
-        (uuid4(), USER_ID, Jsonb({"version": version})),
+        (uuid4(), user_id, Jsonb({"version": version})),
     )
     conn.commit()
-    return profile_row(conn)
+    return profile_row(conn, user_id)
 
 
 @app.put("/api/profile/delivery", response_model=Profile)
-def update_delivery(payload: DeliveryUpdate, conn: Connection = Depends(connection)):
-    if not profile_row(conn):
+def update_delivery(payload: DeliveryUpdate, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    if not profile_row(conn, user_id):
         raise HTTPException(status_code=404, detail="Profile not found")
     conn.execute(
-        "UPDATE app_users SET cadence_days = %s, recommendation_count = %s, updated_at = NOW() WHERE id = %s",
-        (payload.cadence_days, payload.recommendation_count, USER_ID),
+        "UPDATE app_users SET cadence_days = %s, recommendation_count = %s, timezone = COALESCE(%s, timezone), delivery_hour = COALESCE(%s, delivery_hour), updated_at = NOW() WHERE id = %s",
+        (payload.cadence_days, payload.recommendation_count, payload.timezone, payload.delivery_hour, user_id),
     )
     conn.commit()
-    return profile_row(conn)
+    return profile_row(conn, user_id)
 
 
 @app.put("/api/profile/memory", response_model=Profile)
-def update_preference_memory(payload: PreferenceMemoryUpdate, conn: Connection = Depends(connection)):
-    owner = conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (USER_ID,)).fetchone()
-    current = profile_row(conn) if owner else None
+def update_preference_memory(payload: PreferenceMemoryUpdate, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    owner = conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+    current = profile_row(conn, user_id) if owner else None
     if not current:
         raise HTTPException(status_code=404, detail="Profile not found")
     if current["version"] != payload.expected_version:
@@ -183,28 +188,28 @@ def update_preference_memory(payload: PreferenceMemoryUpdate, conn: Connection =
     rendered = f"# Current preferences\n\n{payload.preference_statement}\n\n## History\n\n- Version {version} saved from the dashboard."
     conn.execute(
         "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'dashboard', %s)",
-        (uuid4(), USER_ID, version, payload.preference_statement, rendered, payload.preference_statement),
+        (uuid4(), user_id, version, payload.preference_statement, rendered, payload.preference_statement),
     )
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'dashboard', %s)",
-        (uuid4(), USER_ID, Jsonb({"version": version})),
+        (uuid4(), user_id, Jsonb({"version": version})),
     )
     conn.commit()
-    return profile_row(conn)
+    return profile_row(conn, user_id)
 
 
 @app.get("/api/channels", response_model=list[Channel])
-def list_channels(conn: Connection = Depends(connection)):
+def list_channels(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     return conn.execute(
-        "SELECT id, name, url, thumbnail_url, is_default, created_at FROM tracked_channels WHERE user_id = %s AND is_active ORDER BY is_default DESC, name",
-        (USER_ID,),
+        "SELECT c.id, c.name, c.url, c.thumbnail_url, c.is_default, f.created_at FROM tracked_channels c JOIN user_channel_follows f ON f.channel_id=c.id WHERE f.user_id = %s ORDER BY c.is_default DESC, c.name",
+        (user_id,),
     ).fetchall()
 
 
 @app.post("/api/channels/resolve")
 def resolve_public_channel(
     payload: ChannelUrl,
-    conn: Connection = Depends(connection),
+    user_id: UUID = Depends(current_user), conn: Connection = Depends(connection),
 ):
     if not settings.youtube_api_key:
         raise HTTPException(status_code=503, detail="YouTube resolver is not configured")
@@ -215,33 +220,30 @@ def resolve_public_channel(
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="YouTube channel lookup failed. Try again.") from exc
     existing = conn.execute(
-        "SELECT user_id, is_active FROM tracked_channels WHERE youtube_channel_id = %s",
-        (details["youtube_channel_id"],),
+        "SELECT f.user_id, c.is_active FROM tracked_channels c JOIN user_channel_follows f ON f.channel_id=c.id WHERE c.youtube_channel_id = %s AND f.user_id=%s",
+        (details["youtube_channel_id"], user_id),
     ).fetchone()
     return {
         **details,
-        "already_tracked": bool(existing and existing["user_id"] == USER_ID and existing["is_active"]),
-        "can_reactivate": bool(existing and existing["user_id"] == USER_ID and not existing["is_active"]),
+        "already_tracked": bool(existing and existing["user_id"] == user_id and existing["is_active"]),
+        "can_reactivate": bool(existing and existing["user_id"] == user_id and not existing["is_active"]),
     }
 
 
 @app.post("/api/channels", response_model=Channel, status_code=status.HTTP_201_CREATED)
-def add_channel(payload: ChannelCreate, conn: Connection = Depends(connection)):
+def add_channel(payload: ChannelCreate, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     if not settings.youtube_api_key:
         raise HTTPException(status_code=503, detail="YouTube resolver is not configured")
     try:
         details = resolve_youtube_channel(str(payload.url), settings)
-        row, _ = upsert_admin_channel(
-            conn,
-            user_id=USER_ID,
-            details=details,
-            max_video_age_days=7,
-            actor=None,
-            commit=False,
-        )
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("channel:" + details["youtube_channel_id"],))
+        row = conn.execute("SELECT * FROM tracked_channels WHERE youtube_channel_id=%s", (details["youtube_channel_id"],)).fetchone()
+        if not row:
+            row, _ = upsert_admin_channel(conn, user_id=None, details=details, max_video_age_days=7, actor=None, commit=False)
+        conn.execute("INSERT INTO user_channel_follows(user_id,channel_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (user_id,row["id"]))
         conn.execute(
             "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'channel_add', 'dashboard', %s)",
-            (uuid4(), USER_ID, Jsonb({"url": details["url"]})),
+            (uuid4(), user_id, Jsonb({"url": details["url"]})),
         )
         conn.commit()
         return row
@@ -260,17 +262,17 @@ def add_channel(payload: ChannelCreate, conn: Connection = Depends(connection)):
 
 
 @app.delete("/api/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_channel(channel_id: UUID, conn: Connection = Depends(connection)) -> Response:
+def remove_channel(channel_id: UUID, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)) -> Response:
     row = conn.execute(
-        "UPDATE tracked_channels SET is_active = FALSE WHERE id = %s AND user_id = %s RETURNING url",
-        (channel_id, USER_ID),
+        "DELETE FROM user_channel_follows f USING tracked_channels c WHERE f.channel_id=c.id AND f.channel_id = %s AND f.user_id = %s RETURNING c.url",
+        (channel_id, user_id),
     ).fetchone()
     if not row:
         conn.rollback()
         raise HTTPException(status_code=404, detail="Channel not found")
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'channel_remove', 'dashboard', %s)",
-        (uuid4(), USER_ID, Jsonb({"url": row["url"]})),
+        (uuid4(), user_id, Jsonb({"url": row["url"]})),
     )
     conn.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -287,24 +289,29 @@ ORDER BY r.created_at DESC
 
 
 @app.get("/api/recommendations", response_model=list[Recommendation])
-def list_recommendations(conn: Connection = Depends(connection)):
-    return conn.execute(RECOMMENDATION_SELECT, (USER_ID,)).fetchall()
+def list_recommendations(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    return conn.execute(RECOMMENDATION_SELECT, (user_id,)).fetchall()
 
 
 @app.post("/api/recommendations/generate", response_model=Recommendation, status_code=status.HTTP_201_CREATED)
-def generate_recommendation(conn: Connection = Depends(connection)):
+def generate_recommendation(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    if not settings.openrouter_api_key:
+        raise HTTPException(503, "Recommendations are temporarily unavailable. Please try again later.")
     try:
-        create_recommendation(conn, settings, USER_ID)
+        create_recommendation(conn, settings, user_id, require_model=True)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return conn.execute(RECOMMENDATION_SELECT + " LIMIT 1", (USER_ID,)).fetchone()
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(503, "The recommendation provider is unavailable. Please try again later.") from exc
+    return conn.execute(RECOMMENDATION_SELECT + " LIMIT 1", (user_id,)).fetchone()
 
 
 @app.post("/api/recommendations/{recommendation_id}/feedback", response_model=Recommendation)
-def record_feedback(recommendation_id: UUID, payload: FeedbackCreate, conn: Connection = Depends(connection)):
+def record_feedback(recommendation_id: UUID, payload: FeedbackCreate, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     row = conn.execute(
         "UPDATE recommendations SET rating = %s WHERE id = %s AND user_id = %s RETURNING id",
-        (payload.rating, recommendation_id, USER_ID),
+        (payload.rating, recommendation_id, user_id),
     ).fetchone()
     if not row:
         conn.rollback()
@@ -312,35 +319,35 @@ def record_feedback(recommendation_id: UUID, payload: FeedbackCreate, conn: Conn
     event_type = "feedback_up" if payload.rating == "up" else "feedback_down"
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source, metadata) VALUES (%s, %s, %s, %s, 'dashboard', %s)",
-        (uuid4(), USER_ID, recommendation_id, event_type, Jsonb({"detail": payload.detail})),
+        (uuid4(), user_id, recommendation_id, event_type, Jsonb({"detail": payload.detail})),
     )
     conn.commit()
     recommendation_query = RECOMMENDATION_SELECT.replace(
         "WHERE r.user_id = %s",
         "WHERE r.user_id = %s AND r.id = %s",
     )
-    return conn.execute(recommendation_query + " LIMIT 1", (USER_ID, recommendation_id)).fetchone()
+    return conn.execute(recommendation_query + " LIMIT 1", (user_id, recommendation_id)).fetchone()
 
 
 @app.get("/r/{recommendation_id}")
-def track_click(recommendation_id: UUID, conn: Connection = Depends(connection)):
+def track_click(recommendation_id: UUID, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     row = conn.execute(
         "UPDATE recommendations r SET clicked_at = COALESCE(clicked_at, NOW()) FROM videos v WHERE r.id = %s AND r.user_id = %s AND v.id = r.video_id RETURNING v.youtube_url",
-        (recommendation_id, USER_ID),
+        (recommendation_id, user_id),
     ).fetchone()
     if not row:
         conn.rollback()
         raise HTTPException(status_code=404, detail="Recommendation not found")
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source) VALUES (%s, %s, %s, 'clicked', 'redirect')",
-        (uuid4(), USER_ID, recommendation_id),
+        (uuid4(), user_id, recommendation_id),
     )
     conn.commit()
     return RedirectResponse(row["youtube_url"], status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @app.get("/api/metrics", response_model=Metrics)
-def get_metrics(conn: Connection = Depends(connection)):
+def get_metrics(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     row = conn.execute(
         """
         SELECT COUNT(*) FILTER (WHERE delivered_at IS NOT NULL) AS delivered,
@@ -349,7 +356,7 @@ def get_metrics(conn: Connection = Depends(connection)):
                COUNT(*) FILTER (WHERE rating = 'down') AS rated_down
         FROM recommendations WHERE user_id = %s
         """,
-        (USER_ID,),
+        (user_id,),
     ).fetchone()
     delivered, clicked = row["delivered"], row["clicked"]
     rated = row["rated_up"] + row["rated_down"]
@@ -361,7 +368,7 @@ def get_metrics(conn: Connection = Depends(connection)):
 
 
 @app.get("/api/pipeline/status", response_model=PipelineStatus)
-def pipeline_status(conn: Connection = Depends(connection)):
+def pipeline_status(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     videos = conn.execute(
         """
         SELECT COUNT(*) AS videos,
@@ -380,13 +387,13 @@ def pipeline_status(conn: Connection = Depends(connection)):
                       OR semantic_embedding_fingerprint IS DISTINCT FROM (%s || ':' || content_fingerprint)
                ) AS embedding_backfill_remaining,
                COUNT(*) FILTER (WHERE semantic_embedding_last_error IS NOT NULL) AS embedding_failures
-        FROM videos
+        FROM videos WHERE tracked_channel_id IN (SELECT channel_id FROM user_channel_follows WHERE user_id=%s)
         """,
         (
             settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
             DESCRIPTION_PROCESSING_VERSION,
             settings.embedding_model, settings.embedding_model_revision, settings.embedding_dimensions,
-            DESCRIPTION_PROCESSING_VERSION,
+            DESCRIPTION_PROCESSING_VERSION, user_id,
         ),
     ).fetchone()
     ingestion = conn.execute(
@@ -401,17 +408,7 @@ def pipeline_status(conn: Connection = Depends(connection)):
 
 
 def _telegram_user(conn: Connection, chat_id: int, developer: bool):
-    row = conn.execute("SELECT id FROM app_users WHERE telegram_user_id = %s", (chat_id,)).fetchone()
-    if row:
-        return row["id"]
-    may_claim_dogfood_profile = chat_id in settings.developer_user_ids if developer else chat_id == settings.production_chat_id
-    if not may_claim_dogfood_profile:
-        return None
-    row = conn.execute(
-        "UPDATE app_users SET telegram_user_id = %s, updated_at = NOW() WHERE id = %s AND telegram_user_id IS NULL RETURNING id",
-        (chat_id, USER_ID),
-    ).fetchone()
-    conn.commit()
+    row = conn.execute("SELECT id FROM app_users WHERE telegram_user_id = %s AND deleted_at IS NULL", (chat_id,)).fetchone()
     return row["id"] if row else None
 
 
@@ -443,24 +440,42 @@ def telegram_webhook(
     chat_id = (message.get("chat") or {}).get("id")
     if chat_id is None:
         return {"ok": True}
-    user_id = _telegram_user(conn, int(chat_id), bot_kind == "developer")
-    if not user_id:
-        raise HTTPException(status_code=403, detail="Telegram user is not authorized")
+    if (message.get("chat") or {}).get("type") != "private":
+        return {"ok": True}
+    if settings.is_preview and (bot_kind != "developer" or int(chat_id) not in settings.developer_user_ids):
+        raise HTTPException(status_code=403, detail="Preview Telegram recipient is not allowed")
     update_id = update.get("update_id")
     if not isinstance(update_id, int):
         raise HTTPException(status_code=400, detail="Invalid Telegram update")
+    # Hold this transaction through the account/preference mutation so retrying
+    # an update cannot apply it twice, including concurrent webhook retries.
     inserted = conn.execute(
         "INSERT INTO telegram_updates (bot_kind, update_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING update_id",
         (bot_kind, update_id),
     ).fetchone()
-    conn.commit()
     if not inserted:
+        conn.commit()
         return {"ok": True, "duplicate": True}
     bot = TelegramBot(token)
+    text = str(message.get("text", "")).strip()
+    if text.startswith("/start "):
+        user_id = consume_telegram_link(conn, text.split(" ", 1)[1], int(chat_id))
+        conn.commit()
+        bot.send_text(chat_id, "Telegram connected. Use /recommend, /preferences, /pause or /resume." if user_id else "This link expired, was already used, or conflicts with a linked account. Create a new link in app settings.")
+        return {"ok": True}
+    user_id = _telegram_user(conn, int(chat_id), bot_kind == "developer")
+    if not user_id:
+        conn.commit()
+        bot.send_text(chat_id, "Connect Telegram from your Finite Feed account settings first.")
+        return {"ok": True}
     if callback:
         parts = str(callback.get("data", "")).split(":")
         if len(parts) == 3 and parts[0] == "feedback" and parts[1] in {"up", "down"}:
-            recommendation_id = UUID(parts[2])
+            try:
+                recommendation_id = UUID(parts[2])
+            except ValueError:
+                conn.commit()
+                return {"ok": True}
             updated = conn.execute(
                 "UPDATE recommendations SET rating = %s WHERE id = %s AND user_id = %s RETURNING id",
                 (parts[1], recommendation_id, user_id),
@@ -489,8 +504,12 @@ def telegram_webhook(
             (user_id,),
         ).fetchone()
         bot.send_text(chat_id, current["preference_statement"])
+    elif text in {"/pause", "/resume"}:
+        conn.execute("UPDATE app_users SET delivery_paused=%s,updated_at=NOW() WHERE id=%s", (text == "/pause",user_id))
+        conn.commit()
+        bot.send_text(chat_id, "Delivery paused." if text == "/pause" else "Delivery resumed.")
     elif text.startswith("/"):
-        bot.send_text(chat_id, "Use /recommend for a new pick, or /preferences to inspect your current profile.")
+        bot.send_text(chat_id, "Use /recommend for a pick, /preferences to inspect your profile, /pause or /resume for delivery. Send a sentence of at least 10 characters to replace your preferences.")
     elif len(text) >= 10:
         conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         current = conn.execute(
@@ -509,4 +528,5 @@ def telegram_webhook(
         )
         conn.commit()
         bot.send_text(chat_id, "Updated your preference profile. I’ll use that on the next recommendation.")
+    conn.commit()
     return {"ok": True}

@@ -269,6 +269,12 @@ def summary(conn: Connection = Depends(connection)):
     return conn.execute(
         """
         SELECT
+            (SELECT last_seen_at FROM worker_heartbeat WHERE worker = 'pipeline') AS worker_last_seen_at,
+            (SELECT CASE WHEN last_seen_at < NOW() - INTERVAL '10 minutes' THEN 'stale' ELSE status END
+             FROM worker_heartbeat WHERE worker = 'pipeline') AS worker_status,
+            (SELECT error FROM worker_heartbeat WHERE worker = 'pipeline') AS worker_error,
+            (SELECT COALESCE(jsonb_agg(jsonb_build_object('provider', provider, 'requests', requests)), '[]'::jsonb)
+             FROM provider_daily_usage WHERE usage_date = (NOW() AT TIME ZONE 'UTC')::date) AS provider_usage,
             (SELECT COUNT(*) FROM tracked_channels WHERE is_active) AS active_channels,
             (SELECT COUNT(*) FROM videos) AS video_count,
             (SELECT COUNT(*) FROM recommendations) AS recommendation_count,

@@ -3,6 +3,8 @@
 /* eslint-disable @next/next/no-img-element -- YouTube supplies dynamic external image hosts. */
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { AccountControls, SignInPrompt } from "@/components/account-controls";
 import { SignalShell } from "@/components/signal-shell";
 
 type Profile = {
@@ -68,7 +70,8 @@ async function responseMessage(response: Response, fallback: string) {
   return fallback;
 }
 
-export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
+export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseUrl: string; settings?: boolean }) {
+  const [signedOut, setSignedOut] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -87,10 +90,11 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     setLoading(true);
     try {
       const responses = await Promise.all([
-        fetch(`${apiBaseUrl}/api/profile`, { cache: "no-store" }),
-        fetch(`${apiBaseUrl}/api/channels`, { cache: "no-store" }),
-        fetch(`${apiBaseUrl}/api/recommendations`, { cache: "no-store" }),
+        fetch(`${apiBaseUrl}/profile`, { cache: "no-store" }),
+        fetch(`${apiBaseUrl}/channels`, { cache: "no-store" }),
+        fetch(`${apiBaseUrl}/recommendations`, { cache: "no-store" }),
       ]);
+      if (responses.some((response) => response.status === 401)) { setSignedOut(true); return; }
       if (responses.some((response) => !response.ok)) throw new Error("The feed could not reach its source. Try again in a moment.");
       const [nextProfile, nextChannels, nextRecommendations] = await Promise.all(responses.map((response) => response.json()));
       setProfile(nextProfile);
@@ -122,7 +126,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
       setSourceState("loading");
       setSourceMessage("Finding the channel behind this URL…");
       try {
-        const response = await fetch(`${apiBaseUrl}/api/channels/resolve`, {
+        const response = await fetch(`${apiBaseUrl}/channels/resolve`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: channelUrl.trim() }),
@@ -160,12 +164,14 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (!profile) return;
     setBusyAction("delivery");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/profile/delivery`, {
+      const response = await fetch(`${apiBaseUrl}/profile/delivery`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cadence_days: profile.cadence_days,
           recommendation_count: profile.recommendation_count,
+          timezone: profile.timezone,
+          delivery_hour: profile.delivery_hour,
         }),
       });
       if (!response.ok) {
@@ -187,7 +193,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (!profile) return;
     setBusyAction("memory");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/profile/memory`, {
+      const response = await fetch(`${apiBaseUrl}/profile/memory`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preference_statement: memoryDraft, expected_version: profile.version }),
@@ -225,7 +231,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (!resolvedChannel || sourceState !== "resolved") return;
     setBusyAction("source");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/channels`, {
+      const response = await fetch(`${apiBaseUrl}/channels`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: channelUrl.trim() }),
@@ -253,7 +259,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
   async function removeChannel(channel: Channel) {
     setBusyAction(`remove-${channel.id}`);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/channels/${channel.id}`, { method: "DELETE" });
+      const response = await fetch(`${apiBaseUrl}/channels/${channel.id}`, { method: "DELETE" });
       if (!response.ok) {
         setNotice({ message: `${channel.name} was not removed. Try again.`, tone: "error" });
         return;
@@ -270,7 +276,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
   async function rate(id: string, rating: "up" | "down") {
     setBusyAction(`rate-${id}`);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/recommendations/${id}/feedback`, {
+      const response = await fetch(`${apiBaseUrl}/recommendations/${id}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rating }),
@@ -292,7 +298,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
   async function generate() {
     setBusyAction("generate");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/recommendations/generate`, { method: "POST" });
+      const response = await fetch(`${apiBaseUrl}/recommendations/generate`, { method: "POST" });
       if (!response.ok) {
         setNotice({ message: await responseMessage(response, "A new recommendation could not be made. Try again."), tone: "error" });
         return;
@@ -306,21 +312,24 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
-  if (!apiBaseUrl) return <main className="setup-state">Set NEXT_PUBLIC_API_BASE_URL to connect this feed.</main>;
+  if (signedOut) return <SignInPrompt />;
+  if (!loading && !profile) return <SignalShell active={settings ? "settings" : "feed"}><main className="public-main"><h1>We couldn’t load your feed.</h1><p role="alert">{notice?.message}</p><button className="save-action" onClick={() => void load()}>Try again</button><p><Link href="/">Return home</Link></p></main></SignalShell>;
 
   return (
-    <SignalShell active="feed">
-      <main id="top" className="public-main">
+    <SignalShell active={settings ? "settings" : "feed"}>
+      <main id="top" className={`public-main ${settings ? "personal-settings" : "personal-feed"}`}>
         <header className="public-hero">
-          <h1>Fewer things.<br /><span>Better chosen.</span></h1>
-          <p>One unusually valuable talk at a time, selected from the sources and ideas you trust.</p>
-          <button className="signal-action" onClick={() => void generate()} disabled={busyAction === "generate"}>
+          <h1>{settings ? <>Make it<br /><span>your feed.</span></> : <>Your next<br /><span>worthwhile watch.</span></>}</h1>
+          <p>{settings ? "Your interests, your sources, your schedule. Keep them in tune with what matters now." : "Selected from your sources and shaped by what you find useful."}</p>
+          {!settings && <button className="signal-action" onClick={() => void generate()} disabled={busyAction === "generate" || loading}>
             {busyAction === "generate" ? "Choosing…" : "Choose one now"}
-          </button>
+          </button>}
         </header>
 
         {notice && <p className={notice.tone === "error" ? "signal-error" : "signal-notice"} role={notice.tone === "error" ? "alert" : "status"}>{notice.message}</p>}
 
+        {settings && <AccountControls />}
+        {!settings && <p className="feed-settings-link"><Link href="/app/settings">Shape your interests, sources, and Telegram delivery</Link></p>}
         <div className="reading-grid">
           <section id="recommendations" className="feed-column" aria-labelledby="recommendations-heading">
             <header className="section-line">
@@ -353,8 +362,8 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
               </div>
             ) : (
               <div className="signal-empty">
-                <h3>Your first pick is being edited.</h3>
-                <p>Check back after the next source refresh or choose one now.</p>
+                <h3>A fresh start for your attention.</h3>
+                <p><Link href="/app/settings">Tell us your interests and check your sources</Link>, then choose your first recommendation. New sources may need a refresh before videos are ready.</p>
               </div>
             )}
           </section>
@@ -364,6 +373,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
               <header className="section-line"><h2 id="delivery-heading">Delivery preferences</h2></header>
               {profile ? (
                 <form className="delivery-form" onSubmit={saveDelivery}>
+                  <label htmlFor="delivery-timezone">Timezone</label><input id="delivery-timezone" value={profile.timezone} onChange={(event) => setProfile({ ...profile, timezone: event.target.value })} placeholder="America/Los_Angeles" required /><label htmlFor="delivery-hour">Delivery hour (local time)</label><select id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
                   <fieldset className="day-fieldset">
                     <legend>Delivery days</legend>
                     <div className="day-picker">{days.map((day, index) => {
@@ -398,7 +408,7 @@ export function FiniteFeedDashboard({ apiBaseUrl }: { apiBaseUrl: string }) {
                   <button className="memory-action" onClick={() => setMemoryEditing(true)}>Shape memory</button>
                 ) : (
                   <form className="memory-editor" onSubmit={saveMemory}>
-                    <label htmlFor="memory-draft">Update preference memory</label>
+                    <label htmlFor="memory-draft">Your interests and exclusions</label><p>Describe what you want to learn and what to avoid. For example: practical psychology and new research; skip motivational speeches.</p>
                     <textarea id="memory-draft" value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} maxLength={5000} required autoFocus />
                     <div>
                       <button className="save-action" disabled={busyAction === "memory"}>{busyAction === "memory" ? "Saving…" : "Save memory"}</button>
