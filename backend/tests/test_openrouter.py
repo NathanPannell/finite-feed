@@ -43,3 +43,31 @@ def test_custom_model_pin_is_not_changed_and_exhaustion_is_not_retried():
         assert "models" not in requests[0]
     finally:
         client.close()
+
+
+@pytest.mark.parametrize("error, expected", [
+    ({"message": "Rate limit exceeded: free-models-per-day. SECRET"}, "provider_daily_limit"),
+    ({"message": "Daily request limit reached SECRET"}, "provider_daily_limit"),
+    ({"message": "Requests per minute exceeded SECRET"}, "provider_minute_limit"),
+    ({"message": "Provider returned error", "metadata": {"provider_name": "SECRET", "raw": "Temporarily rate-limited upstream SECRET"}}, "provider_upstream_limit"),
+    ({"message": "Model is temporarily rate-limited upstream SECRET"}, "provider_upstream_limit"),
+    ({"message": "SECRET"}, "provider_http_429"),
+    (None, "provider_http_429"),
+])
+def test_provider_rate_limit_diagnostics_are_fixed_and_secret_safe(error, expected):
+    from backend.app.openrouter import provider_failure
+    request = httpx.Request("POST", "https://example.com/SECRET")
+    response = httpx.Response(429, json={"error": error}, request=request)
+    failure = httpx.HTTPStatusError("SECRET", request=request, response=response)
+    code, detail = provider_failure(failure)
+    assert code == expected
+    assert "SECRET" not in code + detail
+
+
+def test_malformed_provider_error_stays_generic():
+    from backend.app.openrouter import provider_failure
+    request = httpx.Request("POST", "https://example.com")
+    response = httpx.Response(429, content=b"<html>SECRET</html>", request=request)
+    code, detail = provider_failure(httpx.HTTPStatusError("SECRET", request=request, response=response))
+    assert code == "provider_http_429"
+    assert "SECRET" not in detail

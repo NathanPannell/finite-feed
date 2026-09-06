@@ -69,3 +69,40 @@ class OpenRouterClient:
 
     def close(self) -> None:
         self.client.close()
+
+
+def provider_failure(exc: Exception) -> tuple[str, str]:
+    """Classify provider diagnostics without returning any provider-supplied text."""
+    unavailable = "The recommendation provider is unavailable. Please try again later."
+    if not isinstance(exc, httpx.HTTPStatusError):
+        code = "provider_timeout" if isinstance(exc, httpx.TimeoutException) else "provider_unavailable"
+        return code, unavailable
+    status = exc.response.status_code
+    code = f"provider_http_{status}"
+    if status == 402:
+        return code, "The recommendation service has reached its provider limit. Please try again later."
+    if status != 429:
+        return code, unavailable
+    try:
+        payload = exc.response.json()
+    except (ValueError, UnicodeDecodeError):
+        payload = {}
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    error = error if isinstance(error, dict) else {}
+    message = error.get("message", "")
+    message = message.lower() if isinstance(message, str) else ""
+    if re.search(r"\bdaily\b|\bday\b", message):
+        return "provider_daily_limit", "The recommendation provider's daily free allowance is exhausted. Please try again after its daily reset."
+    if re.search(r"\bminute\b|\bperminute\b", message):
+        return "provider_minute_limit", "The recommendation provider is receiving requests too quickly. Please wait a minute before trying again."
+    metadata = error.get("metadata", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
+    raw = metadata.get("raw", "")
+    if isinstance(raw, dict):
+        raw = json.dumps(raw)
+    raw = raw.lower() if isinstance(raw, str) else ""
+    upstream_message = "upstream" in message and ("rate" in message or "temporar" in message)
+    upstream_metadata = bool(metadata.get("provider_name")) and any(word in raw for word in ("rate", "temporar", "quota", "exhaust"))
+    if upstream_message or upstream_metadata:
+        return "provider_upstream_limit", "The free recommendation models are temporarily busy. Your preferences are saved; please try again later."
+    return code, "The recommendation service has reached a provider limit. Please try again later."

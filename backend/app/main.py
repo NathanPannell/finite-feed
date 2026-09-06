@@ -14,6 +14,7 @@ from backend.app.admin import ChannelUrl, resolve_youtube_channel, router as adm
 from backend.app.db import close_pool, connection, open_pool
 from backend.app.annotations import AnnotationConflict, annotation_stats, next_annotation, record_annotation
 from backend.app.match_identity import reviewer_identity
+from backend.app.openrouter import provider_failure
 from backend.app.recommendations import (
     generate_recommendation as create_recommendation,
     get_or_create_pending_recommendation,
@@ -303,15 +304,12 @@ def generate_recommendation(user_id: UUID = Depends(current_user), conn: Connect
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         conn.rollback()
-        code = f"provider_http_{exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
+        code, detail = provider_failure(exc)
         conn.execute(
             "UPDATE app_users SET delivery_status='waiting',delivery_error=%s WHERE id=%s AND deleted_at IS NULL",
             (code, user_id),
         )
         conn.commit()
-        detail = ("The recommendation service has reached its provider limit. Please try again later."
-                  if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {402, 429}
-                  else "The recommendation provider is unavailable. Please try again later.")
         raise HTTPException(503, detail) from exc
     return conn.execute(RECOMMENDATION_SELECT + " LIMIT 1", (user_id,)).fetchone()
 
