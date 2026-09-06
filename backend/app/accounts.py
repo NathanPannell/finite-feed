@@ -71,8 +71,19 @@ def consume_telegram_link(conn: Connection, raw: str, chat_id: int):
     digest = hashlib.sha256(raw.encode()).hexdigest()
     # Serialize both token consumption and chat ownership, including competing tokens.
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (chat_id,))
-    row = conn.execute("SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND expires_at>NOW() FOR UPDATE", (digest,)).fetchone()
+    row = conn.execute("SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND expires_at>NOW()", (digest,)).fetchone()
     if not row:
+        return None
+    # Match account deletion/unlink/token creation order: account first, tokens
+    # second. Never hold a token lock while waiting for its account row.
+    account = conn.execute("SELECT id FROM app_users WHERE id=%s AND deleted_at IS NULL FOR UPDATE", (row["user_id"],)).fetchone()
+    if not account:
+        return None
+    valid = conn.execute(
+        "SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND user_id=%s AND expires_at>NOW() FOR UPDATE",
+        (digest, row["user_id"]),
+    ).fetchone()
+    if not valid:
         return None
     owner = conn.execute("SELECT id FROM app_users WHERE telegram_user_id=%s", (chat_id,)).fetchone()
     if owner and owner["id"] != row["user_id"]:

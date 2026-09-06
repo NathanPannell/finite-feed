@@ -1,5 +1,7 @@
 import os
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from uuid import uuid4
 
 import psycopg
@@ -9,6 +11,48 @@ from psycopg.rows import dict_row
 from backend.app import main
 from backend.app.settings import Settings
 from backend.app.accounts import consume_telegram_link
+
+
+def test_concurrent_unlink_and_token_consumption_share_account_then_token_lock_order():
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        pytest.skip("DATABASE_URL required for Telegram lock-order regression")
+    user_id, raw = uuid4(), str(uuid4())
+    chat = int(uuid4().int % 1000000000) + 9000000000
+    token_read = Event()
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        try:
+            conn.execute("INSERT INTO app_users(id,display_name) VALUES (%s,'Lock test')", (user_id,))
+            conn.execute("INSERT INTO telegram_link_tokens(token_hash,user_id,expires_at) VALUES (%s,%s,NOW()+INTERVAL '10 minutes')", (hashlib.sha256(raw.encode()).hexdigest(),user_id))
+            conn.commit()
+            conn.execute("SET LOCAL statement_timeout='3s'")
+            conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,))
+
+            def consume():
+                with psycopg.connect(url, row_factory=dict_row) as other:
+                    other.execute("SET LOCAL statement_timeout='3s'")
+                    class ObservedConnection:
+                        def execute(self, query, params=None):
+                            result = other.execute(query,params)
+                            if query.startswith("SELECT user_id FROM telegram_link_tokens"):
+                                token_read.set()
+                            return result
+                        def commit(self): other.commit()
+                    return consume_telegram_link(ObservedConnection(),raw,chat)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(consume)
+                assert token_read.wait(timeout=2)
+                # Token invalidation must finish while the consuming transaction
+                # waits on this account, rather than forming a lock cycle.
+                conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s", (user_id,))
+                conn.execute("UPDATE app_users SET telegram_user_id=NULL,delivery_paused=TRUE WHERE id=%s", (user_id,))
+                conn.commit()
+                assert future.result(timeout=4) is None
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            conn.commit()
 
 
 def test_private_chat_unlink_preserves_history_and_allows_new_account_link(monkeypatch):
