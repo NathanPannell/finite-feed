@@ -174,7 +174,7 @@ test("renders personal recommendations and semantic feedback", async ({ page }) 
   await expect(page.getByRole("heading", { name: /Your next/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "How to make hard choices" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The architecture of attention" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Match Lab", exact: true })).toHaveAttribute("href", "/match");
+  await expect(page.getByRole("link", { name: "Match Lab", exact: true })).toHaveAttribute("href", "/match");
   await expect(page.getByRole("link", { name: "Watch How to make hard choices on YouTube" })).toHaveAttribute("href", "/api/personal/r/rec-1");
   await expect(page.getByRole("heading", { name: "Signal quality" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Not useful" }).first()).toBeVisible();
@@ -262,8 +262,8 @@ test("keeps the public page inside a 320px viewport", async ({ page }) => {
   await page.goto("/app/settings");
   const mobileNavigation = page.getByRole("navigation", { name: "Mobile navigation" });
   await expect(mobileNavigation).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "For you", exact: true })).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "Open Match Lab", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "My feed", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Match Lab", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
@@ -632,12 +632,39 @@ test("public landing explains the beta and links to private sign-in without acco
   let personalRequests = 0;
   await page.route("**/api/personal/**", route => { personalRequests++; return route.fulfill({status: 401,json:{detail:"Sign in"}}); });
   await page.goto("/");
-  await expect(page.getByRole("heading", {name: /Fewer things/})).toBeVisible();
-  await expect(page.getByText("An illustrative recommendation")).toBeVisible();
-  await expect(page.getByRole("link", {name: "Shape your feed"})).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("heading", {name: "Your attention has better places to be."})).toBeVisible();
+  await expect(page.getByText("Illustrative interface and copy. This is not a real recommendation.")).toBeVisible();
+  await expect(page.getByRole("link", {name: "Build my finite feed"}).first()).toHaveAttribute("href", "/app");
   expect(personalRequests).toBe(0);
   await page.setViewportSize({width:320,height:800});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.goto("/app");
   await expect(page.getByRole("button", {name: "Continue with Google"})).toBeVisible();
+});
+
+test("keeps the same navigation and footer across public routes", async ({ page }) => {
+  await page.route("**/api/personal/**", route => route.fulfill({status: 401, json: {detail: "Sign in"}}));
+  const routes = ["/", "/privacy", "/app", "/match"];
+
+  await page.setViewportSize({width: 1100, height: 800});
+  for (const route of routes) {
+    await page.goto(route);
+    const primary = page.getByRole("navigation", {name: "Primary navigation"});
+    await expect(primary.getByRole("link", {name: "My feed", exact: true})).toHaveAttribute("href", "/app");
+    await expect(primary.getByRole("link", {name: "Match Lab", exact: true})).toHaveAttribute("href", "/match");
+    await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/app/settings");
+    const footer = page.getByRole("contentinfo");
+    await expect(footer.getByRole("link", {name: "Privacy & your data"})).toHaveAttribute("href", "/privacy");
+    await expect(footer.getByText("Private beta", {exact: true})).toBeVisible();
+  }
+
+  await page.setViewportSize({width: 320, height: 800});
+  for (const route of routes) {
+    await page.goto(route);
+    const mobile = page.getByRole("navigation", {name: "Mobile navigation"});
+    await expect(mobile.getByRole("link", {name: "My feed", exact: true})).toBeVisible();
+    await expect(mobile.getByRole("link", {name: "Match Lab", exact: true})).toBeVisible();
+    await expect(mobile.getByRole("link", {name: "Settings", exact: true})).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
 });
