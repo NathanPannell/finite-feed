@@ -109,3 +109,13 @@ def test_full_onboarding_uses_one_synthesis_and_verifies_export():
     assert len(synthesis_calls) == 1
     assert next(call for call in client.calls if call[0].endswith("/complete"))[2] == {"telegram": "skipped"}
     assert any(call[0] == "/api/personal/account/export" for call in client.calls)
+
+
+def test_auth_only_is_an_explicit_opt_in():
+    parser = smoke.argument_parser()
+    normal = parser.parse_args(["--preview-url", "https://finite-feed-test.vercel.app"])
+    auth_only = parser.parse_args([
+        "--preview-url", "https://finite-feed-test.vercel.app", "--auth-only",
+    ])
+    assert normal.auth_only is False
+    assert auth_only.auth_only is True

@@ -26,6 +26,12 @@ On close or merge, GitHub Actions deletes the Railway environment, Neon branch, 
 
 ## Credentials and ownership
 
+Google OAuth and email/password authentication both terminate at Neon Auth. Passwords
+are never sent to the Railway API or stored in application tables; Neon Auth issues
+the session that the API verifies against the configured branch endpoint. The email
+address remains the user-facing identifier while `auth_subject` provides immutable
+application ownership. Preview branches use their own Auth endpoint and account set.
+
 The local bootstrap identity uses broad credentials only long enough to create one project per provider. It then stores repository automation tokens in GitHub secrets, provider IDs in GitHub variables, and runtime database URLs directly in Railway. Broad bootstrap credentials and database URLs are never committed.
 
 `DATABASE_URL` and `PREVIEW_DATABASE_URL` are pooled runtime connections. `DATABASE_URL_UNPOOLED` and `PREVIEW_DATABASE_URL_UNPOOLED` are direct migration connections. A preview refuses to fall back to production credentials.

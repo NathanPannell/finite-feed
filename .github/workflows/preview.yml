@@ -156,10 +156,8 @@ jobs:
             --env RAILWAY_API_BASE_URL="$API_URL" \
             --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
             --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
-            --env DEVELOPER_PREVIEW_AUTH=true \
             --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
             --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
-            --build-env DEVELOPER_PREVIEW_AUTH=true \
             --meta githubCommitSha="$HEAD_SHA" \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           deployment_id="$(vercel inspect "$preview_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r '.id')"
@@ -229,7 +227,7 @@ jobs:
         with:
           script: |
             const marker = '<!-- full-stack-preview -->';
-            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth callback: \`${process.env.GOOGLE_OAUTH_CALLBACK}\`\n\nRegister this callback once for this Neon branch. A new Vercel deployment URL does not change it.\n\nPreview email/password test accounts are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
+            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth callback: \`${process.env.GOOGLE_OAUTH_CALLBACK}\`\n\nRegister this callback once for this Neon branch. A new Vercel deployment URL does not change it.\n\nAccounts created in this preview, including email/password accounts, are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
               issue_number: context.issue.number,

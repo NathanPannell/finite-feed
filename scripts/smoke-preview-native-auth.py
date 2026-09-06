@@ -199,7 +199,7 @@ def complete_synthetic_onboarding(client: PreviewClient) -> None:
         raise SmokeFailure("Onboarding session was missing from the account export")
 
 
-def smoke(preview_url: str) -> None:
+def smoke(preview_url: str, *, auth_only: bool = False) -> None:
     executable = shutil.which("vercel.cmd") if os.name == "nt" else shutil.which("vercel")
     executable = executable or shutil.which("vercel")
     if not executable:
@@ -229,26 +229,38 @@ def smoke(preview_url: str) -> None:
         second = client.request("Restored account read", "/api/personal/account")
         if not isinstance(second, dict) or second.get("id") != first_id or second.get("email") != email:
             raise SmokeFailure("Native sign-in did not restore the same identity")
-        complete_synthetic_onboarding(client)
+        if not auth_only:
+            complete_synthetic_onboarding(client)
         client.request("Synthetic app-account cleanup", "/api/personal/account", "DELETE", {
             "confirmation": "DELETE",
         }, {204})
         client.request("Final native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})
 
 
-def main() -> int:
+def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Smoke-test native auth on one exact Finite Feed preview")
     parser.add_argument("--preview-url", required=True)
-    arguments = parser.parse_args()
+    parser.add_argument(
+        "--auth-only", action="store_true",
+        help="Verify sign-up, session restoration and cleanup without running onboarding or calling the model",
+    )
+    return parser
+
+
+def main() -> int:
+    arguments = argument_parser().parse_args()
     try:
-        smoke(validate_preview_url(arguments.preview_url))
+        smoke(validate_preview_url(arguments.preview_url), auth_only=arguments.auth_only)
     except SmokeFailure as exc:
         print(f"Preview native-auth smoke failed: {exc}", file=sys.stderr)
         return 1
     except Exception:
         print("Preview native-auth smoke failed: unexpected local error", file=sys.stderr)
         return 1
-    print("Preview native-auth smoke passed: auth, identity, onboarding, audit export, delivery pause, cleanup")
+    if arguments.auth_only:
+        print("Preview native-auth smoke passed: auth, identity, session restoration, cleanup")
+    else:
+        print("Preview native-auth smoke passed: auth, identity, onboarding, audit export, delivery pause, cleanup")
     return 0
 
 

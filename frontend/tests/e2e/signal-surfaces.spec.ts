@@ -625,9 +625,7 @@ test("public landing explains the beta and links to private sign-in without acco
   await page.goto("/app");
   await expect(page.getByRole("button", {name: "Continue with Google"})).toBeVisible();
   await expect(page.locator(".google-logo")).toBeVisible();
-  await expect(page.getByText("Developer preview access")).toHaveCount(0);
-  const passwordSignIn = await page.request.post("/api/auth/sign-in/email", { data: { email: "nobody@example.test", password: "not-a-real-password" } });
-  expect(passwordSignIn.status()).toBe(404);
+  await expect(page.getByRole("button", {name: "Sign in with email"})).toBeVisible();
 });
 
 test("settings remains available when recommendations are unavailable", async ({ page }) => {

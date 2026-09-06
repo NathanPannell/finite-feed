@@ -26,3 +26,24 @@ Context: Continuing PR40/codex/onboarding. Previous CI and preview deployment pa
 - Builder checks: lint/typecheck/build, 16 proxy tests, normal login regression, dedicated preview browser test, 11 deployment script tests, 4 smoke helper tests pass.
 - Independent quality review underway. Google allowlist save remains pending explicit browser approval.
 - Quality independently verified production fail-closed behavior and normal login regression; CI browser coverage gap resolved. Live helper now requires explicit preview metadata and verifies the complete onboarding and audit export with one synthesis request (5 unit tests pass).
+
+## Delivery milestone
+- Pushed 0e627e6 to PR40. CI run 34062742219 and preview run 34062742202 started.
+- Independent quality review: no material findings; explicit preview metadata gate and separate CI suite confirmed. Production gate E2E and helper tests independently passed.
+- Next: exact-head CI/preview readiness, browser inspection, live synthetic onboarding helper. Google callback save is still pending user confirmation.
+
+## Final verification
+- CI 34062742219 and preview 34062742202 both passed at 0e627e6.
+- Fresh preview: https://finite-feed-5pqjr04rw-nathanpannells-projects.vercel.app . API ready confirms exact SHA and 17 migrations.
+- Live native smoke passed signup, session revocation, same-identity signin, one LLM synthesis, full onboarding, ordered audit export, paused Telegram skip and app cleanup.
+- Real browser: /app neutral loading to /login, visible logo, preview form expansion and native empty-field validation, no console errors. Browser tool has no network capture; authenticated transport checked by smoke helper.
+- PR body updated with exact evidence; remains draft while Google allowlist save is pending confirmation. No production provider changes. Local ledger updates retained without a docs-only redeploy.
+
+## User steering: permanent password authentication
+- Promote existing native email/password signup/signin to official authentication with equal prominence to Google in all environments; retain email as the supported account identifier.
+- Frontend worker owns permanent UI and removal of preview gates/tests; backend worker owns workflow cleanup, docs and live smoke compatibility.
+- Preserve exact Neon branch isolation and pending Google callback confirmation. Next: builder checks, independent auth review, push same PR, deployed browser and real provider verification.
+- Permanent email/password implementation complete: paired login methods, explicit signup/signin, display name, password autocomplete, normal browser suite and no preview gate.
+- Provider read confirms main email/password signup already enabled; no provider settings changed.
+- Builder checks pass: frontend lint/typecheck/build, 14 proxy tests, 4 targeted auth/routing browser tests, 25-test default discovery, 11 workflow tests and 6 helper tests.
+- Independent review requested. Smoke supports auth-only verification to avoid repeating unchanged LLM onboarding work.

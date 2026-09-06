@@ -993,14 +993,18 @@ h1, h2, h3 {
 }
 .google-signin:hover { background: var(--carbon); color: var(--paper-high); }
 .google-logo { flex: 0 0 18px; height: 18px; width: 18px; }
-.developer-preview-auth { border-top: 1px solid var(--carbon); margin: 24px 0 16px; max-width: 480px; padding-top: 18px; }
-.developer-preview-auth summary { cursor: pointer; font-weight: 800; }
-.developer-preview-auth form { display: grid; gap: 8px; margin-top: 18px; }
-.developer-preview-auth label { font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.developer-preview-auth input { background: var(--paper-high); border: 1px solid var(--carbon); color: var(--carbon); font: inherit; min-height: 46px; padding: 8px 12px; }
-.developer-preview-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-.developer-preview-actions button { background: var(--carbon); border: 1px solid var(--carbon); color: var(--paper-high); font-weight: 800; min-height: 44px; padding: 0 16px; }
-.developer-preview-actions button:last-child { background: transparent; color: var(--carbon); }
+.sign-in-methods { display: grid; gap: 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 32px 0 20px; }
+.sign-in-methods > div { border-top: 3px solid var(--carbon); padding-top: 16px; }
+.sign-in-methods h2 { font-size: 24px; margin: 0 0 16px; }
+.sign-in-methods .google-signin { margin: 0; width: 100%; }
+.email-auth-heading { align-items: start; display: flex; flex-wrap: wrap; justify-content: space-between; }
+.email-auth-modes { display: flex; gap: 2px; }
+.email-auth-modes button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--graphite); font-size: 12px; font-weight: 800; min-height: 32px; padding: 0 8px; }
+.email-auth-modes button[aria-pressed="true"] { border-color: var(--signal-blue); color: var(--carbon); }
+.email-auth-option form { display: grid; gap: 8px; }
+.email-auth-option label { font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.email-auth-option input { background: var(--paper-high); border: 1px solid var(--carbon); color: var(--carbon); font: inherit; min-height: 46px; padding: 8px 12px; }
+.email-auth-submit { background: var(--carbon); border: 1px solid var(--carbon); color: var(--paper-high); font-weight: 800; margin-top: 8px; min-height: 52px; padding: 0 16px; width: 100%; }
 .route-loading, .onboarding-loading {
   align-items: center;
   display: flex;
@@ -1173,7 +1177,8 @@ h1, h2, h3 {
  .landing-footer span { flex-basis: 100%; }
  .personal-settings .memory-column, .account-sheet, .personal-settings .account-sheet { grid-template-columns: 1fr; gap: 32px; }
  .account-sheet > *, .personal-settings .source-ledger { grid-column: 1; }
- .sign-in-page h1 { font-size: clamp(54px, 14vw, 80px); }
+ .sign-in-page h1 { font-size: clamp(48px, 13vw, 64px); margin-bottom: 24px; margin-top: 40px; }
+ .sign-in-methods { grid-template-columns: 1fr; }
  .feed-toolbar { align-items: stretch; flex-direction: column; gap: 16px; }
  .feed-toolbar .signal-action { width: 100%; }
  .onboarding-header { min-height: 64px; padding: 0 16px; }

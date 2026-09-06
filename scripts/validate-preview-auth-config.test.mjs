@@ -57,10 +57,9 @@ test("rejects non-preview and unsafe URLs", () => {
   }), /Vercel preview/);
 });
 
-test("preview deployment wires the developer flag at build and runtime and publishes the callback", () => {
+test("preview deployment publishes and validates its branch callback without an auth-mode flag", () => {
   const workflow = readFileSync(new URL("../.github/workflows/preview.yml", import.meta.url), "utf8");
-  assert.match(workflow, /--env DEVELOPER_PREVIEW_AUTH=true/);
-  assert.match(workflow, /--build-env DEVELOPER_PREVIEW_AUTH=true/);
+  assert.doesNotMatch(workflow, /DEVELOPER_PREVIEW_AUTH/);
   assert.match(workflow, /Google OAuth callback:/);
   assert.match(workflow, /validate-preview-auth-config\.mjs/);
 });
