@@ -35,6 +35,14 @@ def ingestion_is_due(
     retry_minutes: int = 30,
     now: datetime | None = None,
 ) -> bool:
+    # A newly followed/library source should start on the next worker poll, not
+    # inherit the last completed batch's six-hour delay. Per-channel cooldowns
+    # and the persisted running lease still gate work inside ingestion.
+    first_sync = conn.execute(
+        "SELECT id FROM tracked_channels WHERE is_active AND last_sync_started_at IS NULL LIMIT 1"
+    ).fetchone()
+    if first_sync:
+        return True
     row = conn.execute(
         """
         SELECT status, started_at, completed_at

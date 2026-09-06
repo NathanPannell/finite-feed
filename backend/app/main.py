@@ -303,7 +303,16 @@ def generate_recommendation(user_id: UUID = Depends(current_user), conn: Connect
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         conn.rollback()
-        raise HTTPException(503, "The recommendation provider is unavailable. Please try again later.") from exc
+        code = f"provider_http_{exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
+        conn.execute(
+            "UPDATE app_users SET delivery_status='waiting',delivery_error=%s WHERE id=%s AND deleted_at IS NULL",
+            (code, user_id),
+        )
+        conn.commit()
+        detail = ("The recommendation service has reached its provider limit. Please try again later."
+                  if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {402, 429}
+                  else "The recommendation provider is unavailable. Please try again later.")
+        raise HTTPException(503, detail) from exc
     return conn.execute(RECOMMENDATION_SELECT + " LIMIT 1", (user_id,)).fetchone()
 
 
