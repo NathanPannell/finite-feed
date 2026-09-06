@@ -40,3 +40,20 @@ Success: Auth-scoped persistent steps/audits, meaningful frontend/backend tests,
 - Independent review found and backend fixed scheduler eligibility before onboarding completion, including final send-lock recheck; account deletion now also clears completion timestamp. Targeted worker/pipeline/account tests: 29 passed.
 - Deliberate constraint: synthesis requires the configured LLM; failure preserves inputs for retry, without inventing a fallback profile.
 - Pending final independent review, PR CI and deployed-browser checks.
+
+## PR milestone
+- Draft PR #40: https://github.com/NathanPannell/finite-feed/pull/40 ; head 992ae1e9be2c40a08b75df60dc02c4891db0a94a.
+- Final integration fixes: success OAuth targets /onboarding; configured legacy accounts return completed state; linked Telegram confirmation is explicit and dashboard-only pauses sends; settings does not request recommendations.
+- Backend targeted final39 passed. Frontend final lint/typecheck/build passed, proxy14/14, focused new3/3. Final full browser23/24 had one unrelated admin Add channel timeout under10-worker load; isolated rerun1/1 passed. Earlier full22/22 passed.
+- Root reviewed settings screenshot and complete question desktop/mobile screenshots.
+- CI run34061437408 and preview run34061437378 in progress; exact head verified. Only local QA captures excluded from code commit.
+- Next: resolve CI/preview failures if any, inspect deployed browser and runtime logs, mark PR ready when evidence complete.
+
+## Final verification and handoff
+- PR #40 remains DRAFT; code at992ae1e9be2c40a08b75df60dc02c4891db0a94a. CI/backend183 passed, frontend browser24 passed, proxy14 passed, deployment scripts6 passed, build/lint/typecheck + offline eval passed. Preview deployment succeeded.
+- Independent quality review closed with no remaining material application findings.
+- Preview https://finite-feed-8rvdrpdi4-nathanpannells-projects.vercel.app ; /ready https://api-pr-40.up.railway.app/ready reported exact head,17 migrations and exact preview CORS origin.
+- Real CUA browser confirmed neutral /app loading then /login with Google logo, legacy /app/settings→/settings→/login, Match Lab landing/review and API-backed pair load. App console logs empty. Browser API lacks direct network inspection; actual route/API outcomes and CI supply network evidence.
+- BLOCKER: Google auth returns400 redirect_uri_mismatch for preview callback https://ep-lingering-star-ar67ueea.neonauth.c-4.us-west-2.aws.neon.tech/app/auth/callback/google . Prior private-beta task documents the same preview OAuth registration dependency. Production/Google OAuth configuration not modified.
+- PR body records exact callback and next action: register preview callback on existing Google OAuth client, repeat authenticated preview onboarding/settings, then mark ready. End-to-end authenticated live verification remains unclaimed; automated flow verification is green.
+- Local screenshots .impeccable/review retained for review; this ledger final outcome remains local to avoid a documentation-only preview redeploy.

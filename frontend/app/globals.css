@@ -993,6 +993,14 @@ h1, h2, h3 {
 }
 .google-signin:hover { background: var(--carbon); color: var(--paper-high); }
 .google-logo { flex: 0 0 18px; height: 18px; width: 18px; }
+.developer-preview-auth { border-top: 1px solid var(--carbon); margin: 24px 0 16px; max-width: 480px; padding-top: 18px; }
+.developer-preview-auth summary { cursor: pointer; font-weight: 800; }
+.developer-preview-auth form { display: grid; gap: 8px; margin-top: 18px; }
+.developer-preview-auth label { font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.developer-preview-auth input { background: var(--paper-high); border: 1px solid var(--carbon); color: var(--carbon); font: inherit; min-height: 46px; padding: 8px 12px; }
+.developer-preview-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.developer-preview-actions button { background: var(--carbon); border: 1px solid var(--carbon); color: var(--paper-high); font-weight: 800; min-height: 44px; padding: 0 16px; }
+.developer-preview-actions button:last-child { background: transparent; color: var(--carbon); }
 .route-loading, .onboarding-loading {
   align-items: center;
   display: flex;

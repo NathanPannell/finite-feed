@@ -11,15 +11,34 @@ function GoogleLogo() {
   return <svg className="google-logo" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.797 2.716v2.258h2.909c1.703-1.568 2.684-3.878 2.684-6.614Z"/><path fill="#34A853" d="M9 18c2.43 0 4.468-.806 5.956-2.181l-2.909-2.258c-.806.54-1.836.859-3.047.859-2.344 0-4.328-1.584-5.037-3.71H.956v2.332A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.963 10.71A5.41 5.41 0 0 1 3.682 9c0-.594.102-1.172.281-1.71V4.958H.956A9 9 0 0 0 0 9c0 1.453.348 2.828.956 4.042l3.007-2.332Z"/><path fill="#EA4335" d="M9 3.58c1.322 0 2.508.454 3.441 1.346l2.581-2.581C13.464.892 11.426 0 9 0A9 9 0 0 0 .956 4.958L3.963 7.29C4.672 5.164 6.656 3.58 9 3.58Z"/></svg>;
 }
 
-export function SignInPrompt() {
-  const [busy, setBusy] = useState(false);
+export function SignInPrompt({ developerPreviewAuth = false }: { developerPreviewAuth?: boolean }) {
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   async function signIn() {
-    setBusy(true); setError("");
+    setBusy("google"); setError("");
     try { const result = await authClient.signIn.social({ provider: "google", callbackURL: `${window.location.origin}/auth/callback` }); if (result.error) throw new Error("Sign-in could not start. Please try again."); }
-    catch { setError("Google sign-in is unavailable right now. Please try again."); setBusy(false); }
+    catch { setError("Google sign-in is unavailable right now. Please try again."); setBusy(""); }
   }
-  return <main className="sign-in-page"><Link className="signal-wordmark" href="/"><span aria-hidden="true">F/</span>Finite Feed</Link><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><button className="google-signin" disabled={busy} onClick={() => void signIn()}><GoogleLogo />{busy ? "Opening Google…" : "Continue with Google"}</button>{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. By continuing, you can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main>;
+  async function submitDeveloperCredentials(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const email = String(form.get("email") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const intent = submitter instanceof HTMLButtonElement ? submitter.value : "sign-in";
+    setBusy(intent); setError("");
+    try {
+      const result = intent === "create"
+        ? await authClient.signUp.email({ email, password, name: "Preview tester" })
+        : await authClient.signIn.email({ email, password });
+      if (result.error) throw new Error();
+      window.location.assign("/onboarding");
+    } catch {
+      setError(intent === "create" ? "Preview account creation failed. Check the details or sign in if this account already exists." : "Preview sign-in failed. Check the email and password, then try again.");
+      setBusy("");
+    }
+  }
+  return <main className="sign-in-page"><Link className="signal-wordmark" href="/"><span aria-hidden="true">F/</span>Finite Feed</Link><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><button className="google-signin" disabled={!!busy} onClick={() => void signIn()}><GoogleLogo />{busy === "google" ? "Opening Google…" : "Continue with Google"}</button>{developerPreviewAuth && <details className="developer-preview-auth"><summary>Developer preview access</summary><p>Create an isolated account for this preview, or sign in with one you already created here.</p><form onSubmit={(event) => void submitDeveloperCredentials(event)}><label htmlFor="preview-email">Email</label><input id="preview-email" name="email" type="email" autoComplete="email" required /><label htmlFor="preview-password">Password</label><input id="preview-password" name="password" type="password" autoComplete="current-password" minLength={8} required /><div className="developer-preview-actions"><button name="intent" value="sign-in" disabled={!!busy}>{busy === "sign-in" ? "Signing in…" : "Sign in"}</button><button name="intent" value="create" disabled={!!busy}>{busy === "create" ? "Creating…" : "Create preview account"}</button></div></form><p className="landing-note">This account and its data stay on the isolated preview branch and expire with it. Use a unique password.</p></details>}{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. By continuing, you can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main>;
 }
 
 export function AccountControls() {

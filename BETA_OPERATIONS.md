@@ -38,4 +38,24 @@ Preferences, follows, recommendation evidence and feedback support the account u
 
 Production and PR35 use a project-owned Google web OAuth client configured directly in Neon. Google must allow each branch's exact `${NEON_AUTH_BASE_URL}/callback/google` URI; a trusted frontend origin in Neon does not replace this Google callback registration. Before testing Google on a new preview branch, register that branch callback in the existing Google client and verify its provider configuration. Keep client secrets in the provider configuration, never in repository files or browser-visible frontend variables. The Next.js auth middleware must exchange the callback verifier before the personal API can receive a session.
 
+The preview workflow posts the exact branch callback in its PR comment. That callback
+belongs to the Neon branch and remains stable across changing Vercel deployment URLs;
+each newly created Neon branch still needs its callback registered with Google. For
+trusted same-repository previews, native email/password test sign-in is enabled only
+when both `DEVELOPER_PREVIEW_AUTH=true` and Vercel's runtime environment is `preview`.
+Those test accounts and their data are isolated to the expiring preview branch. This
+fallback must never use the parent branch Auth endpoint or be enabled in production.
+
+After a preview containing the fallback is deployed, run the opt-in smoke check from
+the linked repository checkout with
+`python scripts/smoke-preview-native-auth.py --preview-url https://finite-feed-…vercel.app`.
+It refuses production and non-Finite-Feed targets, verifies Vercel reports the exact
+deployment as `preview`, submits its generated password through stdin, and keeps its
+session cookie in a private temporary directory. It checks sign-up, sign-out,
+password sign-in and stable identity, then completes all onboarding stages using one
+model request. It verifies the audit export, delivery preferences and dashboard-only
+paused state before deleting its synthetic application account. The isolated Neon Auth identity remains
+until the preview branch closes or reaches its seven-day expiration. If a smoke run
+fails before cleanup, any synthetic records it created expire with that same branch.
+
 The default OpenRouter route tries `google/gemma-4-31b-it:free`, then `google/gemma-4-26b-a4b-it:free`, then `nvidia/nemotron-3-super-120b-a12b:free` inside one request when a provider is unavailable or rate limited. This default route disables optional reasoning to preserve the 350-token JSON response budget. Custom model pins and their reasoning defaults remain exact. Shared account quota exhaustion can still stop every fallback; the app distinguishes daily, minute, and upstream limits without exposing provider payloads, and keeps the persisted request budget.

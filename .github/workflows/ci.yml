@@ -44,6 +44,7 @@ jobs:
           key: arctic-embed-xs-d8c86521100d3556476a063fc2342036d45c106f
       - run: python -m backend.app.migrate
       - run: python -m pytest backend/tests
+      - run: python -m pytest scripts/test_smoke_preview_native_auth.py
       - run: python -m backend.evals.run_recommendation_eval
 
   frontend:
@@ -68,10 +69,12 @@ jobs:
           RAILWAY_API_BASE_URL: http://localhost:8000
       - run: npm run test:proxy
         working-directory: frontend
-      - run: node --test scripts/validate-vercel-auth-location.test.mjs scripts/set-railway-variables.test.mjs
+      - run: node --test scripts/validate-vercel-auth-location.test.mjs scripts/validate-preview-auth-config.test.mjs scripts/set-railway-variables.test.mjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run test:e2e
+        working-directory: frontend
+      - run: npm run test:preview-auth
         working-directory: frontend
 
   deploy-production:
