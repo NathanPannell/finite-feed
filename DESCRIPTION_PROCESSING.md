@@ -7,8 +7,9 @@ embeddings, legacy keyword scoring, model reranking, and Match Lab display.
 ## Rules
 
 The processor normalizes HTML, mojibake, Unicode, control characters, and
-whitespace. It removes chapter/timestamp lines, sponsorship and call-to-action
-lines, standard TED/TEDx boilerplate, URLs, and hashtag markers. A hashtag block
+whitespace. It removes chapter/timestamp lines, sponsorship and identified
+publisher call-to-action lines, standard TED/TEDx boilerplate, URLs, and hashtag
+markers. A hashtag block
 or recognized promotion ends the description only after useful prose has
 already appeared. Standalone source links are skipped without truncating later
 prose, and inline sponsorship tails are removed without losing the preceding
@@ -16,9 +17,12 @@ sentence. Inline links and hashtags are removed from their sentence without
 discarding the surrounding prose. If nothing useful remains, the derived
 description is the empty string.
 
-Semantic fingerprints include `description-v4`, so deployment makes vectors
-built from older raw descriptions stale and the existing backfill rebuilds
-them. The underlying source fingerprint and metadata remain unchanged.
+The publisher rules target URL-backed TED event, membership, and newsletter
+calls to action while preserving substantive discussion of conferences and
+membership. Semantic fingerprints include `description-v5`, so
+deployment makes vectors built from older raw descriptions stale and the
+existing backfill rebuilds them. The underlying source fingerprint and metadata
+remain unchanged.
 
 ## Match Lab language eligibility
 
@@ -56,7 +60,7 @@ Raw database and YouTube IDs were not retained. Each fixture instead carries a
 stable sanitized `source_ref` (`current-sample-*` for the eight reviewed shapes,
 `regression-*` for synthetic bug reproductions), and the evaluator rejects
 missing or duplicate references. `python -m backend.evals.run_description_cleanup_eval`
-now exercises 15 cases covering the original shapes plus standalone sources,
-inline sponsorship, short French/Spanish/English text, and YouTube language-hint
-precedence. The fixtures live in `backend/evals/description_cases.json` and are
-also enforced by pytest.
+now exercises 19 cases covering the original shapes plus standalone sources,
+inline sponsorship, TED publisher promotion and preservation boundaries, short
+French/Spanish/English text, and YouTube language-hint precedence. The fixtures
+live in `backend/evals/description_cases.json` and are also enforced by pytest.
