@@ -14,3 +14,10 @@ Design milestone: preserve existing palette/typography; shared SiteHeader/SiteFo
 
 Verification milestone: lint, typecheck, production build, 13 route-proxy tests and 19 browser tests passed. Independent quality review cleared the final implementation after fixing hidden mobile navigation, canonical link labels, configurable pick-count copy, and flex min-content overflow. New browser journey covers shared chrome at desktop and 320px. Generated design artifacts remain local and are excluded from PR.
 Next: create PR, wait for CI/isolated preview, inspect deployed build and runtime errors.
+
+PR: https://github.com/NathanPannell/finite-feed/pull/41 (initial head 0a55e91189f57b68db90916b77b657a9cda6a689).
+CI run 34061631125: frontend/backend passed. Preview run 34061631114 passed readiness and Match Lab smoke tests. Initial preview: https://finite-feed-o6w0vlt84-nathanpannells-projects.vercel.app.
+Deployed browser: homepage CTA reached signed-out Google sign-in; privacy/navigation loaded; Match Lab fetched a real pair from isolated preview and description expansion worked; no warning/error console logs observed.
+Browser regression caught: mobile/tablet generic masthead-context hiding also hid Match Lab h1. Builder is making a minimal title-preservation fix and 320/800px assertion. Next: verify fix, push, confirm updated CI/preview and title in deployed browser.
+
+Title fix verified: responsive hiding now applies only to decorative tagline context. Five Match Lab browser tests, lint, typecheck and diff-check passed; explicit level-1 heading assertion covers 320px and 800px.

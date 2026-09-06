@@ -19,7 +19,7 @@ export function SiteHeader({ active, action, context }: SiteHeaderProps) {
           <span aria-hidden="true">F/</span>
           Finite Feed
         </Link>
-        <div className="signal-masthead-context">{context ?? <p>Your attention, better spent.</p>}</div>
+        <div className={`signal-masthead-context ${context ? "signal-masthead-context-title" : "signal-masthead-context-tagline"}`}>{context ?? <p>Your attention, better spent.</p>}</div>
         <nav aria-label="Primary navigation"><PrimaryLinks active={active} />{action}</nav>
       </header>
       <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} /></nav>
