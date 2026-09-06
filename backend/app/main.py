@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION
 from contextlib import asynccontextmanager
@@ -12,6 +14,7 @@ from psycopg.types.json import Jsonb
 
 from backend.app.admin import ChannelUrl, resolve_youtube_channel, router as admin_router, upsert_admin_channel
 from backend.app.db import close_pool, connection, open_pool
+from backend.app.deployment import deployed_source_commit
 from backend.app.annotations import AnnotationConflict, annotation_stats, next_annotation, record_annotation
 from backend.app.match_identity import reviewer_identity
 from backend.app.openrouter import provider_failure
@@ -68,14 +71,28 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def worker_readiness(conn: Connection) -> dict[str, str] | None:
+    heartbeat = conn.execute(
+        "SELECT last_seen_at, status, commit_sha FROM worker_heartbeat WHERE worker = 'pipeline'"
+    ).fetchone()
+    if not heartbeat:
+        return None
+    return {
+        "status": heartbeat["status"],
+        "commit": heartbeat["commit_sha"] or "",
+        "last_seen_at": heartbeat["last_seen_at"].isoformat(),
+    }
+
+
 @app.get("/ready")
-def ready(conn: Connection = Depends(connection)) -> dict[str, str | int | list[str]]:
+def ready(conn: Connection = Depends(connection)) -> dict[str, Any]:
     migration_count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()
     return {
         "status": "ready",
-        "commit": settings.app_commit_sha,
+        "commit": deployed_source_commit(settings.app_commit_sha),
         "migrations": migration_count["count"],
         "allowed_origins": settings.allowed_origins,
+        "worker": worker_readiness(conn),
     }
 
 

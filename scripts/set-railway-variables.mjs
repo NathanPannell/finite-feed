@@ -30,6 +30,13 @@ export function variablePlans(mode, environment) {
     MODEL_DAILY_REQUEST_LIMIT: environment.MODEL_DAILY_REQUEST_LIMIT || "40",
     YOUTUBE_DAILY_REQUEST_LIMIT: environment.YOUTUBE_DAILY_REQUEST_LIMIT || "1000",
   };
+  if (mode === "preview") {
+    common.PREVIEW_OWNER_REPOSITORY = required(environment, "GITHUB_REPOSITORY");
+    common.PREVIEW_PULL_REQUEST = required(environment, "PREVIEW_PULL_REQUEST");
+    if (!/^[1-9][0-9]*$/.test(common.PREVIEW_PULL_REQUEST) || target !== `pr-${common.PREVIEW_PULL_REQUEST}`) {
+      throw new Error("Preview PR tag must match the Railway environment");
+    }
+  }
   const optional = ["OPENROUTER_API_KEY", "TELEGRAM_WEBHOOK_SECRET", "DEVELOPER_TELEGRAM_USER_IDS"];
   const remove = [];
   if (mode === "production") {
@@ -54,27 +61,53 @@ export function variablePlans(mode, environment) {
     MATCH_LAB_TARGET_ENVIRONMENT: target,
   };
   if (mode === "preview") apiOnly.PREVIEW_DATABASE_URL_UNPOOLED = required(environment, "PREVIEW_DATABASE_URL_UNPOOLED");
+  const apiRemove = [...remove];
+  const workerRemove = [...remove];
+  if (mode === "preview") {
+    apiRemove.push("DATABASE_URL", "DATABASE_URL_UNPOOLED");
+    workerRemove.push(
+      "DATABASE_URL",
+      "DATABASE_URL_UNPOOLED",
+      "PREVIEW_DATABASE_URL_UNPOOLED",
+      "MATCH_LAB_COOKIE_SECRET",
+    );
+  }
   return [
-    { role: "API", service: api, project, target, values: { ...common, ...apiOnly }, remove },
-    { role: "worker", service: worker, project, target, values: { ...common }, remove },
+    { role: "API", service: api, project, target, values: { ...common, ...apiOnly }, remove: apiRemove },
+    { role: "worker", service: worker, project, target, values: { ...common }, remove: workerRemove },
   ];
 }
 
 export function configureVariables(plans, execute) {
+  const inventories = [];
   for (const plan of plans) {
     const scope = ["--service", plan.service, "--environment", plan.target, "--project", plan.project];
     // Keep the raw response in memory: lists can include secret values and sealed keys.
-    let current;
+    let parsed;
     try {
-      current = JSON.parse(execute(["variable", "list", "--json", ...scope]));
+      parsed = JSON.parse(execute(["variable", "list", "--json", ...scope]));
     } catch {
       throw new Error(`Could not read ${plan.role} variable names; no variables changed for this service`);
     }
-    if (!current || typeof current !== "object" || Array.isArray(current)) throw new Error("Invalid Railway variable listing");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid Railway variable listing");
+    inventories.push({ plan, scope, names: new Set(Object.keys(parsed)) });
+  }
+  for (const { plan, scope, names } of inventories) {
     execute(["variable", "set", ...Object.entries(plan.values).map(([key, value]) => `${key}=${value}`), "--skip-deploys", ...scope]);
     for (const key of plan.remove) {
-      if (Object.hasOwn(current, key)) execute(["variable", "delete", key, ...scope]);
+      if (names.has(key)) execute(["variable", "delete", key, ...scope]);
     }
+  }
+  for (const { plan, scope } of inventories) {
+    let parsed;
+    try {
+      parsed = JSON.parse(execute(["variable", "list", "--json", ...scope]));
+    } catch {
+      throw new Error(`Could not verify ${plan.role} variable isolation`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid Railway variable listing");
+    const forbidden = plan.remove.filter((key) => Object.hasOwn(parsed, key));
+    if (forbidden.length) throw new Error(`${plan.role} variable isolation failed for: ${forbidden.join(", ")}`);
   }
 }
 

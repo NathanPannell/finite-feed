@@ -34,6 +34,8 @@ fi
 
 api_url="https://${domain}"
 expected_origin="${EXPECTED_FRONTEND_ORIGIN:-}"
+require_worker="${REQUIRE_WORKER_READY:-false}"
+max_worker_age="${MAX_WORKER_HEARTBEAT_AGE_SECONDS:-180}"
 last_status=""
 last_commit=""
 last_origin_ready="not-required"
@@ -48,12 +50,28 @@ for _ in $(seq 1 60); do
       last_origin_ready="no"
     fi
   fi
-  if [[ "$last_status" == "ready" ]] && [[ "$last_commit" == "$EXPECTED_COMMIT_SHA" ]] && [[ "$last_origin_ready" != "no" ]]; then
+  readiness_args=(--expected-commit "$EXPECTED_COMMIT_SHA" --max-worker-age-seconds "$max_worker_age")
+  [[ -n "$expected_origin" ]] && readiness_args+=(--expected-origin "$expected_origin")
+  [[ "$require_worker" == "true" ]] && readiness_args+=(--require-worker)
+  if node scripts/validate-deployment-readiness.mjs "${readiness_args[@]}" <<<"$response" 2>/dev/null; then
     echo "api_url=${api_url}" >> "$GITHUB_OUTPUT"
     exit 0
   fi
   sleep 10
 done
 
-echo "Railway API never reported the expected ready state at ${api_url}; status=${last_status:-unavailable}, commit=${last_commit:-unavailable}, frontend-origin-ready=${last_origin_ready}" >&2
+worker_status="$(jq -r '.worker.status // "unavailable"' <<<"${response:-{}}" 2>/dev/null || true)"
+worker_commit="$(jq -r '.worker.commit // "unavailable"' <<<"${response:-{}}" 2>/dev/null || true)"
+artifact_dir="${DEPLOYMENT_ARTIFACT_DIR:-artifacts}"
+artifact_name="${READINESS_ARTIFACT_NAME:-railway-readiness}"
+mkdir -p "$artifact_dir"
+jq -n \
+  --arg expected_commit "$EXPECTED_COMMIT_SHA" \
+  --arg api_status "${last_status:-unavailable}" \
+  --arg api_commit "${last_commit:-unavailable}" \
+  --arg worker_status "${worker_status:-unavailable}" \
+  --arg worker_commit "${worker_commit:-unavailable}" \
+  '{expected_commit:$expected_commit,api_status:$api_status,api_commit:$api_commit,worker_status:$worker_status,worker_commit:$worker_commit}' \
+  > "$artifact_dir/${artifact_name}.json"
+echo "Railway API never reported the expected ready state at ${api_url}; status=${last_status:-unavailable}, commit=${last_commit:-unavailable}, frontend-origin-ready=${last_origin_ready}, worker-status=${worker_status:-unavailable}, worker-commit=${worker_commit:-unavailable}" >&2
 exit 1

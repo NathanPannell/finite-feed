@@ -11,6 +11,8 @@ Read `README.md`, `ARCHITECTURE.md`, and `INSTALLATION_ISSUES.md` before changin
 
 ## Operational guardrails
 
+- Push feature branches and merge passing PRs; never push directly to `main`. Do not bypass required checks or branch protection.
+
 - Runtime credentials live in GitHub Actions secrets and are forwarded by the workflows. Never print, commit, or copy their values into documentation.
 - `OPENROUTER_MODEL` is a non-secret repository variable pinned to a general-purpose free model. The current key is limited to free models and roughly 50 requests/day; prefer offline evals and make live calls deliberately.
 - Scheduled failures have a persisted one-hour retry gate. Only model-backed pending recommendations may be delivered, delivery is serialized, and delivery events are DB-idempotent.
