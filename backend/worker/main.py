@@ -159,16 +159,25 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
                         if not active or active["delivery_paused"] or active["deleted_at"]:
                             break
                         recommendation_id = get_or_create_pending_recommendation(conn, settings, user["id"], require_model=True)
+                        # Generation may commit and call the model. Lock the current account
+                        # only after it returns, serializing this send against unlink/deletion.
+                        current = conn.execute(
+                            "SELECT telegram_user_id, delivery_paused, deleted_at FROM app_users WHERE id = %s FOR UPDATE",
+                            (user["id"],),
+                        ).fetchone()
+                        if not current or current["delivery_paused"] or current["deleted_at"] or current["telegram_user_id"] is None:
+                            conn.rollback()
+                            break
                         if lock_recommendation_for_delivery(conn, user["id"], recommendation_id):
-                            bot.send_recommendation(conn, recommendation_id, user["telegram_user_id"], settings.public_app_url)
+                            bot.send_recommendation(conn, recommendation_id, current["telegram_user_id"], settings.public_app_url)
                             mark_recommendation_delivered(conn, user["id"], recommendation_id, scheduled=True)
-                    conn.execute("UPDATE app_users SET delivery_status = 'ready', delivery_error = NULL WHERE id = %s", (user["id"],))
+                    conn.execute("UPDATE app_users SET delivery_status = 'ready', delivery_error = NULL WHERE id = %s AND deleted_at IS NULL", (user["id"],))
                     conn.commit()
                 except Exception as exc:
                     conn.rollback()
                     # Provider clients sanitize errors; store only class for unexpected exceptions.
                     message = str(exc)[:300] if isinstance(exc, ValueError) else type(exc).__name__
-                    conn.execute("UPDATE app_users SET delivery_status = 'waiting', delivery_error = %s WHERE id = %s", (message, user["id"]))
+                    conn.execute("UPDATE app_users SET delivery_status = 'waiting', delivery_error = %s WHERE id = %s AND deleted_at IS NULL", (message, user["id"]))
                     conn.commit()
                     logger.warning("Delivery deferred for user %s (%s)", user["id"], type(exc).__name__)
         except Exception as exc:

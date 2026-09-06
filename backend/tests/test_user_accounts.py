@@ -6,6 +6,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 from starlette.requests import Request
 
@@ -15,10 +16,46 @@ from backend.app.schemas import FeedbackCreate
 from backend.app.user_auth import current_user, verified_identity
 
 
+def test_every_personal_api_denies_anonymous_before_database_access():
+    from backend.app.main import app
+    client = TestClient(app)
+    record = str(uuid4())
+    for method, path in (
+        ("GET", "/api/account"), ("GET", "/api/account/export"),
+        ("DELETE", "/api/account"), ("POST", "/api/account/telegram-link"),
+        ("DELETE", "/api/account/telegram"), ("PUT", "/api/account/delivery"),
+        ("GET", "/api/profile"), ("PUT", "/api/profile"),
+        ("PUT", "/api/profile/delivery"), ("PUT", "/api/profile/memory"),
+        ("GET", "/api/channels"), ("POST", "/api/channels"),
+        ("POST", "/api/channels/resolve"), ("DELETE", f"/api/channels/{record}"),
+        ("GET", "/api/recommendations"), ("POST", "/api/recommendations/generate"),
+        ("POST", f"/api/recommendations/{record}/feedback"),
+        ("GET", f"/r/{record}"), ("GET", "/api/metrics"), ("GET", "/api/pipeline/status"),
+    ):
+        response = client.request(method, path)
+        assert response.status_code == 401, (method, path, response.text)
+
+
 def test_anonymous_identity_fails_before_database():
     with pytest.raises(HTTPException) as error:
         verified_identity(Request({"type": "http", "method": "GET", "headers": []}))
     assert error.value.status_code == 401
+
+
+def test_unrelated_cookies_never_reach_auth_provider(monkeypatch):
+    from backend.app import user_auth
+    from backend.app.settings import Settings
+    monkeypatch.setattr(user_auth, "get_settings", lambda: Settings(NEON_AUTH_BASE_URL="https://auth.example/auth"))
+    def upstream(*args, **kwargs):
+        assert kwargs["headers"]["Cookie"] == "__Secure-neon-auth.session_token=test-session"
+        assert kwargs["params"] == {"disableCookieCache": "true"}
+        class Reply:
+            def raise_for_status(self): pass
+            def json(self): return None
+        return Reply()
+    monkeypatch.setattr(user_auth.httpx, "get", upstream)
+    with pytest.raises(HTTPException):
+        verified_identity(Request({"type": "http", "method": "GET", "headers": [(b"cookie", b"_vercel_jwt=private; __Secure-neon-auth.session_token=test-session; unrelated=private")]}))
 
 
 @pytest.mark.parametrize("data", [None, {}, {"user": {"id": "a"}, "session": {"userId": "b", "expiresAt": "2099-01-01T00:00:00Z"}}, {"user": {"id": "a"}, "session": {"userId": "a", "expiresAt": "2000-01-01T00:00:00Z"}}])
@@ -31,7 +68,7 @@ def test_invalid_revoked_expired_session_denied(monkeypatch, data):
         def json(self): return data
     monkeypatch.setattr(user_auth.httpx, "get", lambda *a, **kw: Reply())
     with pytest.raises(HTTPException) as error:
-        verified_identity(Request({"type": "http", "method": "GET", "headers": [(b"cookie", b"session=invalid")]}))
+        verified_identity(Request({"type": "http", "method": "GET", "headers": [(b"cookie", b"__Secure-neon-auth.session_token=invalid")]}))
     assert error.value.status_code == 401
 
 

@@ -164,7 +164,7 @@ def generate_recommendation(
     if require_model and not settings.openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY is required")
     profile = conn.execute(
-        "SELECT preference_statement FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
+        "SELECT id, preference_statement FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
         (user_id,),
     ).fetchone()
     if not profile:
@@ -250,6 +250,25 @@ def generate_recommendation(
         "shortlist_size": len(shortlist),
         "candidate_video_ids": [item.row["youtube_video_id"] for item in shortlist],
     }
+    # The provider reservation commits before its HTTP call. Reacquire the account
+    # lock before writing so a completed deletion or preference change wins.
+    account = conn.execute("SELECT deleted_at FROM app_users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+    if not account or account["deleted_at"]:
+        raise ValueError("Account is no longer active")
+    current_profile = conn.execute(
+        "SELECT id FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1", (user_id,),
+    ).fetchone()
+    if not current_profile or current_profile["id"] != profile["id"]:
+        raise ValueError("Your preferences changed. Please request a new recommendation.")
+    eligible = conn.execute(
+        """SELECT v.id FROM videos v JOIN tracked_channels c ON c.id = v.tracked_channel_id
+        JOIN user_channel_follows f ON f.channel_id = c.id
+        WHERE v.id = %s AND f.user_id = %s AND c.is_active AND v.is_available
+          AND COALESCE(v.default_audio_language, v.default_language, 'en') ~* '^en(-|$)'
+        FOR SHARE OF v, c, f""", (selected.row["id"], user_id),
+    ).fetchone()
+    if not eligible:
+        raise ValueError("Your sources changed. Please request a new recommendation.")
     recommendation_id = uuid4()
     conn.execute(
         "INSERT INTO recommendations (id, user_id, video_id, rationale, evidence) VALUES (%s, %s, %s, %s, %s)",

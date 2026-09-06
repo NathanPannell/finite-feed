@@ -217,7 +217,7 @@ def resolve_public_channel(
         details = resolve_youtube_channel(str(payload.url), settings)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail="YouTube channel lookup failed. Try again.") from exc
     existing = conn.execute(
         "SELECT f.user_id, c.is_active FROM tracked_channels c JOIN user_channel_follows f ON f.channel_id=c.id WHERE c.youtube_channel_id = %s AND f.user_id=%s",
@@ -256,7 +256,7 @@ def add_channel(payload: ChannelCreate, user_id: UUID = Depends(current_user), c
     except ValueError as exc:
         conn.rollback()
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         conn.rollback()
         raise HTTPException(status_code=502, detail="YouTube channel lookup failed. Try again.") from exc
 
@@ -408,7 +408,7 @@ def pipeline_status(user_id: UUID = Depends(current_user), conn: Connection = De
 
 
 def _telegram_user(conn: Connection, chat_id: int, developer: bool):
-    row = conn.execute("SELECT id FROM app_users WHERE telegram_user_id = %s AND deleted_at IS NULL", (chat_id,)).fetchone()
+    row = conn.execute("SELECT id FROM app_users WHERE telegram_user_id = %s AND deleted_at IS NULL FOR UPDATE", (chat_id,)).fetchone()
     return row["id"] if row else None
 
 
@@ -490,14 +490,45 @@ def telegram_webhook(
         return {"ok": True}
     text = str(message.get("text", "")).strip()
     if text == "/recommend":
+        claimed = conn.execute(
+            """UPDATE app_users SET last_delivery_attempt_at = NOW()
+            WHERE id = %s AND NOT delivery_paused AND deleted_at IS NULL
+              AND telegram_user_id = %s
+              AND (last_delivery_attempt_at IS NULL OR last_delivery_attempt_at <= NOW() - (%s * INTERVAL '1 minute'))
+            RETURNING id""", (user_id, chat_id, settings.delivery_retry_minutes),
+        ).fetchone()
+        conn.commit()  # Persist both update deduplication and a bounded provider retry gate.
+        if not claimed:
+            bot.send_text(chat_id, "Delivery is paused or a recent request is still cooling down. Use /resume if paused, or try again later.")
+            return {"ok": True}
         try:
             recommendation_id = get_or_create_pending_recommendation(conn, settings, user_id, require_model=True)
+            current = conn.execute(
+                "SELECT telegram_user_id, delivery_paused, deleted_at FROM app_users WHERE id = %s FOR UPDATE", (user_id,),
+            ).fetchone()
+            if not current or current["deleted_at"] or current["delivery_paused"] or current["telegram_user_id"] != chat_id:
+                conn.rollback()
+                return {"ok": True}
             if lock_recommendation_for_delivery(conn, user_id, recommendation_id):
-                bot.send_recommendation(conn, recommendation_id, chat_id, settings.public_app_url)
+                bot.send_recommendation(conn, recommendation_id, current["telegram_user_id"], settings.public_app_url)
                 mark_recommendation_delivered(conn, user_id, recommendation_id, scheduled=False)
-        except Exception:
-            _forget_telegram_update(conn, bot_kind, update_id)
-            raise
+        except Exception as exc:
+            conn.rollback()
+            # The command is handled once; another explicit request can retry after
+            # cooldown, reusing any persisted pending pick rather than spending again.
+            conn.execute(
+                "UPDATE app_users SET delivery_status = 'waiting', delivery_error = %s WHERE id = %s AND deleted_at IS NULL",
+                (str(exc)[:300] if isinstance(exc, ValueError) else "Recommendation service temporarily unavailable", user_id),
+            )
+            current = conn.execute(
+                "SELECT telegram_user_id, delivery_paused, deleted_at FROM app_users WHERE id = %s FOR UPDATE", (user_id,),
+            ).fetchone()
+            if current and not current["deleted_at"] and not current["delivery_paused"] and current["telegram_user_id"] == chat_id:
+                try:
+                    bot.send_text(chat_id, str(exc)[:300] if isinstance(exc, ValueError) else "Your request is saved. Delivery is temporarily unavailable; try again after the cooldown.")
+                except Exception:
+                    pass  # A failed notification must not replay the expensive command.
+            conn.commit()
     elif text == "/preferences":
         current = conn.execute(
             "SELECT preference_statement FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",

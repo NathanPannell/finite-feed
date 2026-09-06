@@ -13,9 +13,11 @@ async function proxy(request: Request, context: Context) {
   const base = process.env.RAILWAY_API_BASE_URL;
   if (!base) return Response.json({ detail: "API is not configured" }, { status: 503 });
   try {
+    const sessionCookie = (request.headers.get("cookie") ?? "").split(";")
+      .map((part) => part.trim()).filter((part) => /^(?:__Secure-)?neon-auth\.session_token=/.test(part)).join("; ");
     const response = await fetch(new URL(path.startsWith("r/") ? `/${path}` : `/api/${path}`, base), {
       method: request.method,
-      headers: { Cookie: request.headers.get("cookie") ?? "", "Content-Type": "application/json" },
+      headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
       body: request.method === "GET" ? undefined : await request.arrayBuffer(),
       redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(90_000),
     });

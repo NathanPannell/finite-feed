@@ -1,4 +1,5 @@
 from datetime import datetime
+from contextlib import contextmanager
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
@@ -11,6 +12,7 @@ from psycopg.types.json import Jsonb
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator, model_validator
 
 from backend.app.admin_auth import require_admin
+from backend.app.budgets import reserve_request
 from backend.app.db import connection
 from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION
 from backend.app.embeddings import configured_embedder
@@ -87,7 +89,11 @@ def parse_channel_reference(url: str) -> tuple[str, str]:
 
 def resolve_youtube_channel(url: str, settings: Settings) -> dict[str, Any]:
     filter_name, filter_value = parse_channel_reference(url)
-    client = YouTubeClient(settings.youtube_api_key)
+    def reserve():
+        # A separate transaction persists quota without committing account edits.
+        with contextmanager(connection)() as budget_conn:
+            reserve_request(budget_conn, "youtube", settings.youtube_daily_request_limit)
+    client = YouTubeClient(settings.youtube_api_key, reserve_request=reserve)
     try:
         if filter_name == "video":
             videos = client._get("/videos", part="snippet", id=filter_value).get("items", [])
@@ -414,7 +420,7 @@ def resolve_channel(payload: ChannelUrl, settings: Settings = Depends(get_settin
         return resolve_youtube_channel(str(payload.url), settings)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail="YouTube channel resolution failed") from exc
 
 
@@ -442,7 +448,7 @@ def add_channel(
     except ValueError as exc:
         conn.rollback()
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         conn.rollback()
         raise HTTPException(status_code=502, detail="YouTube channel resolution failed") from exc
     return {**_channel_response(row), "reactivated": reactivated}

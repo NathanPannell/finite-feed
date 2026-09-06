@@ -119,3 +119,11 @@ def test_memory_update_creates_one_revision_without_rewriting_delivery() -> None
     assert conn.preference_inserts == 1
     assert conn.revision_events == 1
     assert conn.commits == 1
+
+
+def test_delivery_updates_timezone_and_hour_without_preference_revision():
+    conn = ProfileConnection()
+    saved = update_delivery(DeliveryUpdate(cadence_days=[1], recommendation_count=2, timezone="Europe/London", delivery_hour=11), user_id=uuid4(), conn=conn)
+    assert saved["timezone"] == "Europe/London"
+    assert saved["delivery_hour"] == 11
+    assert conn.preference_inserts == 0

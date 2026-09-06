@@ -29,7 +29,7 @@ def test_scoped_profile_updates_normalize_without_accepting_hidden_fields() -> N
         DeliveryUpdate(
             cadence_days=[2, 5],
             recommendation_count=3,
-            timezone="Stale/Timezone",
+            preference_statement="This is not a delivery field",
         )
 
 
@@ -41,3 +41,8 @@ def test_annotation_rejects_client_controlled_reviewer_identity() -> None:
             annotator_id="50000000-0000-4000-8000-000000000001",
             label="yes",
         )
+
+
+def test_delivery_rejects_invalid_timezone():
+    with pytest.raises(ValidationError, match="IANA timezone"):
+        DeliveryUpdate(cadence_days=[1], recommendation_count=1, timezone="Stale/Timezone")

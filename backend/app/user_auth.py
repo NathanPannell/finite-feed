@@ -15,7 +15,10 @@ def verified_identity(request: Request) -> dict:
     origin = request.headers.get("origin")
     if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin not in settings.allowed_origins:
         raise HTTPException(403, "Invalid request origin")
-    cookie = request.headers.get("cookie", "")
+    cookie = "; ".join(part.strip() for part in request.headers.get("cookie", "").split(";")
+                       if part.strip().split("=", 1)[0] in {
+                           "__Secure-neon-auth.session_token", "neon-auth.session_token",
+                       })
     if not cookie:
         raise HTTPException(401, "Sign in to continue")
     if not settings.neon_auth_base_url:

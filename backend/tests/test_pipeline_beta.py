@@ -50,7 +50,8 @@ def test_telegram_failure_never_exposes_token(monkeypatch):
     assert "SECRET" not in str(exc.value)
 
 
-def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch):
+@pytest.mark.parametrize("current_chat", [None, "healthy", "relinked-chat"])
+def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch, current_chat):
     from contextlib import contextmanager
     from backend.worker import main as worker
     from backend.app.settings import Settings
@@ -63,7 +64,7 @@ def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch
                 return SimpleNamespace(fetchall=lambda: users)
             if "COUNT(*)" in query:
                 return SimpleNamespace(fetchone=lambda: {"count": 1})
-            return SimpleNamespace(fetchone=lambda: {"delivery_paused": False, "deleted_at": None})
+            return SimpleNamespace(fetchone=lambda: {"delivery_paused": False, "deleted_at": None, "telegram_user_id": current_chat})
         def commit(self):
             pass
         def rollback(self):
@@ -84,7 +85,7 @@ def test_delivery_continues_after_recipient_failure_and_honors_count(monkeypatch
     monkeypatch.setattr(worker, "mark_recommendation_delivered", lambda *args, **kwargs: None)
     monkeypatch.setattr(worker, "TelegramBot", lambda _: SimpleNamespace(send_recommendation=lambda *args: sent.append(args[2])))
     worker.run_delivery_pass(Pool())
-    assert sent == ["healthy", "healthy"]
+    assert sent == ([current_chat, current_chat] if current_chat is not None else [])
 
 
 def test_persisted_quota_counts_failures_and_stops_at_limit():
@@ -121,3 +122,95 @@ def test_feedback_changes_ranking_with_bounded_influence():
     assert apply_feedback([pottery, football], more, Encoder())[0].row["title"] == "football"
     assert apply_feedback([football, pottery], less, Encoder())[0].row["title"] == "pottery"
     assert apply_feedback([football], more, Encoder())[0].score <= football.score + 0.12
+
+
+@pytest.mark.parametrize("mutation", ["delete", "preferences", "unfollow"])
+def test_generation_rechecks_account_after_provider_call(monkeypatch, mutation):
+    import os
+    from uuid import uuid4
+    import psycopg
+    from psycopg.rows import dict_row
+    from backend.app import recommendations as recs
+    from backend.app.settings import Settings
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    user_id, video_id, profile_id = uuid4(), uuid4(), uuid4()
+    monkeypatch.setattr(recs, "reserve_request", lambda connection, *args: connection.commit())
+    with psycopg.connect(database_url, row_factory=dict_row) as conn, psycopg.connect(database_url, row_factory=dict_row) as other:
+        channel_id = conn.execute("SELECT id FROM tracked_channels LIMIT 1").fetchone()["id"]
+        conn.execute("INSERT INTO app_users (id, display_name) VALUES (%s, 'Concurrency test')", (user_id,))
+        conn.execute("INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source) VALUES (%s, %s, 1, 'football', 'football', 'onboarding')", (profile_id, user_id))
+        conn.execute("INSERT INTO user_channel_follows (user_id, channel_id) VALUES (%s, %s)", (user_id, channel_id))
+        conn.execute("INSERT INTO videos (id, youtube_video_id, tracked_channel_id, channel_name, title, youtube_url) VALUES (%s, %s, %s, 'test', 'football', 'https://youtu.be/test')", (video_id, str(video_id), channel_id))
+        conn.commit()
+        video = {"id": video_id, "youtube_video_id": str(video_id), "title": "football", "speaker": None, "channel_name": "test", "description": "football", "published_at": None}
+        monkeypatch.setattr(recs, "retrieve_shortlist", lambda *args, **kwargs: [recs.ScoredVideo(video, 0.9, 0, 0.648)])
+        def choose(*args):
+            other.execute("SET LOCAL lock_timeout = '1s'")
+            other.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,))
+            if mutation == "delete":
+                other.execute("UPDATE app_users SET deleted_at = NOW() WHERE id = %s", (user_id,))
+                other.execute("DELETE FROM preference_versions WHERE user_id = %s", (user_id,))
+            elif mutation == "preferences":
+                other.execute("INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source) VALUES (%s, %s, 2, 'pottery', 'pottery', 'dashboard')", (uuid4(), user_id))
+            else:
+                other.execute("DELETE FROM user_channel_follows WHERE user_id = %s", (user_id,))
+            other.commit()
+            return SimpleNamespace(video_id=str(video_id), rationale="a choice", model="test")
+        monkeypatch.setattr(recs, "OpenRouterClient", lambda *args: SimpleNamespace(choose=choose, close=lambda: None))
+        encoder = SimpleNamespace(model_name="test", model_revision="test", dimensions=384)
+        try:
+            # Match the endpoint's account lock before quota reservation releases it.
+            conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,))
+            with pytest.raises(ValueError, match="no longer active|preferences changed|sources changed"):
+                recs.generate_recommendation(conn, Settings(_env_file=None, OPENROUTER_API_KEY="test"), user_id, True, encoder)
+            conn.rollback()
+            assert conn.execute("SELECT COUNT(*) AS count FROM recommendations WHERE user_id = %s", (user_id,)).fetchone()["count"] == 0
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id = %s", (user_id,))
+            conn.execute("DELETE FROM videos WHERE id = %s", (video_id,))
+            conn.commit()
+
+
+@pytest.mark.parametrize("outcome", ["abstain", "unavailable", "unlink"])
+def test_telegram_command_is_handled_once_and_rechecks_unlink(monkeypatch, outcome):
+    import os
+    from uuid import uuid4
+    import psycopg
+    from psycopg.rows import dict_row
+    from backend.app import main as api
+    from backend.app.settings import Settings
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    user_id, chat_id, update_id = uuid4(), uuid4().int % (2**62), uuid4().int % (2**62)
+    calls, messages = [], []
+    monkeypatch.setattr(api, "settings", Settings(_env_file=None, TELEGRAM_WEBHOOK_SECRET="test", TELEGRAM_PRODUCTION_BOT_TOKEN="test"))
+    monkeypatch.setattr(api, "TelegramBot", lambda *args: SimpleNamespace(send_text=lambda *args: messages.append(args), send_recommendation=lambda *args: pytest.fail("must not send a recommendation")))
+    with psycopg.connect(database_url, row_factory=dict_row) as conn, psycopg.connect(database_url, row_factory=dict_row) as other:
+        conn.execute("INSERT INTO app_users (id, display_name, telegram_user_id) VALUES (%s, 'Webhook test', %s)", (user_id, chat_id))
+        conn.commit()
+        def generate(*args, **kwargs):
+            calls.append(1)
+            if outcome == "abstain":
+                raise ValueError("No strong match this time")
+            if outcome == "unavailable":
+                raise RuntimeError("provider unavailable")
+            other.execute("SET LOCAL lock_timeout = '1s'")
+            other.execute("UPDATE app_users SET telegram_user_id = NULL WHERE id = %s", (user_id,))
+            other.commit()
+            return uuid4()
+        monkeypatch.setattr(api, "get_or_create_pending_recommendation", generate)
+        update = {"update_id": update_id, "message": {"chat": {"id": chat_id, "type": "private"}, "text": "/recommend"}}
+        try:
+            assert api.telegram_webhook("production", update, "test", conn) == {"ok": True}
+            assert api.telegram_webhook("production", update, "test", conn) == {"ok": True, "duplicate": True}
+            assert len(calls) == 1
+            assert len(messages) == (0 if outcome == "unlink" else 1)
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM telegram_updates WHERE bot_kind = 'production' AND update_id = %s", (update_id,))
+            conn.execute("DELETE FROM app_users WHERE id = %s", (user_id,))
+            conn.commit()

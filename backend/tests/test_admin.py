@@ -94,8 +94,9 @@ def test_video_url_resolves_its_owning_channel(monkeypatch) -> None:
     calls = []
 
     class FakeYouTubeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, reserve_request=None):
             assert api_key == "test-key"
+            assert callable(reserve_request)
 
         def _get(self, path, **params):
             calls.append((path, params))
