@@ -1,6 +1,6 @@
 import { expect, Page, Route, test } from "@playwright/test";
 
-const apiOrigin = "http://api.finite-feed.test";
+
 
 function json(route: Route, payload: unknown) {
   const appOrigin = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3107"}`;
@@ -18,11 +18,11 @@ async function mockPublicApi(page: Page) {
   let profilePayload: Record<string, unknown> | null = null;
   let memoryPayload: Record<string, unknown> | null = null;
   let channelPayload: Record<string, unknown> | null = null;
-  await page.route(apiOrigin + "/**", async (route) => {
+  await page.route("**/api/personal/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
 
-    if (/\/api\/recommendations\/[^/]+\/feedback$/.test(url.pathname)) {
+    if (/\/api\/personal\/recommendations\/[^/]+\/feedback$/.test(url.pathname)) {
       feedbackId = url.pathname.split("/").at(-2) ?? "";
       const rating = request.postDataJSON().rating;
       return json(route, {
@@ -39,11 +39,11 @@ async function mockPublicApi(page: Page) {
       });
     }
 
-    if (url.pathname === "/api/recommendations/generate") {
+    if (url.pathname === "/api/personal/recommendations/generate") {
       return json(route, {});
     }
 
-    if (url.pathname === "/api/profile/delivery" && request.method() === "PUT") {
+    if (url.pathname === "/api/personal/profile/delivery" && request.method() === "PUT") {
       const payload = request.postDataJSON() as Record<string, unknown>;
       profilePayload = payload;
       return json(route, {
@@ -57,7 +57,7 @@ async function mockPublicApi(page: Page) {
       });
     }
 
-    if (url.pathname === "/api/profile/memory" && request.method() === "PUT") {
+    if (url.pathname === "/api/personal/profile/memory" && request.method() === "PUT") {
       const payload = request.postDataJSON() as Record<string, unknown>;
       memoryPayload = payload;
       return json(route, {
@@ -71,7 +71,7 @@ async function mockPublicApi(page: Page) {
       });
     }
 
-    if (url.pathname === "/api/profile") {
+    if (url.pathname === "/api/personal/profile") {
       return json(route, {
         preference_statement: "Rigorous ideas about systems, human judgment, and better decisions.",
         timezone: "America/Los_Angeles",
@@ -83,7 +83,7 @@ async function mockPublicApi(page: Page) {
       });
     }
 
-    if (url.pathname === "/api/channels/resolve") {
+    if (url.pathname === "/api/personal/channels/resolve") {
       const submittedUrl = String(request.postDataJSON().url);
       if (submittedUrl.includes("missing")) {
         await new Promise((resolve) => setTimeout(resolve, 750));
@@ -109,23 +109,23 @@ async function mockPublicApi(page: Page) {
       });
     }
 
-    if (/\/api\/channels\/[^/]+$/.test(url.pathname) && request.method() === "DELETE") {
+    if (/\/api\/personal\/channels\/[^/]+$/.test(url.pathname) && request.method() === "DELETE") {
       return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } });
     }
 
-    if (url.pathname === "/api/channels" && request.method() === "POST") {
+    if (url.pathname === "/api/personal/channels" && request.method() === "POST") {
       channelPayload = request.postDataJSON();
       return json(route, { id: "channel-3", name: "Practical Engineering", url: "https://www.youtube.com/channel/UC123", thumbnail_url: "https://images.example.test/channel.jpg", is_default: false });
     }
 
-    if (url.pathname === "/api/channels") {
+    if (url.pathname === "/api/personal/channels") {
       return json(route, [
         { id: "channel-1", name: "TED", url: "https://youtube.com/@ted", thumbnail_url: null, is_default: true },
         { id: "channel-2", name: "MIT OpenCourseWare", url: "https://youtube.com/@mitocw", thumbnail_url: null, is_default: false },
       ]);
     }
 
-    if (url.pathname === "/api/recommendations") {
+    if (url.pathname === "/api/personal/recommendations") {
       return json(route, [
         {
           id: "rec-1",
@@ -154,6 +154,8 @@ async function mockPublicApi(page: Page) {
       ]);
     }
 
+    if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "beta@example.test", display_name: "Beta reader", telegram_connected: false, delivery_paused: false});
+    if (url.pathname === "/api/personal/account/preferences") return json(route, []);
     return json(route, {});
   });
   return {
@@ -164,18 +166,15 @@ async function mockPublicApi(page: Page) {
   };
 }
 
-test("renders thumbnail-led recommendations, separated preferences, and semantic feedback", async ({ page }) => {
+test("renders personal recommendations and semantic feedback", async ({ page }) => {
   const captured = await mockPublicApi(page);
-  await page.goto("/");
+  await page.goto("/app");
 
-  await expect(page.getByRole("heading", { name: /Fewer things/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Your next/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "How to make hard choices" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The architecture of attention" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Match Lab", exact: true })).toHaveAttribute("href", "/match");
-  await expect(page.getByRole("link", { name: "Watch How to make hard choices on YouTube" })).toHaveAttribute("href", apiOrigin + "/r/rec-1");
-  await expect(page.getByRole("heading", { name: "Delivery preferences" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Preference memory" })).toBeVisible();
-  await expect(page.getByText("Rigorous ideas about systems, human judgment, and better decisions.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Watch How to make hard choices on YouTube" })).toHaveAttribute("href", "/api/personal/r/rec-1");
   await expect(page.getByRole("heading", { name: "Signal quality" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Not useful" }).first()).toBeVisible();
 
@@ -184,18 +183,18 @@ test("renders thumbnail-led recommendations, separated preferences, and semantic
   expect(captured.feedbackId()).toBe("rec-1");
 });
 
-test("saves delivery values without exposing time controls and resolves a URL-only source", async ({ page }) => {
+test("saves delivery schedule and resolves a URL-only source", async ({ page }) => {
   const captured = await mockPublicApi(page);
-  await page.goto("/");
+  await page.goto("/app/settings");
 
-  await expect(page.getByLabel("Hour")).toHaveCount(0);
-  await expect(page.getByLabel("Time zone")).toHaveCount(0);
+  await expect(page.getByLabel("Delivery hour (local time)")).toHaveValue("9");
+  await expect(page.getByLabel("Timezone")).toHaveValue("America/Los_Angeles");
   await expect(page.getByRole("button", { name: "Decrease picks" })).toBeDisabled();
   await expect(page.getByRole("status", { name: "1 pick" })).toBeVisible();
   await page.getByRole("button", { name: "Increase picks" }).click();
   await expect(page.getByRole("status", { name: "2 picks" })).toBeVisible();
   await page.getByRole("button", { name: "Save preferences" }).click();
-  expect(captured.profilePayload()).toEqual({ cadence_days: [2, 5], recommendation_count: 2 });
+  expect(captured.profilePayload()).toEqual({ cadence_days: [2, 5], recommendation_count: 2, timezone: "America/Los_Angeles", delivery_hour: 9 });
 
   const sourceUrl = "https://youtu.be/practical";
   await page.getByLabel("YouTube URL").fill(sourceUrl);
@@ -208,10 +207,10 @@ test("saves delivery values without exposing time controls and resolves a URL-on
 
 test("saves preference memory with an optimistic version and no delivery fields", async ({ page }) => {
   const captured = await mockPublicApi(page);
-  await page.goto("/");
+  await page.goto("/app/settings");
 
   await page.getByRole("button", { name: "Shape memory" }).click();
-  await page.getByLabel("Update preference memory").fill("Systems thinking with practical evidence.");
+  await page.getByLabel("Your interests and exclusions").fill("Systems thinking with practical evidence.");
   await page.getByRole("button", { name: "Save memory" }).click();
 
   expect(captured.memoryPayload()).toEqual({
@@ -223,7 +222,7 @@ test("saves preference memory with an optimistic version and no delivery fields"
 
 test("shows invalid, lookup failure, duplicate, and removable-default source states", async ({ page }) => {
   await mockPublicApi(page);
-  await page.goto("/");
+  await page.goto("/app/settings");
   const input = page.getByLabel("YouTube URL");
 
   await input.fill("https://example.com/not-youtube");
@@ -244,12 +243,12 @@ test("shows invalid, lookup failure, duplicate, and removable-default source sta
 test("keeps the public page inside a 320px viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await mockPublicApi(page);
-  await page.goto("/");
+  await page.goto("/app/settings");
   const mobileNavigation = page.getByRole("navigation", { name: "Mobile navigation" });
   await expect(mobileNavigation).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "For you", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Open Match Lab", exact: true })).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "Control Room", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
 });
@@ -610,4 +609,19 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
   await expect(page.getByRole("heading", { name: "No more pairs are available for you right now." })).toBeVisible();
   expect(annotationBodies).toHaveLength(2);
   expect(annotationBodies[1]).toEqual(annotationBodies[0]);
+});
+
+
+test("public landing explains the beta and links to private sign-in without account requests", async ({ page }) => {
+  let personalRequests = 0;
+  await page.route("**/api/personal/**", route => { personalRequests++; return route.fulfill({status: 401,json:{detail:"Sign in"}}); });
+  await page.goto("/");
+  await expect(page.getByRole("heading", {name: /Fewer things/})).toBeVisible();
+  await expect(page.getByText("An illustrative recommendation")).toBeVisible();
+  await expect(page.getByRole("link", {name: "Shape your feed"})).toHaveAttribute("href", "/app");
+  expect(personalRequests).toBe(0);
+  await page.setViewportSize({width:320,height:800});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goto("/app");
+  await expect(page.getByRole("button", {name: "Continue with Google"})).toBeVisible();
 });

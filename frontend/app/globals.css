@@ -940,3 +940,88 @@ h1, h2, h3 {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
   .match-choices button, .match-save { transition-duration: .01ms; }
 }
+
+/* Public beta and personal account surfaces inherit Signal Paper. */
+.skip-link { position: absolute; left: 16px; top: -80px; z-index: 100; background: var(--signal-yellow); padding: 12px; }
+.skip-link:focus { top: 8px; }
+.landing { max-width: 1600px; margin: auto; padding: 0 clamp(20px, 5vw, 80px); }
+.landing-nav { min-height: 88px; display: flex; justify-content: space-between; align-items: center; gap: 24px; border-bottom: 1px solid var(--carbon); }
+.landing-nav nav { display: flex; gap: 28px; align-items: center; }
+.landing-nav nav a { padding: 12px 0; font-weight: 700; }
+.landing-hero { display: grid; grid-template-columns: 1.35fr 1fr; gap: clamp(32px, 7vw, 112px); padding: 88px 0 96px; align-items: center; }
+.landing h1, .sign-in-page h1 { font-size: clamp(64px, 7.4vw, 112px); line-height: .92; letter-spacing: -.025em; margin: 0 0 32px; }
+.landing h1 span, .sign-in-page h1 span { color: var(--signal-blue); }
+.landing-lead > p { font-size: 18px; max-width: 43ch; margin-bottom: 30px; }
+.landing-cta { display: inline-flex; align-items: center; justify-content: space-between; gap: 28px; min-height: 52px; background: var(--signal-blue); border: 1px solid var(--signal-blue); color: var(--paper-high); padding: 14px 22px; font-weight: 800; text-decoration: none; }
+.landing-cta:hover { background: var(--carbon); border-color: var(--carbon); }
+.landing-lead .landing-note, .landing-note { font-size: 12px; margin-top: 18px; color: var(--graphite); }
+.landing-example { margin: 0; background: var(--signal-blue); color: var(--paper-high); padding: clamp(24px, 3vw, 44px); }
+.landing-example figcaption { border-bottom: 1px solid currentColor; padding-bottom: 20px; font-size: 13px; }
+.example-topic { margin-top: 40px; font-size: 13px; }
+.landing-example h2 { font-size: clamp(34px, 4vw, 56px); line-height: 1.02; margin: 16px 0 24px; max-width: 12ch; }
+.landing-example > p { max-width: 35ch; line-height: 1.7; }
+.example-footer { border-top: 1px solid currentColor; margin-top: 40px; padding-top: 20px; display: grid; gap: 8px; font-size: 13px; }
+.example-footer strong { color: var(--signal-yellow); font-size: 16px; }
+.landing-example .example-disclosure { font-size: 11px; margin: 24px 0 0; }
+.landing-method { border-top: 1px solid var(--carbon); padding: 64px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 80px; }
+.landing-method h2, .landing-close h2 { font-size: clamp(44px, 4.6vw, 68px); line-height: .98; letter-spacing: -.02em; }
+.landing-method article { border-bottom: 1px solid var(--rule); padding: 0 0 24px; margin-bottom: 28px; }
+.landing-method article:last-child { margin-bottom: 0; border: 0; }
+.landing-method h3 { font-size: 30px; margin-bottom: 12px; }
+.landing-method p, .landing-close p { max-width: 46ch; }
+.landing-close { background: var(--carbon); color: var(--paper-high); padding: 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+.landing-close h2 { margin: 0; }
+.landing-close .landing-cta { background: var(--signal-yellow); color: var(--carbon); border-color: var(--signal-yellow); }
+.landing-secondary { display: block; width: fit-content; margin-top: 20px; padding: 8px 0; }
+.landing-footer { display: flex; justify-content: space-between; gap: 24px; padding: 32px 0; font-size: 12px; flex-wrap: wrap; }
+.landing-footer a { min-height: 44px; display: inline-flex; align-items: center; }
+.landing-footer span { align-self: center; }
+.privacy-page, .sign-in-page { max-width: 800px; padding: 56px 24px 80px; margin: auto; }
+.privacy-page h1 { font-size: 64px; line-height: 1; margin-top: 48px; }
+.privacy-page h2 { font-size: 30px; margin-top: 40px; }
+.sign-in-page { padding-top: 72px; }
+.sign-in-page h1 { margin-top: 64px; }
+.sign-in-page > p { max-width: 48ch; }
+.personal-feed .memory-column, .personal-settings .feed-column { display: none; }
+.personal-feed .reading-grid, .personal-settings .reading-grid { display: block; }
+.personal-feed .feed-column { border-right: 0; padding-right: 0; }
+.personal-settings .memory-column { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding-left: 0; }
+.personal-settings .preference-memory { margin-top: 0; }
+.personal-settings .source-ledger { grid-column: 1 / -1; }
+.feed-settings-link { padding: 20px 0; margin: 0; }
+.account-sheet { display: grid; grid-template-columns: 1fr 2fr; gap: 32px; border-bottom: 1px solid var(--carbon); padding: 32px 0; }
+.account-sheet h2 { font-size: 30px; margin-bottom: 16px; }
+.account-identity { overflow-wrap: anywhere; }
+.account-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.account-actions button { min-height: 44px; }
+.account-message, .account-data { grid-column: 1 / -1; }
+.account-data summary { font-weight: 800; min-height: 44px; padding: 12px 0; }
+.account-data p { max-width: 75ch; }
+.delete-confirmation { margin-top: 24px; display: grid; gap: 12px; max-width: 440px; }
+.delivery-form > input, .delivery-form > select, .delete-confirmation input { min-height: 44px; padding: 8px 12px; border: 1px solid var(--carbon); background: var(--paper-high); width: 100%; }
+.delivery-form > label { display: block; margin: 18px 0 8px; }
+@media (max-width: 900px) {
+ .landing-hero { grid-template-columns: 1fr 1fr; gap: 28px; padding-top: 56px; }
+ .landing h1 { font-size: 72px; }
+ .landing-method { gap: 32px; }
+ .landing-close { padding: 32px; }
+}
+@media (max-width: 680px) {
+ body:has(.landing), body:has(.sign-in-page), body:has(.privacy-page) { padding-bottom: 0; }
+ .landing-nav { min-height: 76px; gap: 16px; }
+ .landing-nav .signal-wordmark { font-size: 21px; }
+ .landing-nav nav { gap: 14px; font-size: 12px; }
+ .landing-nav nav a:first-child { display: none; }
+ .landing-hero { grid-template-columns: 1fr; padding: 48px 0; gap: 36px; }
+ .landing h1 { font-size: clamp(58px, 16vw, 86px); }
+ .landing-lead > p { font-size: 16px; }
+ .landing-example h2 { font-size: 44px; max-width: 14ch; }
+ .landing-method, .landing-close { grid-template-columns: 1fr; gap: 24px; padding: 36px 0; }
+ .landing-close { padding: 28px 24px; }
+ .landing-close h2 { font-size: 46px; }
+ .landing-footer { gap: 4px 18px; }
+ .landing-footer span { flex-basis: 100%; }
+ .personal-settings .memory-column, .account-sheet { grid-template-columns: 1fr; gap: 32px; }
+ .account-sheet > *, .personal-settings .source-ledger { grid-column: 1; }
+ .sign-in-page h1 { font-size: clamp(54px, 14vw, 80px); }
+}

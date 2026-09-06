@@ -3,6 +3,7 @@ import test from "node:test";
 import { configureVariables, variablePlans } from "./set-railway-variables.mjs";
 
 const environment = {
+  NEON_AUTH_BASE_URL: "https://preview.neonauth.example/app/auth",
   RAILWAY_PROJECT_ID: "project", RAILWAY_API_SERVICE_ID: "api", RAILWAY_WORKER_SERVICE_ID: "worker",
   EXPECTED_COMMIT_SHA: "commit", YOUTUBE_API_KEY: "youtube-secret", MATCH_LAB_COOKIE_SECRET: "cookie-secret",
   TELEGRAM_PRODUCTION_BOT_TOKEN: "production-secret", TELEGRAM_DEVELOPER_BOT_TOKEN: "developer-secret",

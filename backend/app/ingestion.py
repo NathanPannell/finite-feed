@@ -88,6 +88,7 @@ def _store_videos(
                 %s::vector, %s, %s, %s, %s
             )
             ON CONFLICT (youtube_video_id) DO UPDATE SET
+                is_available = TRUE,
                 tracked_channel_id = EXCLUDED.tracked_channel_id,
                 channel_name = EXCLUDED.channel_name,
                 title = EXCLUDED.title,
@@ -215,6 +216,7 @@ def _recent_phase(
             page_token=page_token,
             max_results=50,
         )
+        _mark_unavailable(conn, page)
         seen += len(page.videos)
         videos.extend(video for video in page.videos if _in_horizon(video, cutoff))
         reached_boundary = any(
@@ -285,6 +287,7 @@ def _backfill_phase(
         page_token=channel["backfill_page_token"],
         max_results=backfill_limit,
     )
+    _mark_unavailable(conn, page)
     videos = [video for video in page.videos if _in_horizon(video, cutoff)]
     reached_boundary = any(
         video.published_at is not None and video.published_at < cutoff
@@ -318,7 +321,7 @@ def _backfill_phase(
     return len(page.videos), changed
 
 
-def ingest_tracked_channels(
+def _ingest_tracked_channels(
     conn: Connection,
     youtube: YouTubeClient,
     page_limit: int = 2,
@@ -426,3 +429,22 @@ def ingest_tracked_channels(
         )
         conn.commit()
         raise
+
+
+def _mark_unavailable(conn, page):
+    if page.unavailable_ids:
+        conn.execute("UPDATE videos SET is_available = FALSE WHERE youtube_video_id = ANY(%s)", (page.unavailable_ids,))
+
+
+def ingest_tracked_channels(conn, youtube, page_limit=2, backfill_limit=DEFAULT_BACKFILL_LIMIT,
+                            embedder=None, sync_interval_hours=None, retry_minutes=30):
+    # Transaction advisory locks work with Neon's transaction pooler. The persisted
+    # running row becomes the lease once the ingestion run is committed.
+    conn.execute("SELECT pg_advisory_xact_lock(4182014)")
+    running = conn.execute("""SELECT id FROM ingestion_runs WHERE status = 'running'
+                            AND started_at > NOW() - INTERVAL '30 minutes' LIMIT 1""").fetchone()
+    if running:
+        conn.rollback()
+        return IngestionSummary(0, 0, 0)
+    return _ingest_tracked_channels(conn, youtube, page_limit, backfill_limit, embedder,
+                                    sync_interval_hours, retry_minutes)

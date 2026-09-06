@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -42,6 +43,10 @@ class ProfileConnection:
         if "UPDATE app_users SET cadence_days" in sql:
             self.profile["cadence_days"] = params[0]
             self.profile["recommendation_count"] = params[1]
+            if params[2] is not None:
+                self.profile["timezone"] = params[2]
+            if params[3] is not None:
+                self.profile["delivery_hour"] = params[3]
             return Result()
         if "INSERT INTO preference_versions" in sql:
             self.preference_inserts += 1
@@ -66,7 +71,7 @@ def test_delivery_update_changes_only_delivery_fields_without_revision() -> None
 
     saved = update_delivery(
         DeliveryUpdate(cadence_days=[5, 2, 5], recommendation_count=3),
-        conn,
+        user_id=uuid4(), conn=conn,
     )
 
     assert saved["cadence_days"] == [2, 5]
@@ -77,8 +82,7 @@ def test_delivery_update_changes_only_delivery_fields_without_revision() -> None
     assert conn.revision_events == 0
     assert conn.commits == 1
     delivery_sql = next(query for query in conn.queries if "UPDATE app_users" in query)
-    assert "timezone" not in delivery_sql
-    assert "delivery_hour" not in delivery_sql
+    assert "COALESCE" in delivery_sql
 
 
 def test_memory_update_locks_and_rejects_a_stale_version() -> None:
@@ -87,7 +91,7 @@ def test_memory_update_locks_and_rejects_a_stale_version() -> None:
     with pytest.raises(HTTPException) as raised:
         update_preference_memory(
             PreferenceMemoryUpdate(preference_statement="Stale edit", expected_version=3),
-            conn,
+            user_id=uuid4(), conn=conn,
         )
 
     assert raised.value.status_code == 409
@@ -105,7 +109,7 @@ def test_memory_update_creates_one_revision_without_rewriting_delivery() -> None
 
     saved = update_preference_memory(
         PreferenceMemoryUpdate(preference_statement="  Sharper server memory  ", expected_version=4),
-        conn,
+        user_id=uuid4(), conn=conn,
     )
 
     assert "FOR UPDATE" in conn.queries[0]
@@ -115,3 +119,11 @@ def test_memory_update_creates_one_revision_without_rewriting_delivery() -> None
     assert conn.preference_inserts == 1
     assert conn.revision_events == 1
     assert conn.commits == 1
+
+
+def test_delivery_updates_timezone_and_hour_without_preference_revision():
+    conn = ProfileConnection()
+    saved = update_delivery(DeliveryUpdate(cadence_days=[1], recommendation_count=2, timezone="Europe/London", delivery_hour=11), user_id=uuid4(), conn=conn)
+    assert saved["timezone"] == "Europe/London"
+    assert saved["delivery_hour"] == 11
+    assert conn.preference_inserts == 0

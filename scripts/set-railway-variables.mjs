@@ -26,6 +26,9 @@ export function variablePlans(mode, environment) {
     EMBEDDING_DIMENSIONS: "384",
     EMBEDDING_OFFLINE: "true",
     EMBEDDING_CACHE_DIR: "/opt/huggingface",
+    DELIVERY_ENABLED: mode === "preview" ? "false" : environment.DELIVERY_ENABLED || "true",
+    MODEL_DAILY_REQUEST_LIMIT: environment.MODEL_DAILY_REQUEST_LIMIT || "40",
+    YOUTUBE_DAILY_REQUEST_LIMIT: environment.YOUTUBE_DAILY_REQUEST_LIMIT || "1000",
   };
   const optional = ["OPENROUTER_API_KEY", "TELEGRAM_WEBHOOK_SECRET", "DEVELOPER_TELEGRAM_USER_IDS"];
   const remove = [];
@@ -35,13 +38,14 @@ export function variablePlans(mode, environment) {
   } else {
     common.PREVIEW_DATABASE_URL = required(environment, "PREVIEW_DATABASE_URL");
     common.TELEGRAM_DEVELOPER_BOT_TOKEN = required(environment, "TELEGRAM_DEVELOPER_BOT_TOKEN");
-    remove.push("TELEGRAM_PRODUCTION_BOT_TOKEN");
+    remove.push("TELEGRAM_PRODUCTION_BOT_TOKEN", "TELEGRAM_PRODUCTION_CHAT_ID");
   }
   for (const key of optional) {
     if (environment[key]) common[key] = environment[key];
     else remove.push(key);
   }
   const apiOnly = {
+    NEON_AUTH_BASE_URL: required(environment, "NEON_AUTH_BASE_URL"),
     VERCEL_OIDC_TEAM_SLUG: required(environment, "VERCEL_OIDC_TEAM_SLUG"),
     VERCEL_OIDC_PROJECT_NAME: required(environment, "VERCEL_OIDC_PROJECT_NAME"),
     VERCEL_OIDC_ENVIRONMENT: mode,

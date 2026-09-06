@@ -1,4 +1,5 @@
 from datetime import datetime
+from contextlib import contextmanager
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
@@ -11,6 +12,7 @@ from psycopg.types.json import Jsonb
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator, model_validator
 
 from backend.app.admin_auth import require_admin
+from backend.app.budgets import reserve_request
 from backend.app.db import connection
 from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION
 from backend.app.embeddings import configured_embedder
@@ -87,7 +89,11 @@ def parse_channel_reference(url: str) -> tuple[str, str]:
 
 def resolve_youtube_channel(url: str, settings: Settings) -> dict[str, Any]:
     filter_name, filter_value = parse_channel_reference(url)
-    client = YouTubeClient(settings.youtube_api_key)
+    def reserve():
+        # A separate transaction persists quota without committing account edits.
+        with contextmanager(connection)() as budget_conn:
+            reserve_request(budget_conn, "youtube", settings.youtube_daily_request_limit)
+    client = YouTubeClient(settings.youtube_api_key, reserve_request=reserve)
     try:
         if filter_name == "video":
             videos = client._get("/videos", part="snippet", id=filter_value).get("items", [])
@@ -269,6 +275,12 @@ def summary(conn: Connection = Depends(connection)):
     return conn.execute(
         """
         SELECT
+            (SELECT last_seen_at FROM worker_heartbeat WHERE worker = 'pipeline') AS worker_last_seen_at,
+            (SELECT CASE WHEN last_seen_at < NOW() - INTERVAL '10 minutes' THEN 'stale' ELSE status END
+             FROM worker_heartbeat WHERE worker = 'pipeline') AS worker_status,
+            (SELECT error FROM worker_heartbeat WHERE worker = 'pipeline') AS worker_error,
+            (SELECT COALESCE(jsonb_agg(jsonb_build_object('provider', provider, 'requests', requests)), '[]'::jsonb)
+             FROM provider_daily_usage WHERE usage_date = (NOW() AT TIME ZONE 'UTC')::date) AS provider_usage,
             (SELECT COUNT(*) FROM tracked_channels WHERE is_active) AS active_channels,
             (SELECT COUNT(*) FROM videos) AS video_count,
             (SELECT COUNT(*) FROM recommendations) AS recommendation_count,
@@ -408,7 +420,7 @@ def resolve_channel(payload: ChannelUrl, settings: Settings = Depends(get_settin
         return resolve_youtube_channel(str(payload.url), settings)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail="YouTube channel resolution failed") from exc
 
 
@@ -436,7 +448,7 @@ def add_channel(
     except ValueError as exc:
         conn.rollback()
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         conn.rollback()
         raise HTTPException(status_code=502, detail="YouTube channel resolution failed") from exc
     return {**_channel_response(row), "reactivated": reactivated}

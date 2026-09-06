@@ -68,7 +68,7 @@ class FakeConnection:
             return Result([{"count": 0}])
         if normalized.startswith("SET LOCAL"):
             return Result([])
-        return Result([self.recent_row] if params[6] is not None else [])
+        return Result([self.recent_row] if params[7] is not None else [])
 
 
 def test_retrieval_uses_query_embedding_and_sql_cosine_distance() -> None:

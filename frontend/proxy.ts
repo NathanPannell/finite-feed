@@ -1,7 +1,17 @@
 import { adminRouteDecision } from "@/lib/admin-route-gate";
+import { getAuth } from "@/lib/auth/server";
+import { finishOAuthRedirect } from "@/lib/auth/callback";
 import { NextRequest, NextResponse } from "next/server";
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
+  const isAdmin = request.nextUrl.pathname.startsWith("/admin") || request.nextUrl.pathname.startsWith("/api/admin");
+  if (!isAdmin && request.nextUrl.searchParams.has("neon_auth_session_verifier")) {
+    const response = await getAuth().middleware()(request);
+    return finishOAuthRedirect(response, request.url);
+  }
+  if (!isAdmin) {
+    return NextResponse.next();
+  }
   const decision = adminRouteDecision({
     nodeEnv: process.env.NODE_ENV,
     vercelEnv: process.env.VERCEL_ENV,
@@ -24,5 +34,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
+  matcher: ["/", "/app/:path*", "/auth/callback", "/admin/:path*", "/api/admin/:path*"],
 };

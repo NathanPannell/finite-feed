@@ -546,6 +546,7 @@ export function AdminDashboard() {
               <LatestActivity item={latestActivity} loading={overviewLoading} />
             </div>
           )}
+          {!overviewLoading && !overviewError && <p className="admin-worker-status">Worker: {text(summary, "worker_status") || "awaiting heartbeat"}{text(summary, "worker_last_seen_at") ? ` · Last seen ${new Date(text(summary, "worker_last_seen_at")).toLocaleString()}` : ""}{text(summary, "worker_error") ? ` · ${text(summary, "worker_error")}` : ""}{Array.isArray(summary?.provider_usage) && summary.provider_usage.length > 0 ? ` · Requests today (UTC): ${(summary.provider_usage as JsonRecord[]).map((item) => `${text(item, "provider")} ${value(item, "requests")}`).join(", ")}` : ""}</p>}
         </section>
 
         <section className="admin-performance" aria-labelledby="performance-heading">

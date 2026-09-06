@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
@@ -11,6 +12,15 @@ class ProfileUpdate(BaseModel):
     cadence_days: list[int] = Field(default=[1, 4], min_length=1, max_length=7)
     delivery_hour: int = Field(default=9, ge=0, le=23)
     recommendation_count: int = Field(default=1, ge=1, le=10)
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value.strip())
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Use a valid IANA timezone, such as America/Los_Angeles") from exc
+        return value.strip()
 
     @field_validator("preference_statement", "timezone")
     @classmethod
@@ -33,6 +43,13 @@ class DeliveryUpdate(BaseModel):
 
     cadence_days: list[int] = Field(min_length=1, max_length=7)
     recommendation_count: int = Field(ge=1, le=10)
+    timezone: str | None = Field(default=None, min_length=1, max_length=80)
+    delivery_hour: int | None = Field(default=None, ge=0, le=23)
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value: str | None) -> str | None:
+        return ProfileUpdate.valid_timezone(value) if value is not None else None
 
     @field_validator("cadence_days")
     @classmethod

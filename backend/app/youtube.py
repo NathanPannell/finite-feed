@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -40,6 +40,7 @@ class YouTubeVideo:
 class UploadPage:
     videos: list[YouTubeVideo]
     next_page_token: str | None
+    unavailable_ids: list[str] = field(default_factory=list)
 
 
 def parse_duration(value: str | None) -> int | None:
@@ -60,13 +61,20 @@ def infer_speaker(title: str) -> str | None:
 
 
 class YouTubeClient:
-    def __init__(self, api_key: str, timeout_seconds: float = 20.0):
+    def __init__(self, api_key: str, timeout_seconds: float = 20.0, reserve_request=None):
+        self.reserve_request = reserve_request
         self.api_key = api_key
         self.client = httpx.Client(base_url=YOUTUBE_API_URL, timeout=timeout_seconds)
 
     def _get(self, path: str, **params: object) -> dict:
-        response = self.client.get(path, params={**params, "key": self.api_key})
-        response.raise_for_status()
+        if self.reserve_request:
+            self.reserve_request()
+        try:
+            response = self.client.get(path, params={**params, "key": self.api_key})
+        except httpx.HTTPError:
+            raise RuntimeError("YouTube request failed; retry after cooldown") from None
+        if response.is_error:
+            raise RuntimeError(f"YouTube request failed (HTTP {response.status_code})")
         return response.json()
 
     def resolve_channel(self, url: str, known_id: str | None = None) -> ChannelDetails:
@@ -122,16 +130,18 @@ class YouTubeClient:
         page = self._get("/playlistItems", **params)
         video_ids = [item["contentDetails"]["videoId"] for item in page.get("items", [])]
         videos: list[YouTubeVideo] = []
+        unavailable_ids = []
         for start in range(0, len(video_ids), 50):
             batch_ids = video_ids[start:start + 50]
             data = self._get(
-                "/videos", part="snippet,contentDetails,statistics",
+                "/videos", part="snippet,contentDetails,statistics,status",
                 id=",".join(batch_ids), maxResults=50,
             )
             items_by_id = {item["id"]: item for item in data.get("items", [])}
             for video_id in batch_ids:
                 item = items_by_id.get(video_id)
-                if item is None:
+                if item is None or item.get("status", {}).get("privacyStatus", "public") != "public":
+                    unavailable_ids.append(video_id)
                     continue
                 snippet = item["snippet"]
                 thumbnails = snippet.get("thumbnails", {})
@@ -150,7 +160,7 @@ class YouTubeClient:
                     default_language=snippet.get("defaultLanguage"),
                     default_audio_language=snippet.get("defaultAudioLanguage"),
                 ))
-        return UploadPage(videos=videos, next_page_token=page.get("nextPageToken"))
+        return UploadPage(videos=videos, next_page_token=page.get("nextPageToken"), unavailable_ids=unavailable_ids)
 
     def list_uploads(self, playlist_id: str, page_limit: int = 2) -> list[YouTubeVideo]:
         videos: list[YouTubeVideo] = []
