@@ -38,6 +38,7 @@ from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
 from backend.app.user_auth import current_user
 from backend.app.accounts import router as account_router, consume_telegram_link
+from backend.app.onboarding import router as onboarding_router
 from backend.app.rate_limits import RequestLimitsMiddleware
 
 
@@ -53,6 +54,7 @@ settings = get_settings()
 app = FastAPI(title="Finite Feed API", version="0.1.0", lifespan=lifespan)
 app.include_router(admin_router)
 app.include_router(account_router)
+app.include_router(onboarding_router)
 app.add_middleware(RequestLimitsMiddleware)
 app.add_middleware(
     CORSMiddleware,

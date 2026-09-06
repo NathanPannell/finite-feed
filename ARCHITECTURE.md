@@ -35,6 +35,16 @@ Control Room does not expose owner selection: an existing channel always retains
 its owner, while a new channel is assigned server-side to the earliest-created
 app user (`created_at`, then `id`) so multi-user databases behave deterministically.
 
+## Onboarding persistence
+
+Authenticated `/api/onboarding` endpoints persist each answer before advancing.
+The session row makes the flow resumable, while append-only audit rows record the
+three choices, open response, synthesis, accepted profile, delivery settings, and
+Telegram decision. Model synthesis reserves the existing durable OpenRouter budget
+and rechecks the saved answer revision before writing its draft. The accepted blurb
+becomes a normal `preference_versions` entry. Delivery keeps the established
+Sunday-first weekday values (`0` through `6`).
+
 ## Recovery rules
 
 Re-running a failed workflow is safe because PR names are deterministic and migrations are append-only, checksummed, and advisory-locked. A Railway restart reuses the current image; it is not proof that new code deployed. Trust `/ready` only when its `commit` equals the requested Git SHA.

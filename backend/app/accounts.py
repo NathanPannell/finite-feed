@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/account")
 
 @router.get("")
 def account(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
-    return conn.execute("SELECT id,email,display_name,telegram_user_id IS NOT NULL AS telegram_connected,delivery_paused,delivery_status,delivery_error FROM app_users WHERE id=%s", (user_id,)).fetchone()
+    return conn.execute("SELECT id,email,display_name,telegram_user_id IS NOT NULL AS telegram_connected,delivery_paused,delivery_status,delivery_error,onboarding_completed_at IS NOT NULL AS onboarding_completed FROM app_users WHERE id=%s", (user_id,)).fetchone()
 
 
 class PauseUpdate(BaseModel):
@@ -106,8 +106,8 @@ def unlink(user_id: UUID = Depends(current_user), conn: Connection = Depends(con
 
 @router.get("/export")
 def export(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
-    result = {"account": conn.execute("SELECT id,email,display_name,timezone,cadence_days,delivery_hour,recommendation_count,telegram_user_id,delivery_paused,created_at FROM app_users WHERE id=%s", (user_id,)).fetchone()}
-    for table in ("preference_versions", "recommendations", "interaction_events", "user_channel_follows"):
+    result = {"account": conn.execute("SELECT id,email,display_name,timezone,cadence_days,delivery_hour,recommendation_count,telegram_user_id,delivery_paused,onboarding_completed_at,created_at FROM app_users WHERE id=%s", (user_id,)).fetchone()}
+    for table in ("preference_versions", "recommendations", "interaction_events", "user_channel_follows", "onboarding_sessions", "onboarding_audit_logs"):
         result[table] = conn.execute(f"SELECT * FROM {table} WHERE user_id=%s", (user_id,)).fetchall()
     return result
 
@@ -121,10 +121,10 @@ def delete_account(payload: DeleteAccount, user_id: UUID = Depends(current_user)
     if payload.confirmation != "DELETE":
         raise HTTPException(400, "Type DELETE to confirm account deletion")
     conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,))
-    for table in ("telegram_link_tokens", "interaction_events", "recommendations", "preference_versions", "user_channel_follows"):
+    for table in ("telegram_link_tokens", "onboarding_audit_logs", "onboarding_sessions", "interaction_events", "recommendations", "preference_versions", "user_channel_follows"):
         conn.execute(f"DELETE FROM {table} WHERE user_id=%s", (user_id,))
     # Keep only an identity tombstone and canonical ingestion ownership. A still
     # valid provider session must not silently recreate a deleted app account.
-    conn.execute("UPDATE app_users SET email=NULL,display_name='Deleted account',telegram_user_id=NULL,delivery_paused=TRUE,delivery_error=NULL,delivery_status=NULL,timezone='UTC',cadence_days=ARRAY[]::smallint[],delivery_hour=9,recommendation_count=1,deleted_at=NOW(),updated_at=NOW() WHERE id=%s", (user_id,))
+    conn.execute("UPDATE app_users SET email=NULL,display_name='Deleted account',telegram_user_id=NULL,delivery_paused=TRUE,delivery_error=NULL,delivery_status=NULL,onboarding_completed_at=NULL,timezone='UTC',cadence_days=ARRAY[]::smallint[],delivery_hour=9,recommendation_count=1,deleted_at=NOW(),updated_at=NOW() WHERE id=%s", (user_id,))
     conn.commit()
     return Response(status_code=204)

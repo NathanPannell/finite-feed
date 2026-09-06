@@ -526,7 +526,6 @@ export function AdminDashboard() {
 
       <main className="admin-main">
         <header className="admin-header">
-          <h1>Control room</h1>
           <button className="admin-refresh" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </header>
 

@@ -170,7 +170,7 @@ test("renders personal recommendations and semantic feedback", async ({ page }) 
   const captured = await mockPublicApi(page);
   await page.goto("/app");
 
-  await expect(page.getByRole("heading", { name: /Your next/ })).toBeVisible();
+  await expect(page.locator(".signal-masthead-title")).toHaveText("For you");
   await expect(page.getByRole("heading", { name: "How to make hard choices" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The architecture of attention" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Match Lab", exact: true })).toHaveAttribute("href", "/match");
@@ -618,10 +618,192 @@ test("public landing explains the beta and links to private sign-in without acco
   await page.goto("/");
   await expect(page.getByRole("heading", {name: /Fewer things/})).toBeVisible();
   await expect(page.getByText("An illustrative recommendation")).toBeVisible();
-  await expect(page.getByRole("link", {name: "Shape your feed"})).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("link", {name: "Shape your feed"})).toHaveAttribute("href", "/login");
   expect(personalRequests).toBe(0);
   await page.setViewportSize({width:320,height:800});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.goto("/app");
   await expect(page.getByRole("button", {name: "Continue with Google"})).toBeVisible();
+  await expect(page.locator(".google-logo")).toBeVisible();
+});
+
+test("settings remains available when recommendations are unavailable", async ({ page }) => {
+  let recommendationRequests = 0;
+  await page.route("**/api/personal/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/personal/account") return json(route, { onboarding_completed: true });
+    if (path === "/api/personal/profile") return json(route, {
+      preference_statement: "Careful explanations of systems and decisions.", timezone: "America/Los_Angeles",
+      cadence_days: [2, 5], delivery_hour: 9, recommendation_count: 1, version: 2, updated_at: "2026-09-06T12:00:00Z",
+    });
+    if (path === "/api/personal/channels") return json(route, []);
+    if (path === "/api/personal/recommendations") {
+      recommendationRequests += 1;
+      return route.fulfill({ status: 503, json: { detail: "Recommendations unavailable" } });
+    }
+    return json(route, {});
+  });
+  await page.goto("/settings");
+  await expect(page.locator(".signal-masthead-title")).toHaveText("Settings");
+  await expect(page.getByText("Careful explanations of systems and decisions.")).toBeVisible();
+  expect(recommendationRequests).toBe(0);
+});
+
+test("keeps the dashboard hidden while unauthenticated routing resolves", async ({ page }) => {
+  await page.route("**/api/personal/account", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await route.fulfill({ status: 401, json: { detail: "Sign in" } });
+  });
+  await page.goto("/app");
+  await expect(page.getByText("Opening your feed…")).toBeVisible();
+  await expect(page.locator(".signal-shell, .reading-grid, .public-hero")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+});
+
+test("sends a signed-in account without preferences straight to onboarding", async ({ page }) => {
+  await page.route("**/api/personal/account", (route) => route.fulfill({ json: { onboarding_completed: false } }));
+  await page.route("**/api/personal/onboarding", (route) => route.fulfill({ json: {
+    status: "not_started", current_step: "question_1", questions: [], answers: {}, open_response: null,
+    draft_profile: null, delivery: null, telegram_connected: false,
+  } }));
+  await page.goto("/app");
+  await expect(page.locator(".signal-shell, .reading-grid")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "What are you most interested in?" })).toBeVisible();
+});
+
+test("resumes saved onboarding copy, retries synthesis, and accepts a profile edit", async ({ page }) => {
+  let synthesisAttempts = 0;
+  let profilePayload: Record<string, unknown> | null = null;
+  const state = {
+    status: "in_progress", current_step: "synthesize", questions: [],
+    answers: { "1": "technology_ai", "2": "deep_understanding", "3": "detailed_rigorous" },
+    open_response: "I want grounded explanations about systems. I prefer evidence and want to avoid empty hype.",
+    draft_profile: null as string | null, delivery: null, telegram_connected: false,
+  };
+  await page.route("**/api/personal/onboarding**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/api/personal/onboarding", "") || "/";
+    if (path === "/synthesize") {
+      synthesisAttempts += 1;
+      if (synthesisAttempts === 1) return route.fulfill({ status: 503, json: { detail: "Profile writing is temporarily unavailable. Your answers are saved." } });
+      state.draft_profile = "You want rigorous systems explanations grounded in evidence. You prefer substance over hype.";
+      state.current_step = "profile_review";
+    } else if (path === "/open-response") {
+      state.open_response = String(request.postDataJSON().response);
+    } else if (path === "/profile") {
+      profilePayload = request.postDataJSON();
+      state.current_step = "delivery";
+    }
+    await route.fulfill({ json: state });
+  });
+  await page.goto("/onboarding");
+  await expect(page.getByLabel("In your own words")).toHaveValue(state.open_response);
+  await page.getByRole("button", { name: "Build my profile" }).click();
+  await expect(page.locator(".onboarding-error")).toContainText("temporarily unavailable");
+  await expect(page.getByLabel("In your own words")).toHaveValue(state.open_response);
+  await page.getByRole("button", { name: "Build my profile" }).click();
+  await page.getByRole("button", { name: "I’d like to make a change" }).click();
+  await page.getByLabel("Edit preference profile").fill("I want rigorous systems thinking grounded in evidence. Skip empty hype and broad motivational talks.");
+  await page.getByRole("button", { name: "Save my changes" }).click();
+  expect(profilePayload).toEqual({ action: "change", profile: "I want rigorous systems thinking grounded in evidence. Skip empty hype and broad motivational talks." });
+  await expect(page.getByRole("heading", { name: "Set a pace that feels useful." })).toBeVisible();
+});
+
+test("lets an already-connected Telegram user confirm delivery or choose dashboard only", async ({ page }) => {
+  const completionPayloads: Record<string, unknown>[] = [];
+  const state = {
+    status: "in_progress", current_step: "telegram", questions: [],
+    answers: { "1": "technology_ai", "2": "deep_understanding", "3": "detailed_rigorous" },
+    open_response: "I want careful explanations of systems and decisions.",
+    draft_profile: "You want careful explanations of systems and decisions. You prefer substance over hype.",
+    delivery: { timezone: "America/Los_Angeles", cadence_days: [2, 5], delivery_hour: 9, recommendation_count: 1 },
+    telegram_connected: true,
+  };
+  await page.route("**/api/personal/onboarding**", async (route) => {
+    if (route.request().method() === "POST") {
+      completionPayloads.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ...state, status: "completed", current_step: "completed" } });
+    }
+    return route.fulfill({ json: state });
+  });
+  await page.route("**/api/personal/account", (route) => route.fulfill({ json: { onboarding_completed: true } }));
+  await page.route("**/api/personal/profile", (route) => route.fulfill({ json: { preference_statement: state.draft_profile, ...state.delivery, version: 1, updated_at: "2026-09-06" } }));
+  await page.route("**/api/personal/channels", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/personal/recommendations", (route) => route.fulfill({ json: [] }));
+
+  await page.goto("/onboarding");
+  await expect(page.getByText("Your Telegram account is already connected and ready for scheduled recommendations.")).toBeVisible();
+  await page.getByRole("button", { name: "Continue to dashboard" }).click();
+  expect(completionPayloads).toEqual([{ telegram: "connected" }]);
+
+  state.status = "in_progress";
+  state.current_step = "telegram";
+  await page.goto("/onboarding");
+  await page.getByRole("button", { name: "Use dashboard only" }).click();
+  expect(completionPayloads).toEqual([{ telegram: "connected" }, { telegram: "skipped" }]);
+});
+
+test("completes onboarding one saved step at a time", async ({ page }) => {
+  const calls: { path: string; body: Record<string, unknown> | null }[] = [];
+  const state = {
+    status: "not_started",
+    current_step: "question_1",
+    questions: [
+      { id: 1, prompt: "What are you most interested in?", options: [{ value: "technology_ai", label: "Technology & AI" }, { value: "business_work", label: "Business & work" }, { value: "science_nature", label: "Science & nature" }, { value: "culture_society", label: "Culture & society" }, { value: "mind_behavior", label: "Mind & behavior" }, { value: "health_wellbeing", label: "Health & wellbeing" }] },
+      { id: 2, prompt: "What do you want a good recommendation to give you?", options: [{ value: "practical_skills", label: "Practical skills" }, { value: "fresh_perspectives", label: "Fresh perspectives" }, { value: "deep_understanding", label: "Deeper understanding" }, { value: "inspiring_stories", label: "Inspiring stories" }] },
+      { id: 3, prompt: "How should it feel to watch?", options: [{ value: "concise_focused", label: "Concise & focused" }, { value: "detailed_rigorous", label: "Detailed & rigorous" }, { value: "surprising_provocative", label: "Surprising & provocative" }, { value: "accessible_conversational", label: "Accessible & conversational" }] },
+    ],
+    answers: {} as Record<string, string>, open_response: null as string | null, draft_profile: null as string | null,
+    delivery: null as Record<string, unknown> | null, telegram_connected: false,
+  };
+  await page.route("**/api/personal/onboarding**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/api/personal/onboarding", "") || "/";
+    const body = request.postData() ? request.postDataJSON() as Record<string, unknown> : null;
+    if (request.method() !== "GET") calls.push({ path, body });
+    if (path === "/answers") {
+      if (!body) throw new Error("Missing answer payload");
+      state.status = "in_progress";
+      state.answers[String(body.question)] = String(body.answer);
+      state.current_step = `question_${Number(body.question) + 1}`;
+    } else if (path === "/open-response") {
+      if (!body) throw new Error("Missing open response payload");
+      state.open_response = String(body.response); state.current_step = "synthesize";
+    } else if (path === "/synthesize") {
+      state.draft_profile = "You want rigorous explanations of technology and science that turn complex ideas into practical understanding. You prefer concise, grounded videos and want to avoid empty hype.";
+      state.current_step = "profile_review";
+    } else if (path === "/profile") state.current_step = "delivery";
+    else if (path === "/delivery") { if (!body) throw new Error("Missing delivery payload"); state.delivery = body; state.current_step = "telegram"; }
+    else if (path === "/complete") { state.status = "completed"; state.current_step = "completed"; }
+    await route.fulfill({ json: state });
+  });
+  await page.route("**/api/personal/account", (route) => route.fulfill({ json: { onboarding_completed: true } }));
+  await page.route("**/api/personal/profile", (route) => route.fulfill({ json: { preference_statement: "Profile", timezone: "America/Los_Angeles", cadence_days: [2, 5], delivery_hour: 9, recommendation_count: 1, version: 1, updated_at: "2026-01-01" } }));
+  await page.route("**/api/personal/channels", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/personal/recommendations", (route) => route.fulfill({ json: [] }));
+
+  await page.goto("/onboarding");
+  await page.getByText("Technology & AI", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "What do you want a good recommendation to give you?" })).toBeVisible();
+  await page.getByText("Deeper understanding", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("Concise & focused", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("In your own words").fill("I want careful technology and science explanations. I value practical detail and want to avoid breathless hype.");
+  await page.getByRole("button", { name: "Build my profile" }).click();
+  await expect(page.getByText(/You want rigorous explanations/)).toBeVisible();
+  await page.getByRole("button", { name: "Okay" }).click();
+  await expect(page.getByRole("heading", { name: "Set a pace that feels useful." })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Coming soon")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Email & SMS" })).toBeVisible();
+  await page.getByRole("button", { name: "Use dashboard only" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+
+  expect(calls.map((call) => call.path)).toEqual(["/answers", "/answers", "/answers", "/open-response", "/synthesize", "/profile", "/delivery", "/complete"]);
+  expect(calls.filter((call) => call.path === "/answers").map((call) => call.body?.question)).toEqual([1, 2, 3]);
+  expect(calls.at(-1)?.body).toEqual({ telegram: "skipped" });
 });

@@ -44,6 +44,7 @@ class RequestLimitsMiddleware(BaseHTTPMiddleware):
         elif request.method == "POST" and path in {
             "/api/recommendations/generate", "/api/recommendations/preview",
             "/api/channels", "/api/channels/resolve", "/api/account/telegram-link",
+            "/api/onboarding/synthesize",
         }:
             scope = ("expensive", 20)
         if scope:

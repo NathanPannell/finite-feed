@@ -3,6 +3,40 @@ from datetime import UTC, datetime, timedelta
 from backend.worker.main import delivery_is_due, ingestion_is_due
 
 
+def test_scheduled_delivery_selects_only_completed_onboarding_accounts() -> None:
+    import os
+    from uuid import uuid4
+
+    import psycopg
+    import pytest
+    from psycopg.rows import dict_row
+
+    from backend.worker.main import scheduled_delivery_users
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    incomplete, complete = uuid4(), uuid4()
+    incomplete_chat = incomplete.int % 1_000_000_000 + 7_000_000_000
+    complete_chat = complete.int % 1_000_000_000 + 8_000_000_000
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        try:
+            conn.execute(
+                "INSERT INTO app_users(id,display_name,auth_subject,telegram_user_id,onboarding_completed_at) "
+                "VALUES (%s,'Incomplete',%s,%s,NULL),(%s,'Complete',%s,%s,NOW())",
+                (incomplete, f"incomplete-{incomplete}", incomplete_chat,
+                 complete, f"complete-{complete}", complete_chat),
+            )
+            conn.commit()
+            selected = {row["id"] for row in scheduled_delivery_users(conn)}
+            assert incomplete not in selected
+            assert complete in selected
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id=ANY(%s)", ([incomplete, complete],))
+            conn.commit()
+
+
 def test_delivery_respects_local_schedule_and_once_per_day() -> None:
     user = {"timezone": "America/Los_Angeles", "cadence_days": [3], "delivery_hour": 9}
     now = datetime(2026, 9, 2, 17, 0, tzinfo=UTC)

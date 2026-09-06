@@ -124,6 +124,15 @@ def claim_delivery_attempt(conn, user_id, now: datetime, retry_minutes: int) -> 
     return bool(claimed)
 
 
+def scheduled_delivery_users(conn):
+    return conn.execute(
+        """SELECT id, telegram_user_id, timezone, cadence_days, delivery_hour,
+                  recommendation_count, delivery_paused
+           FROM app_users WHERE telegram_user_id IS NOT NULL AND NOT delivery_paused
+             AND deleted_at IS NULL AND onboarding_completed_at IS NOT NULL"""
+    ).fetchall()
+
+
 def run_delivery_pass(pool: ConnectionPool) -> None:
     settings = get_settings()
     if settings.is_preview:
@@ -141,12 +150,7 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
         return
     bot = TelegramBot(settings.telegram_production_bot_token)
     with pool.connection() as conn:
-        users = conn.execute(
-            """SELECT id, telegram_user_id, timezone, cadence_days, delivery_hour,
-                      recommendation_count, delivery_paused
-               FROM app_users WHERE telegram_user_id IS NOT NULL AND NOT delivery_paused
-                 AND deleted_at IS NULL"""
-        ).fetchall()
+        users = scheduled_delivery_users(conn)
     for user in users:
         # A separate transaction/connection scope prevents one recipient poisoning the rest.
         try:
@@ -163,17 +167,21 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
                         (user["id"], user["timezone"], now, user["timezone"]),
                     ).fetchone()["count"]
                     for _ in range(max(0, user["recommendation_count"] - count)):
-                        active = conn.execute("SELECT delivery_paused, deleted_at FROM app_users WHERE id = %s", (user["id"],)).fetchone()
-                        if not active or active["delivery_paused"] or active["deleted_at"]:
+                        active = conn.execute(
+                            "SELECT delivery_paused,deleted_at,onboarding_completed_at FROM app_users WHERE id=%s",
+                            (user["id"],),
+                        ).fetchone()
+                        if not active or active["delivery_paused"] or active["deleted_at"] or not active["onboarding_completed_at"]:
                             break
                         recommendation_id = get_or_create_pending_recommendation(conn, settings, user["id"], require_model=True)
                         # Generation may commit and call the model. Lock the current account
                         # only after it returns, serializing this send against unlink/deletion.
                         current = conn.execute(
-                            "SELECT telegram_user_id, delivery_paused, deleted_at FROM app_users WHERE id = %s FOR UPDATE",
+                            "SELECT telegram_user_id,delivery_paused,deleted_at,onboarding_completed_at FROM app_users WHERE id=%s FOR UPDATE",
                             (user["id"],),
                         ).fetchone()
-                        if not current or current["delivery_paused"] or current["deleted_at"] or current["telegram_user_id"] is None:
+                        if (not current or current["delivery_paused"] or current["deleted_at"]
+                                or not current["onboarding_completed_at"] or current["telegram_user_id"] is None):
                             conn.rollback()
                             break
                         if lock_recommendation_for_delivery(conn, user["id"], recommendation_id):

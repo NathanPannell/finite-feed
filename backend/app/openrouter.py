@@ -18,6 +18,12 @@ class ModelChoice:
     model: str
 
 
+@dataclass(frozen=True)
+class PreferenceSynthesis:
+    profile: str
+    model: str
+
+
 class OpenRouterClient:
     def __init__(self, api_key: str, model: str, base_url: str, app_url: str):
         self.model = model
@@ -71,6 +77,48 @@ class OpenRouterClient:
         if "models" in routing and (not isinstance(resolved_model, str) or not resolved_model.strip()):
             raise ValueError("OpenRouter response omitted the model used for its selection")
         return ModelChoice(parsed.get("video_id"), rationale, resolved_model or self.model)
+
+    def synthesize_preferences(self, answers: dict, open_response: str, questions: tuple[dict, ...]) -> PreferenceSynthesis:
+        labels = {
+            str(question["id"]): next(
+                option["label"] for option in question["options"]
+                if option["value"] == answers[str(question["id"])]
+            )
+            for question in questions
+        }
+        prompt = (
+            "Combine the structured choices and the user's own words into one preference profile. "
+            "Write 2 to 5 concrete sentences in first person. Preserve specific interests, desired outcomes, "
+            "style preferences, and explicit exclusions. Do not invent facts or add a heading. "
+            "Return JSON with one string field named profile.\n\n"
+            f"CHOICES:\n{json.dumps(labels)}\n\nUSER WORDS:\n{open_response}"
+        )
+        routing = {
+            "models": [FREE_PRIMARY_MODEL, FREE_FALLBACK_MODEL, FREE_ALTERNATE_MODEL],
+            "reasoning": {"enabled": False},
+        } if self.model == FREE_PRIMARY_MODEL else {"model": self.model}
+        response = self.client.post("/chat/completions", json={
+            **routing,
+            "messages": [
+                {"role": "system", "content": "You build faithful preference profiles. Output JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 350,
+        })
+        response.raise_for_status()
+        payload = response.json()
+        match = JSON_BLOCK.search(payload["choices"][0]["message"]["content"])
+        if not match:
+            raise ValueError("OpenRouter response did not contain a JSON object")
+        profile = str(json.loads(match.group(0)).get("profile", "")).strip()
+        sentences = re.findall(r"[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$", profile)
+        if not profile or not 2 <= len(sentences) <= 5 or len(profile) > 5000:
+            raise ValueError("OpenRouter response must contain a 2 to 5 sentence profile")
+        resolved_model = payload.get("model")
+        if "models" in routing and (not isinstance(resolved_model, str) or not resolved_model.strip()):
+            raise ValueError("OpenRouter response omitted the model used for synthesis")
+        return PreferenceSynthesis(profile, resolved_model or self.model)
 
     def close(self) -> None:
         self.client.close()

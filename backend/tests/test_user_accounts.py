@@ -25,6 +25,10 @@ def test_every_personal_api_denies_anonymous_before_database_access():
         ("DELETE", "/api/account"), ("POST", "/api/account/telegram-link"),
         ("DELETE", "/api/account/telegram"), ("PUT", "/api/account/delivery"),
         ("GET", "/api/profile"), ("PUT", "/api/profile"),
+        ("GET", "/api/onboarding"), ("GET", "/api/onboarding/audit"),
+        ("PUT", "/api/onboarding/answers"), ("PUT", "/api/onboarding/open-response"),
+        ("POST", "/api/onboarding/synthesize"), ("PUT", "/api/onboarding/profile"),
+        ("PUT", "/api/onboarding/delivery"), ("POST", "/api/onboarding/complete"),
         ("PUT", "/api/profile/delivery"), ("PUT", "/api/profile/memory"),
         ("GET", "/api/channels"), ("POST", "/api/channels"),
         ("POST", "/api/channels/resolve"), ("DELETE", f"/api/channels/{record}"),
@@ -115,7 +119,15 @@ def test_two_users_cannot_access_records_and_links_are_single_use():
             assert consume_telegram_link(conn,conflict,chat) is None
             conn.rollback()
             assert get_profile(first,conn)["version"] == 1
+            conn.execute("INSERT INTO onboarding_sessions(user_id,answers,completed_at) VALUES (%s,'{}',NOW())", (first,))
+            conn.execute("INSERT INTO onboarding_audit_logs(id,user_id,step,action) VALUES (%s,%s,'onboarding','completed')", (uuid4(),first))
+            conn.execute("UPDATE app_users SET onboarding_completed_at=NOW() WHERE id=%s", (first,))
+            conn.commit()
             delete_account(DeleteAccount(confirmation="DELETE"),first,conn)
+            tombstone = conn.execute("SELECT onboarding_completed_at FROM app_users WHERE id=%s", (first,)).fetchone()
+            assert tombstone["onboarding_completed_at"] is None
+            assert conn.execute("SELECT 1 FROM onboarding_sessions WHERE user_id=%s", (first,)).fetchone() is None
+            assert conn.execute("SELECT 1 FROM onboarding_audit_logs WHERE user_id=%s", (first,)).fetchone() is None
             with pytest.raises(HTTPException) as error:
                 current_user(identity,conn)
             assert error.value.status_code == 403
