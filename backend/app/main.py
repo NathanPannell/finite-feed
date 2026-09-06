@@ -475,6 +475,24 @@ def telegram_webhook(
         conn.commit()
         bot.send_text(chat_id, "Connect Telegram from your Finite Feed account settings first.")
         return {"ok": True}
+    if not callback and text in {"/unlink", "/unlink confirm"}:
+        if text == "/unlink":
+            conn.commit()
+            bot.send_text(chat_id, "Unlinking pauses delivery and disconnects this Telegram chat. Your preferences and history stay saved. Send /unlink confirm to continue, then connect from your Google account settings.")
+            return {"ok": True}
+        owner = conn.execute(
+            "SELECT id FROM app_users WHERE id=%s AND telegram_user_id=%s AND deleted_at IS NULL FOR UPDATE",
+            (user_id, chat_id),
+        ).fetchone()
+        if owner:
+            conn.execute(
+                "UPDATE app_users SET telegram_user_id=NULL,delivery_paused=TRUE,updated_at=NOW() WHERE id=%s AND telegram_user_id=%s",
+                (user_id, chat_id),
+            )
+            conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s", (user_id,))
+        conn.commit()
+        bot.send_text(chat_id, "Telegram disconnected and delivery paused. Connect again from your Google account settings." if owner else "This chat is no longer linked. Connect from your account settings.")
+        return {"ok": True}
     if callback:
         parts = str(callback.get("data", "")).split(":")
         if len(parts) == 3 and parts[0] == "feedback" and parts[1] in {"up", "down"}:
@@ -547,7 +565,7 @@ def telegram_webhook(
         conn.commit()
         bot.send_text(chat_id, "Delivery paused." if text == "/pause" else "Delivery resumed.")
     elif text.startswith("/"):
-        bot.send_text(chat_id, "Use /recommend for a pick, /preferences to inspect your profile, /pause or /resume for delivery. Send a sentence of at least 10 characters to replace your preferences.")
+        bot.send_text(chat_id, "Use /recommend for a pick, /preferences to inspect your profile, /pause or /resume for delivery, and /unlink to disconnect this chat. Send a sentence of at least 10 characters to replace your preferences.")
     elif len(text) >= 10:
         conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         current = conn.execute(

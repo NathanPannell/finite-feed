@@ -8,6 +8,8 @@ GitHub CI applies all checksummed migrations, runs backend integration checks an
 
 Personal routes are `/app` and `/app/settings`; `/match` stays public. Control Room remains behind Vercel SSO plus independently verified Vercel OIDC at Railway. Preview scheduled Telegram delivery stays disabled and production bot credentials are removed. Never change production webhook registration to a preview URL. Preview Connect registers only the developer bot to that preview API, requires an allowlisted tester, and fails without secure webhook configuration. Telegram permits one webhook per bot: the most recent preview Connect owns developer routing, so reconnect in the intended preview before testing. Workers do not register the developer bot or reclaim it; production webhook recovery registers only the production bot every six hours, retrying setup failures after fifteen minutes.
 
+To move an existing dogfood Telegram chat to a new Google account, send `/unlink` and then `/unlink confirm` in the bot's private chat. This pauses the old account, clears its chat link and outstanding link tokens, and preserves its preferences/history. Create a fresh Telegram link in the new Google account's settings afterward. Ownership is proven by the authenticated Telegram chat; email matching never claims or transfers an account.
+
 ## Pipeline and budgets
 
 The worker isolates ingestion and delivery stages and each recipient. It records a heartbeat in `worker_heartbeat`; Control Room reports a stale heartbeat after ten minutes. Review ingestion errors, embedding completeness, per-account delivery errors and `provider_daily_usage` before retrying. A missing or stale heartbeat requires checking worker deployment and logs; API `/ready` alone does not prove the worker is running.
