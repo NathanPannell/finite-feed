@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 
 type Revision = { version: number; preference_statement: string; source: string; created_at: string };
 type Account = { id: string; email: string; display_name: string; telegram_connected: boolean; delivery_paused: boolean; delivery_status?: string; delivery_error?: string | null };
@@ -15,7 +16,7 @@ export function SignInPrompt() {
     try { const result = await authClient.signIn.social({ provider: "google", callbackURL: `${window.location.origin}/auth/callback` }); if (result.error) throw new Error("Sign-in could not start. Please try again."); }
     catch { setError("Google sign-in is unavailable right now. Please try again."); setBusy(false); }
   }
-  return <main className="sign-in-page"><Link className="signal-wordmark" href="/"><span aria-hidden="true">F/</span>Finite Feed</Link><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><button className="landing-cta" disabled={busy} onClick={() => void signIn()}>{busy ? "Opening Google…" : "Continue with Google"}</button>{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. By continuing, you can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main>;
+  return <div className="signal-shell"><SiteHeader /><main className="sign-in-page"><h1>A feed with<br /><span>you in mind.</span></h1><p>Sign in to choose your interests, connect Telegram, and find your next worthwhile watch.</p><button className="landing-cta" disabled={busy} onClick={() => void signIn()}>{busy ? "Opening Google…" : "Continue with Google"}</button>{error && <p className="signal-error" role="alert">{error}</p>}<p className="landing-note">Private beta. You can review and manage your account data in settings.</p><Link href="/privacy">Privacy & your data</Link></main><SiteFooter /></div>;
 }
 
 export function AccountControls() {
