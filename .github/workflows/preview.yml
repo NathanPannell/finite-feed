@@ -210,6 +210,24 @@ jobs:
           vercel curl /api/match/annotations/stats --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
             --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" | jq -e '.completed >= 1' >/dev/null
 
+      - name: Verify Google OAuth accepts the preview callback
+        env:
+          FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          oauth_start_file="$(mktemp)"
+          trap 'rm -f "$oauth_start_file"' EXIT
+          vercel curl /api/auth/sign-in/social --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
+            --fail --silent --show-error \
+            --request POST \
+            -H 'Content-Type: application/json' \
+            -H "Origin: $FRONTEND_URL" \
+            --data "$(jq -nc --arg callback "$FRONTEND_URL/auth/callback" '{provider:"google",callbackURL:$callback,disableRedirect:true}')" \
+            -o "$oauth_start_file"
+          node scripts/verify-google-oauth-start.mjs \
+            --payload-file "$oauth_start_file" \
+            --expected-callback "$NEON_AUTH_BASE_URL/callback/google"
+
       - name: Post or update preview summary
         uses: actions/github-script@v8
         env:

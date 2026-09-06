@@ -155,6 +155,7 @@ async function mockPublicApi(page: Page) {
     }
 
     if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "beta@example.test", display_name: "Beta reader", telegram_connected: false, delivery_paused: false});
+    if (url.pathname === "/api/personal/account/telegram-link") return json(route, {url: "https://t.me/finitefeedbot?start=token", code: "824619", expires_at: "2026-09-06T22:10:00Z"});
     if (url.pathname === "/api/personal/account/preferences") return json(route, []);
     return json(route, {});
   });
@@ -203,6 +204,21 @@ test("saves delivery schedule and resolves a URL-only source", async ({ page }) 
   await page.getByRole("button", { name: "Add source" }).click();
   expect(captured.channelPayload()).toEqual({ url: sourceUrl });
   await expect(page.getByRole("button", { name: "Remove Practical Engineering" })).toBeVisible();
+});
+
+test("connects Telegram with a copyable code and an optional deep link", async ({ page }) => {
+  await mockPublicApi(page);
+  await page.goto("/app/settings");
+
+  await expect(page.getByRole("button", { name: "Connect manually" })).toBeEnabled();
+  await page.getByRole("button", { name: "Connect manually" }).click();
+  await expect(page.getByRole("heading", { name: "Connect in Telegram" })).toBeVisible();
+  await expect(page.getByLabel("Your six-digit Telegram connection code")).toHaveText("824619");
+  await expect(page.getByText("Open @finitefeedbot in Telegram.")).toBeVisible();
+  await expect(page.getByText("Copy and send this six-digit code as a message.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Prefer a link\? Open Telegram instead/ })).toHaveAttribute("href", "https://t.me/finitefeedbot?start=token");
+  await page.getByRole("button", { name: "Copy code" }).click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
 });
 
 test("saves preference memory with an optimistic version and no delivery fields", async ({ page }) => {

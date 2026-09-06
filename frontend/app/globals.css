@@ -994,6 +994,13 @@ h1, h2, h3 {
 .account-identity { overflow-wrap: anywhere; }
 .account-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .account-actions button { min-height: 44px; }
+.telegram-setup { border-top: 1px solid var(--carbon); margin-top: 28px; padding-top: 24px; max-width: 560px; }
+.telegram-setup h3 { font-size: 20px; margin: 0 0 14px; }
+.telegram-setup ol { margin: 0 0 20px; padding-left: 22px; }
+.telegram-setup li + li { margin-top: 8px; }
+.telegram-code { align-items: stretch; display: flex; gap: 12px; flex-wrap: wrap; }
+.telegram-code output { align-items: center; background: var(--signal-yellow); color: var(--carbon); display: inline-flex; font-size: clamp(28px, 5vw, 40px); font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: .14em; line-height: 1; min-height: 52px; padding: 8px 16px 8px 20px; }
+.telegram-deep-link { display: inline-flex; font-size: 13px; font-weight: 800; margin-top: 8px; min-height: 44px; align-items: center; }
 .account-message, .account-data { grid-column: 1 / -1; }
 .account-data summary { font-weight: 800; min-height: 44px; padding: 12px 0; }
 .account-data p { max-width: 75ch; }

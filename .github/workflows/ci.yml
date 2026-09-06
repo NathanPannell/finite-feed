@@ -68,7 +68,7 @@ jobs:
           RAILWAY_API_BASE_URL: http://localhost:8000
       - run: npm run test:proxy
         working-directory: frontend
-      - run: node --test scripts/validate-vercel-auth-location.test.mjs scripts/set-railway-variables.test.mjs
+      - run: node --test scripts/validate-vercel-auth-location.test.mjs scripts/set-railway-variables.test.mjs scripts/verify-google-oauth-start.test.mjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run test:e2e

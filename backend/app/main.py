@@ -17,10 +17,10 @@ from backend.app.match_identity import reviewer_identity
 from backend.app.openrouter import provider_failure
 from backend.app.recommendations import (
     generate_recommendation as create_recommendation,
-    get_or_create_pending_recommendation,
     lock_recommendation_for_delivery,
     mark_recommendation_delivered,
 )
+from backend.app.recommendation_queue import claim_queued_recommendation, invalidate_recommendation_queue
 from backend.app.schemas import (
     Channel,
     ChannelCreate,
@@ -157,6 +157,7 @@ def update_profile(payload: ProfileUpdate, user_id: UUID = Depends(current_user)
         "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'dashboard', %s)",
         (uuid4(), user_id, version, payload.preference_statement, rendered, payload.preference_statement),
     )
+    invalidate_recommendation_queue(conn, user_id)
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'dashboard', %s)",
         (uuid4(), user_id, Jsonb({"version": version})),
@@ -191,6 +192,7 @@ def update_preference_memory(payload: PreferenceMemoryUpdate, user_id: UUID = De
         "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'dashboard', %s)",
         (uuid4(), user_id, version, payload.preference_statement, rendered, payload.preference_statement),
     )
+    invalidate_recommendation_queue(conn, user_id)
     conn.execute(
         "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'dashboard', %s)",
         (uuid4(), user_id, Jsonb({"version": version})),
@@ -316,6 +318,7 @@ def generate_recommendation(user_id: UUID = Depends(current_user), conn: Connect
 
 @app.post("/api/recommendations/{recommendation_id}/feedback", response_model=Recommendation)
 def record_feedback(recommendation_id: UUID, payload: FeedbackCreate, user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
     row = conn.execute(
         "UPDATE recommendations SET rating = %s WHERE id = %s AND user_id = %s RETURNING id",
         (payload.rating, recommendation_id, user_id),
@@ -328,6 +331,7 @@ def record_feedback(recommendation_id: UUID, payload: FeedbackCreate, user_id: U
         "INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source, metadata) VALUES (%s, %s, %s, %s, 'dashboard', %s)",
         (uuid4(), user_id, recommendation_id, event_type, Jsonb({"detail": payload.detail})),
     )
+    invalidate_recommendation_queue(conn, user_id)
     conn.commit()
     recommendation_query = RECOMMENDATION_SELECT.replace(
         "WHERE r.user_id = %s",
@@ -471,6 +475,11 @@ def telegram_webhook(
         bot.send_text(chat_id, "Telegram connected. Use /recommend, /preferences, /pause or /resume." if user_id else "This link expired, was already used, or conflicts with a linked account. Create a new link in app settings.")
         return {"ok": True}
     user_id = _telegram_user(conn, int(chat_id), bot_kind == "developer")
+    if not callback and not user_id and text.isdigit() and len(text) == 6:
+        user_id = consume_telegram_link(conn, text, int(chat_id))
+        conn.commit()
+        bot.send_text(chat_id, "Telegram connected. Use /recommend, /preferences, /pause or /resume." if user_id else "This code expired, was already used, or is invalid. Create a new code in app settings.")
+        return {"ok": True}
     if not user_id:
         conn.commit()
         bot.send_text(chat_id, "Connect Telegram from your Finite Feed account settings first.")
@@ -485,11 +494,17 @@ def telegram_webhook(
             (user_id, chat_id),
         ).fetchone()
         if owner:
+            conn.execute("DELETE FROM telegram_link_attempts WHERE chat_id=%s", (chat_id,))
             conn.execute(
                 "UPDATE app_users SET telegram_user_id=NULL,delivery_paused=TRUE,updated_at=NOW() WHERE id=%s AND telegram_user_id=%s",
                 (user_id, chat_id),
             )
             conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s", (user_id,))
+            conn.execute(
+                """UPDATE telegram_preference_confirmations SET resolved_at=NOW(),accepted=FALSE
+                   WHERE user_id=%s AND resolved_at IS NULL""",
+                (user_id,),
+            )
         conn.commit()
         bot.send_text(chat_id, "Telegram disconnected and delivery paused. Connect again from your Google account settings." if owner else "This chat is no longer linked. Connect from your account settings.")
         return {"ok": True}
@@ -510,39 +525,122 @@ def telegram_webhook(
                     "INSERT INTO interaction_events (id, user_id, recommendation_id, event_type, source) VALUES (%s, %s, %s, %s, 'telegram')",
                     (uuid4(), user_id, recommendation_id, f"feedback_{parts[1]}"),
                 )
+                invalidate_recommendation_queue(conn, user_id)
                 conn.commit()
                 bot.answer_callback(callback["id"], "Saved — more like this." if parts[1] == "up" else "Saved — less like this.")
+            else:
+                conn.commit()
+            return {"ok": True}
+        if len(parts) == 3 and parts[0] == "preference" and parts[1] in {"yes", "no"}:
+            try:
+                confirmation_id = UUID(parts[2])
+            except ValueError:
+                conn.commit()
+                return {"ok": True}
+            callback_user_id = (callback.get("from") or {}).get("id")
+            if callback_user_id != int(chat_id):
+                conn.commit()
+                bot.answer_callback(callback["id"], "This preference request is not available.")
+                return {"ok": True}
+            confirmation = conn.execute(
+                """UPDATE telegram_preference_confirmations
+                   SET resolved_at=NOW(), accepted=%s
+                   WHERE id=%s AND user_id=%s AND chat_id=%s
+                     AND resolved_at IS NULL AND expires_at>NOW()
+                   RETURNING proposed_text""",
+                (parts[1] == "yes", confirmation_id, user_id, chat_id),
+            ).fetchone()
+            if not confirmation:
+                conn.commit()
+                bot.answer_callback(callback["id"], "This preference request expired or was already handled.")
+                return {"ok": True}
+            if parts[1] == "no":
+                conn.commit()
+                bot.answer_callback(callback["id"], "Okay — preferences unchanged.")
+                return {"ok": True}
+            current = conn.execute(
+                """SELECT version, preference_statement
+                   FROM preference_versions WHERE user_id=%s ORDER BY version DESC LIMIT 1""",
+                (user_id,),
+            ).fetchone()
+            appended = f"{current['preference_statement'].rstrip()}\n\n{confirmation['proposed_text']}"
+            if len(appended) > 5000:
+                conn.rollback()
+                conn.execute(
+                    """UPDATE telegram_preference_confirmations
+                       SET resolved_at=NOW(), accepted=FALSE
+                       WHERE id=%s AND user_id=%s AND chat_id=%s AND resolved_at IS NULL""",
+                    (confirmation_id, user_id, chat_id),
+                )
+                conn.commit()
+                bot.answer_callback(callback["id"], "That addition would make your preferences too long.")
+                return {"ok": True}
+            version = current["version"] + 1
+            rendered = f"# Current preferences\n\n{appended}\n\n## History\n\n- Version {version} appended from Telegram."
+            conn.execute(
+                """INSERT INTO preference_versions
+                   (id,user_id,version,preference_statement,rendered_markdown,source,source_message)
+                   VALUES (%s,%s,%s,%s,%s,'telegram',%s)""",
+                (uuid4(), user_id, version, appended, rendered, confirmation["proposed_text"]),
+            )
+            conn.execute(
+                """INSERT INTO interaction_events
+                   (id,user_id,event_type,source,metadata)
+                   VALUES (%s,%s,'preference_revision','telegram',%s)""",
+                (uuid4(), user_id, Jsonb({"version": version, "mode": "append"})),
+            )
+            invalidate_recommendation_queue(conn, user_id)
+            conn.commit()
+            bot.answer_callback(callback["id"], "Preferences updated.")
+            return {"ok": True}
         return {"ok": True}
     text = str(message.get("text", "")).strip()
     if text == "/recommend":
-        claimed = conn.execute(
-            """UPDATE app_users SET last_delivery_attempt_at = NOW()
-            WHERE id = %s AND NOT delivery_paused AND deleted_at IS NULL
-              AND telegram_user_id = %s
-              AND (last_delivery_attempt_at IS NULL OR last_delivery_attempt_at <= NOW() - (%s * INTERVAL '1 minute'))
-            RETURNING id""", (user_id, chat_id, settings.delivery_retry_minutes),
+        # Persist Telegram update deduplication before a network send. Then reacquire
+        # the account lock before the queue lock to preserve global lock ordering.
+        conn.commit()
+        current = conn.execute(
+            """SELECT telegram_user_id,delivery_paused,deleted_at,
+                      delivery_error IS NOT NULL AND last_delivery_attempt_at IS NOT NULL AND
+                      last_delivery_attempt_at > NOW() - (%s * INTERVAL '1 minute') AS delivery_cooling_down
+               FROM app_users WHERE id=%s FOR UPDATE""",
+            (settings.delivery_retry_minutes, user_id),
         ).fetchone()
-        conn.commit()  # Persist both update deduplication and a bounded provider retry gate.
-        if not claimed:
+        if not current or current["deleted_at"] or current["telegram_user_id"] != chat_id:
+            conn.rollback()
+            return {"ok": True}
+        if current["delivery_paused"] or current["delivery_cooling_down"]:
+            conn.commit()
             bot.send_text(chat_id, "Delivery is paused or a recent request is still cooling down. Use /resume if paused, or try again later.")
             return {"ok": True}
         try:
-            recommendation_id = get_or_create_pending_recommendation(conn, settings, user_id, require_model=True)
-            current = conn.execute(
-                "SELECT telegram_user_id, delivery_paused, deleted_at FROM app_users WHERE id = %s FOR UPDATE", (user_id,),
-            ).fetchone()
+            recommendation_id = claim_queued_recommendation(conn, user_id, require_model=True)
+            if recommendation_id is None:
+                conn.execute(
+                    """UPDATE app_users SET delivery_status='waiting',delivery_error=NULL,
+                       last_delivery_attempt_at=NULL WHERE id=%s AND deleted_at IS NULL""",
+                    (user_id,),
+                )
+                conn.commit()
+                bot.send_text(chat_id, "Your next recommendation is being prepared. Try again shortly.")
+                return {"ok": True}
             if not current or current["deleted_at"] or current["delivery_paused"] or current["telegram_user_id"] != chat_id:
                 conn.rollback()
                 return {"ok": True}
             if lock_recommendation_for_delivery(conn, user_id, recommendation_id):
                 bot.send_recommendation(conn, recommendation_id, current["telegram_user_id"], settings.public_app_url)
+                conn.execute(
+                    "UPDATE app_users SET last_delivery_attempt_at=NULL,delivery_status='ready',delivery_error=NULL WHERE id=%s",
+                    (user_id,),
+                )
                 mark_recommendation_delivered(conn, user_id, recommendation_id, scheduled=False)
         except Exception as exc:
             conn.rollback()
             # The command is handled once; another explicit request can retry after
             # cooldown, reusing any persisted pending pick rather than spending again.
             conn.execute(
-                "UPDATE app_users SET delivery_status = 'waiting', delivery_error = %s WHERE id = %s AND deleted_at IS NULL",
+                """UPDATE app_users SET delivery_status='waiting',delivery_error=%s,
+                   last_delivery_attempt_at=NOW() WHERE id=%s AND deleted_at IS NULL""",
                 (str(exc)[:300] if isinstance(exc, ValueError) else "Recommendation service temporarily unavailable", user_id),
             )
             current = conn.execute(
@@ -565,24 +663,25 @@ def telegram_webhook(
         conn.commit()
         bot.send_text(chat_id, "Delivery paused." if text == "/pause" else "Delivery resumed.")
     elif text.startswith("/"):
-        bot.send_text(chat_id, "Use /recommend for a pick, /preferences to inspect your profile, /pause or /resume for delivery, and /unlink to disconnect this chat. Send a sentence of at least 10 characters to replace your preferences.")
-    elif len(text) >= 10:
+        bot.send_text(chat_id, "Use /recommend for a pick, /preferences to inspect your profile, /pause or /resume for delivery, and /unlink to disconnect this chat. Send a message to add it to your preferences.")
+    elif text:
         conn.execute("SELECT id FROM app_users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
-        current = conn.execute(
-            "SELECT version, rendered_markdown FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
-            (user_id,),
-        ).fetchone()
-        version = current["version"] + 1
-        rendered = f"# Current preferences\n\n{text}\n\n## History\n\n- Version {version} applied from Telegram."
         conn.execute(
-            "INSERT INTO preference_versions (id, user_id, version, preference_statement, rendered_markdown, source, source_message) VALUES (%s, %s, %s, %s, %s, 'telegram', %s)",
-            (uuid4(), user_id, version, text, rendered, text),
+            """UPDATE telegram_preference_confirmations
+               SET resolved_at=NOW(), accepted=FALSE
+               WHERE user_id=%s AND chat_id=%s AND resolved_at IS NULL""",
+            (user_id, chat_id),
         )
+        confirmation_id = uuid4()
         conn.execute(
-            "INSERT INTO interaction_events (id, user_id, event_type, source, metadata) VALUES (%s, %s, 'preference_revision', 'telegram', %s)",
-            (uuid4(), user_id, Jsonb({"version": version})),
+            """INSERT INTO telegram_preference_confirmations
+               (id,user_id,chat_id,proposed_text,expires_at)
+               VALUES (%s,%s,%s,%s,NOW()+INTERVAL '10 minutes')""",
+            (confirmation_id, user_id, chat_id, text),
         )
+        bot.send_preference_confirmation(chat_id, confirmation_id, text)
+        # Commit only after Telegram accepted the prompt. A failed or ambiguous
+        # send rolls back update deduplication so Telegram can retry at least once.
         conn.commit()
-        bot.send_text(chat_id, "Updated your preference profile. I’ll use that on the next recommendation.")
     conn.commit()
     return {"ok": True}

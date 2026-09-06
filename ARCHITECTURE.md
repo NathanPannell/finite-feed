@@ -20,7 +20,7 @@ Vercel preview ──HTTPS──> Railway API (pr-N) ──pooled SQL──> Neo
                           API migrations ──direct SQL────────> same branch
 ```
 
-The workflow creates or reuses deterministic `pr-N` resources. It gives the pooled URL to both services and the direct migration URL only to the API. Vercel Git auto-deployment is disabled, so the workflow creates exactly one frontend preview after the matching API is ready. It then writes that exact preview URL into Railway's CORS allowlist and the preview Neon Auth trusted domains before a final API redeploy.
+The workflow creates or reuses deterministic `pr-N` resources. It gives the pooled URL to both services and the direct migration URL only to the API. Vercel Git auto-deployment is disabled, so the workflow creates exactly one frontend preview after the matching API is ready. It then writes that exact preview URL into Railway's CORS allowlist and the preview Neon Auth trusted domains before a final API redeploy. Before declaring the preview ready, it starts Google OAuth through the deployed frontend and verifies that Google accepts the exact branch-specific Neon Auth callback.
 
 On close or merge, GitHub Actions deletes the Railway environment, Neon branch, and recorded Vercel deployment. Neon branches also expire after seven days as a leak backstop. Fork PRs do not deploy. Same-repository previews deploy only when both the PR author and workflow actor match `TRUSTED_PREVIEW_ACTOR`, the GitHub user that ran the bootstrap.
 
