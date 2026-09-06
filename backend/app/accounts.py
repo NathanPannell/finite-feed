@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -8,11 +9,14 @@ from pydantic import BaseModel
 from psycopg import Connection
 
 from backend.app.db import connection
+from backend.app.recommendation_queue import invalidate_recommendation_queue
 from backend.app.settings import get_settings
 from backend.app.telegram import TelegramBot
 from backend.app.user_auth import current_user
 
 router = APIRouter(prefix="/api/account")
+MANUAL_CODE_PATTERN = re.compile(r"\d{6}")
+MANUAL_CODE_ATTEMPTS_PER_MINUTE = 5
 
 
 @router.get("")
@@ -62,16 +66,52 @@ def telegram_link(user_id: UUID = Depends(current_user), conn: Connection = Depe
     expiry = datetime.now(timezone.utc) + timedelta(minutes=10)
     conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,))
     conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s OR expires_at<NOW()", (user_id,))
-    conn.execute("INSERT INTO telegram_link_tokens(token_hash,user_id,expires_at) VALUES (%s,%s,%s)", (hashlib.sha256(raw.encode()).hexdigest(),user_id,expiry))
+    conn.execute(
+        "INSERT INTO telegram_link_tokens(token_hash,user_id,expires_at,kind) VALUES (%s,%s,%s,'deep_link')",
+        (hashlib.sha256(raw.encode()).hexdigest(), user_id, expiry),
+    )
+    code = None
+    for _ in range(10):
+        candidate = f"{secrets.randbelow(1_000_000):06d}"
+        inserted = conn.execute(
+            """INSERT INTO telegram_link_tokens(token_hash,user_id,expires_at,kind)
+               VALUES (%s,%s,%s,'manual_code') ON CONFLICT DO NOTHING RETURNING token_hash""",
+            (hashlib.sha256(candidate.encode()).hexdigest(), user_id, expiry),
+        ).fetchone()
+        if inserted:
+            code = candidate
+            break
+    if code is None:
+        conn.rollback()
+        raise HTTPException(503, "Could not create a Telegram code. Try again.")
     conn.commit()
-    return {"url": f"https://t.me/{username}?start={raw}", "expires_at": expiry}
+    return {"url": f"https://t.me/{username}?start={raw}", "code": code, "expires_at": expiry}
 
 
 def consume_telegram_link(conn: Connection, raw: str, chat_id: int):
+    kind = "manual_code" if MANUAL_CODE_PATTERN.fullmatch(raw) else "deep_link"
     digest = hashlib.sha256(raw.encode()).hexdigest()
     # Serialize both token consumption and chat ownership, including competing tokens.
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (chat_id,))
-    row = conn.execute("SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND expires_at>NOW()", (digest,)).fetchone()
+    if kind == "manual_code":
+        attempt = conn.execute(
+            """INSERT INTO telegram_link_attempts(chat_id) VALUES (%s)
+               ON CONFLICT (chat_id) DO UPDATE SET
+                 window_started_at = CASE
+                   WHEN telegram_link_attempts.window_started_at <= NOW() - INTERVAL '1 minute' THEN NOW()
+                   ELSE telegram_link_attempts.window_started_at END,
+                 attempt_count = CASE
+                   WHEN telegram_link_attempts.window_started_at <= NOW() - INTERVAL '1 minute' THEN 1
+                   ELSE telegram_link_attempts.attempt_count + 1 END
+               RETURNING attempt_count""",
+            (chat_id,),
+        ).fetchone()
+        if not attempt or attempt["attempt_count"] > MANUAL_CODE_ATTEMPTS_PER_MINUTE:
+            return None
+    row = conn.execute(
+        "SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND kind=%s AND expires_at>NOW()",
+        (digest, kind),
+    ).fetchone()
     if not row:
         return None
     # Match account deletion/unlink/token creation order: account first, tokens
@@ -80,8 +120,8 @@ def consume_telegram_link(conn: Connection, raw: str, chat_id: int):
     if not account:
         return None
     valid = conn.execute(
-        "SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND user_id=%s AND expires_at>NOW() FOR UPDATE",
-        (digest, row["user_id"]),
+        "SELECT user_id FROM telegram_link_tokens WHERE token_hash=%s AND user_id=%s AND kind=%s AND expires_at>NOW() FOR UPDATE",
+        (digest, row["user_id"], kind),
     ).fetchone()
     if not valid:
         return None
@@ -91,6 +131,12 @@ def consume_telegram_link(conn: Connection, raw: str, chat_id: int):
     updated = conn.execute("UPDATE app_users SET telegram_user_id=%s,updated_at=NOW() WHERE id=%s AND deleted_at IS NULL AND (telegram_user_id IS NULL OR telegram_user_id=%s) RETURNING id", (chat_id,row["user_id"],chat_id)).fetchone()
     if not updated:
         return None
+    conn.execute(
+        """UPDATE telegram_preference_confirmations SET resolved_at=NOW(),accepted=FALSE
+           WHERE user_id=%s AND resolved_at IS NULL""",
+        (row["user_id"],),
+    )
+    invalidate_recommendation_queue(conn, row["user_id"])
     conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s", (row["user_id"],))
     conn.commit()
     return row["user_id"]
@@ -100,6 +146,11 @@ def consume_telegram_link(conn: Connection, raw: str, chat_id: int):
 def unlink(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     conn.execute("UPDATE app_users SET telegram_user_id=NULL,updated_at=NOW() WHERE id=%s", (user_id,))
     conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s", (user_id,))
+    conn.execute(
+        """UPDATE telegram_preference_confirmations SET resolved_at=NOW(),accepted=FALSE
+           WHERE user_id=%s AND resolved_at IS NULL""",
+        (user_id,),
+    )
     conn.commit()
     return Response(status_code=204)
 
@@ -121,7 +172,7 @@ def delete_account(payload: DeleteAccount, user_id: UUID = Depends(current_user)
     if payload.confirmation != "DELETE":
         raise HTTPException(400, "Type DELETE to confirm account deletion")
     conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,))
-    for table in ("telegram_link_tokens", "interaction_events", "recommendations", "preference_versions", "user_channel_follows"):
+    for table in ("telegram_link_tokens", "telegram_preference_confirmations", "interaction_events", "recommendations", "preference_versions", "user_channel_follows"):
         conn.execute(f"DELETE FROM {table} WHERE user_id=%s", (user_id,))
     # Keep only an identity tombstone and canonical ingestion ownership. A still
     # valid provider session must not silently recreate a deleted app account.

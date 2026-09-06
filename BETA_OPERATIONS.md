@@ -20,6 +20,8 @@ Defaults are 40 model requests and 1,000 YouTube requests per UTC day (`MODEL_DA
 
 Scheduled delivery catches up after the chosen hour on an enabled local calendar day and never replays prior days. Timezone conversion uses IANA zones and local dates, covering repeated DST hours; the configured count caps daily picks. A partial delivery retries only the remainder. Existing model-backed pending picks are reused. Explicit abstention leaves a useful waiting state instead of sending an arbitrary pick.
 
+Telegram `/recommend` consumes one of two durable prepared slots without a model call. A separate worker loop refills consumed, stale, or interrupted slots independently of ingestion, using leases and persisted retry delays. Preference edits and confirmed Telegram additions invalidate both slots; provider budgets still apply to rebuilding them. Initial setup, bursts beyond the available picks, and provider failures can temporarily leave the queue empty.
+
 Telegram sends remain at least once in the irreducible case where Telegram accepts the message but the following DB commit fails. Inspect history before manual retry. Preview must never send to production recipients. User linking requires an expiring, single-use account-bound token in a private chat.
 
 ## Incident recovery and rollback
