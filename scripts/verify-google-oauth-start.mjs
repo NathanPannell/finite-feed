@@ -20,8 +20,12 @@ function containsRedirectMismatch(value) {
   return typeof value === "string" && /redirect_uri_mismatch/i.test(value);
 }
 
+function hasSafeHttpsOrigin(url) {
+  return url.protocol === "https:" && url.port === "" && url.username === "" && url.password === "";
+}
+
 function hasSafeGoogleOrigin(url) {
-  return url.protocol === "https:" && url.hostname === GOOGLE_HOST && url.port === "" && url.username === "" && url.password === "";
+  return hasSafeHttpsOrigin(url) && url.hostname === GOOGLE_HOST;
 }
 
 function decodedAuthError(locationUrl) {
@@ -34,6 +38,24 @@ function decodedAuthError(locationUrl) {
   }
 }
 
+async function fetchWithoutRedirect(fetchImpl, url) {
+  return fetchImpl(url, {
+    redirect: "manual",
+    headers: { "user-agent": "finite-feed-preview-oauth-smoke/1.0" },
+    signal: AbortSignal.timeout(15_000),
+  });
+}
+
+function redirectLocation(response, requestUrl, source) {
+  const value = response.headers.get("location");
+  if (!value) return { value: "", url: null };
+  try {
+    return { value, url: new URL(value, requestUrl) };
+  } catch {
+    throw new Error(`${source} returned an invalid redirect while starting OAuth.`);
+  }
+}
+
 export async function verifyGoogleOAuthStart({ startPayload, expectedCallback, fetchImpl = fetch }) {
   let payload;
   try {
@@ -42,60 +64,88 @@ export async function verifyGoogleOAuthStart({ startPayload, expectedCallback, f
     throw new Error("The deployed auth endpoint did not return valid JSON.");
   }
 
-  let authorizationUrl;
+  let expectedCallbackUrl;
+  try {
+    expectedCallbackUrl = new URL(expectedCallback);
+  } catch {
+    throw new Error("The expected Neon Auth callback is invalid.");
+  }
+  const callbackSuffix = "/callback/google";
+  if (
+    !hasSafeHttpsOrigin(expectedCallbackUrl) ||
+    expectedCallbackUrl.search ||
+    expectedCallbackUrl.hash ||
+    !expectedCallbackUrl.pathname.endsWith(callbackSuffix)
+  ) {
+    throw new Error("The expected Neon Auth callback is invalid.");
+  }
+  const authBasePath = expectedCallbackUrl.pathname.slice(0, -callbackSuffix.length);
+
+  let brokerUrl;
+  try {
+    brokerUrl = new URL(payload?.url);
+  } catch {
+    throw new Error("The deployed auth endpoint did not return a valid Neon OAuth broker URL.");
+  }
+  if (
+    payload?.redirect !== false ||
+    !hasSafeHttpsOrigin(brokerUrl) ||
+    brokerUrl.origin !== expectedCallbackUrl.origin ||
+    brokerUrl.pathname !== `${authBasePath}/sign-in/social/init` ||
+    !brokerUrl.searchParams.get("token") ||
+    brokerUrl.hash ||
+    [...brokerUrl.searchParams.keys()].some((key) => key !== "token")
+  ) {
+    throw new Error("The deployed auth endpoint returned an unexpected Neon OAuth broker URL.");
+  }
+
+  const brokerResponse = await fetchWithoutRedirect(fetchImpl, brokerUrl);
+  const brokerBody = await brokerResponse.text();
+  const brokerLocation = redirectLocation(brokerResponse, brokerUrl, "Neon Auth");
+  if (brokerResponse.status < 300 || brokerResponse.status >= 400 || !brokerLocation.url) {
+    throw new Error(`Neon Auth did not redirect the OAuth request to Google (HTTP ${brokerResponse.status}).`);
+  }
+  if (containsRedirectMismatch(brokerBody) || containsRedirectMismatch(brokerLocation.value)) {
+    throw registrationError(expectedCallbackUrl.href);
+  }
+
+  const authorizationUrl = brokerLocation.url;
+  if (!hasSafeGoogleOrigin(authorizationUrl) || !GOOGLE_AUTH_PATHS.has(authorizationUrl.pathname)) {
+    throw new Error("Neon Auth returned an unexpected Google authorization redirect.");
+  }
+
   let callbackUrl;
   try {
-    authorizationUrl = new URL(payload?.url);
     callbackUrl = new URL(authorizationUrl.searchParams.get("redirect_uri"));
   } catch {
-    throw new Error("The deployed auth endpoint did not return a valid Google authorization URL.");
+    throw new Error("Google's authorization request did not contain a valid callback URL.");
+  }
+  if (callbackUrl.href !== expectedCallbackUrl.href) {
+    throw new Error(`The deployed Google callback does not match the preview Neon Auth branch. Expected: ${expectedCallbackUrl.href}`);
   }
 
+  const googleResponse = await fetchWithoutRedirect(fetchImpl, authorizationUrl);
+  const googleBody = await googleResponse.text();
+  const googleLocation = redirectLocation(googleResponse, authorizationUrl, "Google");
   if (
-    !hasSafeGoogleOrigin(authorizationUrl) ||
-    !GOOGLE_AUTH_PATHS.has(authorizationUrl.pathname)
+    containsRedirectMismatch(googleBody) ||
+    containsRedirectMismatch(googleLocation.value) ||
+    containsRedirectMismatch(decodedAuthError(googleLocation.url))
   ) {
-    throw new Error("The deployed auth endpoint returned an unexpected OAuth provider URL.");
+    throw registrationError(expectedCallbackUrl.href);
   }
-  if (callbackUrl.href !== expectedCallback) {
-    throw new Error(`The deployed Google callback does not match the preview Neon Auth branch. Expected: ${expectedCallback}`);
-  }
-
-  const response = await fetchImpl(authorizationUrl, {
-    redirect: "manual",
-    headers: { "user-agent": "finite-feed-preview-oauth-smoke/1.0" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = await response.text();
-  const locationValue = response.headers.get("location");
-  let locationUrl = null;
-  if (locationValue) {
-    try {
-      locationUrl = new URL(locationValue, authorizationUrl);
-    } catch {
-      throw new Error("Google returned an invalid redirect while starting OAuth.");
-    }
-  }
-
-  if (
-    containsRedirectMismatch(body) ||
-    containsRedirectMismatch(locationValue) ||
-    containsRedirectMismatch(decodedAuthError(locationUrl))
-  ) {
-    throw registrationError(expectedCallback);
-  }
-  if (locationUrl?.pathname === "/signin/oauth/error") {
+  if (googleLocation.url?.pathname === "/signin/oauth/error") {
     throw new Error("Google redirected the authorization request to its OAuth error page.");
   }
-  if (response.status >= 400) {
-    throw new Error(`Google rejected the OAuth authorization request with HTTP ${response.status}.`);
+  if (googleResponse.status >= 400) {
+    throw new Error(`Google rejected the OAuth authorization request with HTTP ${googleResponse.status}.`);
   }
   if (
-    response.status < 300 ||
-    response.status >= 400 ||
-    !locationUrl ||
-    !hasSafeGoogleOrigin(locationUrl) ||
-    !GOOGLE_LOGIN_PATHS.some((pattern) => pattern.test(locationUrl.pathname))
+    googleResponse.status < 300 ||
+    googleResponse.status >= 400 ||
+    !googleLocation.url ||
+    !hasSafeGoogleOrigin(googleLocation.url) ||
+    !GOOGLE_LOGIN_PATHS.some((pattern) => pattern.test(googleLocation.url.pathname))
   ) {
     throw new Error("Google returned an unexpected response instead of its sign-in prompt.");
   }
