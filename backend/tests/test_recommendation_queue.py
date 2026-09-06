@@ -1,4 +1,6 @@
 import os
+from contextlib import contextmanager
+from types import SimpleNamespace
 from uuid import uuid4
 
 import psycopg
@@ -124,6 +126,11 @@ def test_refill_releases_account_lock_during_model_work_and_persists_retry(monke
         psycopg.connect(database_url, row_factory=dict_row) as observer,
     ):
         user_id, _, recommendation_ids = _seed_user(conn)
+        conn.execute(
+            "UPDATE recommendations SET evidence = '{\"reranker_fallback\": true}' WHERE user_id = %s",
+            (user_id,),
+        )
+        conn.commit()
         generated = iter(recommendation_ids)
         calls = []
 
@@ -155,3 +162,173 @@ def test_refill_releases_account_lock_during_model_work_and_persists_retry(monke
             conn.rollback()
             conn.execute("DELETE FROM app_users WHERE id = %s", (user_id,))
             conn.commit()
+
+
+def test_refill_adopts_committed_generation_after_bind_is_fenced(monkeypatch):
+    database_url = _database_url()
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        user_id, profile_id, recommendation_ids = _seed_user(conn)
+        lost_id = recommendation_ids[0]
+        video_id = conn.execute(
+            "SELECT video_id FROM recommendations WHERE id = %s", (lost_id,),
+        ).fetchone()["video_id"]
+        ensure_recommendation_queue(conn, user_id)
+        conn.execute(
+            """UPDATE telegram_recommendation_queue SET recommendation_id=%s,status='ready'
+               WHERE user_id=%s AND slot=2""",
+            (recommendation_ids[1], user_id),
+        )
+        conn.execute("DELETE FROM recommendations WHERE id=%s", (lost_id,))
+        conn.commit()
+        calls = []
+
+        def generate(*args, **kwargs):
+            calls.append(1)
+            with psycopg.connect(database_url, row_factory=dict_row) as generated:
+                generated.execute(
+                    """INSERT INTO recommendations
+                       (id,user_id,video_id,preference_version_id,rationale,evidence)
+                       VALUES (%s,%s,%s,%s,'Recovered fit.','{\"reranker_fallback\": false}')""",
+                    (lost_id, user_id, video_id, profile_id),
+                )
+                generated.execute(
+                    """UPDATE telegram_recommendation_queue
+                       SET generation_token=gen_random_uuid(),lease_expires_at=NOW()-INTERVAL '1 second'
+                       WHERE user_id=%s AND slot=1""",
+                    (user_id,),
+                )
+                generated.commit()
+            return lost_id
+
+        monkeypatch.setattr("backend.app.recommendations.generate_recommendation", generate)
+        try:
+            assert refill_recommendation_queue(
+                conn, Settings(_env_file=None, OPENROUTER_API_KEY="test"), user_id, retry_minutes=60,
+            ) == 1
+            assert calls == [1]
+            row = conn.execute(
+                """SELECT status,recommendation_id FROM telegram_recommendation_queue
+                   WHERE user_id=%s AND slot=1""",
+                (user_id,),
+            ).fetchone()
+            assert row == {"status": "ready", "recommendation_id": lost_id}
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            conn.commit()
+
+
+def test_scheduled_delivery_refills_beyond_two_item_instant_queue(monkeypatch):
+    database_url = _database_url()
+    with psycopg.connect(database_url, row_factory=dict_row) as setup:
+        user_id, _, recommendation_ids = _seed_user(setup, recommendation_count=3)
+        setup.execute(
+            """UPDATE app_users SET timezone='UTC',cadence_days=ARRAY[0,1,2,3,4,5,6]::smallint[],
+                   delivery_hour=0,recommendation_count=3,last_delivery_attempt_at=NULL
+               WHERE id=%s""",
+            (user_id,),
+        )
+        ensure_recommendation_queue(setup, user_id)
+        for slot, recommendation_id in enumerate(recommendation_ids[:2], 1):
+            setup.execute(
+                """UPDATE telegram_recommendation_queue SET recommendation_id=%s,status='ready'
+                   WHERE user_id=%s AND slot=%s""",
+                (recommendation_id, user_id, slot),
+            )
+        setup.commit()
+
+    class Pool:
+        @contextmanager
+        def connection(self):
+            with psycopg.connect(database_url, row_factory=dict_row) as connection:
+                yield connection
+
+    sent = []
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL=database_url,
+        OPENROUTER_API_KEY="test",
+        TELEGRAM_PRODUCTION_BOT_TOKEN="test",
+    )
+    monkeypatch.setattr("backend.worker.main.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "backend.worker.main.TelegramBot",
+        lambda _: SimpleNamespace(
+            send_recommendation=lambda connection, recommendation_id, *args: sent.append(recommendation_id),
+        ),
+    )
+    try:
+        from backend.worker.main import run_delivery_pass
+
+        run_delivery_pass(Pool())
+        assert sent == recommendation_ids
+        with psycopg.connect(database_url, row_factory=dict_row) as check:
+            delivered = check.execute(
+                "SELECT COUNT(*) AS count FROM recommendations WHERE user_id=%s AND delivered_at IS NOT NULL",
+                (user_id,),
+            ).fetchone()["count"]
+            assert delivered == 3
+    finally:
+        with psycopg.connect(database_url, row_factory=dict_row) as cleanup:
+            cleanup.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            cleanup.commit()
+
+
+def test_scheduled_delivery_clears_attempt_when_another_refill_holds_lease(monkeypatch):
+    database_url = _database_url()
+    with psycopg.connect(database_url, row_factory=dict_row) as setup:
+        user_id, _, recommendation_ids = _seed_user(setup, recommendation_count=1)
+        setup.execute(
+            """UPDATE app_users SET timezone='UTC',cadence_days=ARRAY[0,1,2,3,4,5,6]::smallint[],
+                   delivery_hour=0,recommendation_count=2,last_delivery_attempt_at=NULL
+               WHERE id=%s""",
+            (user_id,),
+        )
+        ensure_recommendation_queue(setup, user_id)
+        setup.execute(
+            """UPDATE telegram_recommendation_queue SET recommendation_id=%s,status='ready'
+               WHERE user_id=%s AND slot=1""",
+            (recommendation_ids[0], user_id),
+        )
+        setup.execute(
+            """UPDATE telegram_recommendation_queue
+               SET status='generating',generation_token=gen_random_uuid(),
+                   lease_expires_at=NOW()+INTERVAL '5 minutes'
+               WHERE user_id=%s AND slot=2""",
+            (user_id,),
+        )
+        setup.commit()
+
+    class Pool:
+        @contextmanager
+        def connection(self):
+            with psycopg.connect(database_url, row_factory=dict_row) as connection:
+                yield connection
+
+    sent = []
+    settings = Settings(
+        _env_file=None, DATABASE_URL=database_url, OPENROUTER_API_KEY="test",
+        TELEGRAM_PRODUCTION_BOT_TOKEN="test",
+    )
+    monkeypatch.setattr("backend.worker.main.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "backend.worker.main.TelegramBot",
+        lambda _: SimpleNamespace(
+            send_recommendation=lambda connection, recommendation_id, *args: sent.append(recommendation_id),
+        ),
+    )
+    try:
+        from backend.worker.main import run_delivery_pass
+
+        run_delivery_pass(Pool())
+        assert sent == recommendation_ids
+        with psycopg.connect(database_url, row_factory=dict_row) as check:
+            row = check.execute(
+                "SELECT delivery_status,last_delivery_attempt_at FROM app_users WHERE id=%s",
+                (user_id,),
+            ).fetchone()
+            assert row == {"delivery_status": "waiting", "last_delivery_attempt_at": None}
+    finally:
+        with psycopg.connect(database_url, row_factory=dict_row) as cleanup:
+            cleanup.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            cleanup.commit()

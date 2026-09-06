@@ -20,7 +20,7 @@ Defaults are 40 model requests and 1,000 YouTube requests per UTC day (`MODEL_DA
 
 Scheduled delivery catches up after the chosen hour on an enabled local calendar day and never replays prior days. Timezone conversion uses IANA zones and local dates, covering repeated DST hours; the configured count caps daily picks. A partial delivery retries only the remainder. Existing model-backed pending picks are reused. Explicit abstention leaves a useful waiting state instead of sending an arbitrary pick.
 
-Telegram `/recommend` consumes one of two durable prepared slots without a model call. A separate worker loop refills consumed, stale, or interrupted slots independently of ingestion, using leases and persisted retry delays. Preference edits and confirmed Telegram additions invalidate both slots; provider budgets still apply to rebuilding them. Initial setup, bursts beyond the available picks, and provider failures can temporarily leave the queue empty.
+Telegram `/recommend` consumes one of two durable prepared slots without a model call. A separate worker loop refills consumed, stale, or interrupted slots independently of ingestion, using leases and persisted retry delays. Preference edits and confirmed Telegram additions invalidate both slots; provider budgets still apply to rebuilding them. Initial setup, bursts beyond the available picks, and provider failures can temporarily leave the queue empty. Inspect `telegram_recommendation_queue.status`, `retry_after`, `lease_expires_at`, and sanitized `last_error` when refill stalls; the pipeline heartbeat alone does not prove the queue is ready.
 
 Telegram sends remain at least once in the irreducible case where Telegram accepts the message but the following DB commit fails. Inspect history before manual retry. Preview must never send to production recipients. User linking requires an expiring, single-use account-bound token in a private chat.
 
@@ -34,7 +34,7 @@ Restore into a new isolated Neon branch, verify account separation and record co
 
 ## Retention
 
-Preferences, follows, recommendation evidence and feedback support the account until the user deletes it. Export is available in settings. Account deletion removes personal application records and unlinks Telegram; an identity tombstone prevents a still-valid provider session from silently recreating the account. Shared source/video metadata is retained. Neon identity/session records, provider backups and messages already delivered to Telegram have separate lifecycles; the privacy page explains this boundary. Do not log auth cookies, link tokens or provider credentials.
+Preferences, follows, recommendation evidence and feedback support the account until the user deletes it. Export is available in settings. Account deletion removes personal application records and unlinks Telegram; an identity tombstone prevents a still-valid provider session from silently recreating the account. Shared source/video metadata is retained. Neon identity/session records, provider backups and messages already delivered to Telegram have separate lifecycles; the privacy page explains this boundary. Telegram link-attempt windows are cleaned up after 24 hours; resolved or expired preference confirmations are cleaned up after 30 days. Retained confirmation proposals are included in account export, and account deletion removes them. Do not log auth cookies, link tokens or provider credentials.
 
 ## Google OAuth operations
 

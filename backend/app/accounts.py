@@ -144,6 +144,10 @@ def consume_telegram_link(conn: Connection, raw: str, chat_id: int):
 
 @router.delete("/telegram", status_code=204)
 def unlink(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
+    conn.execute(
+        "DELETE FROM telegram_link_attempts WHERE chat_id=(SELECT telegram_user_id FROM app_users WHERE id=%s)",
+        (user_id,),
+    )
     conn.execute("UPDATE app_users SET telegram_user_id=NULL,updated_at=NOW() WHERE id=%s", (user_id,))
     conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=%s", (user_id,))
     conn.execute(
@@ -158,7 +162,10 @@ def unlink(user_id: UUID = Depends(current_user), conn: Connection = Depends(con
 @router.get("/export")
 def export(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
     result = {"account": conn.execute("SELECT id,email,display_name,timezone,cadence_days,delivery_hour,recommendation_count,telegram_user_id,delivery_paused,created_at FROM app_users WHERE id=%s", (user_id,)).fetchone()}
-    for table in ("preference_versions", "recommendations", "interaction_events", "user_channel_follows"):
+    for table in (
+        "preference_versions", "recommendations", "interaction_events",
+        "user_channel_follows", "telegram_preference_confirmations",
+    ):
         result[table] = conn.execute(f"SELECT * FROM {table} WHERE user_id=%s", (user_id,)).fetchall()
     return result
 
@@ -172,6 +179,10 @@ def delete_account(payload: DeleteAccount, user_id: UUID = Depends(current_user)
     if payload.confirmation != "DELETE":
         raise HTTPException(400, "Type DELETE to confirm account deletion")
     conn.execute("SELECT id FROM app_users WHERE id=%s FOR UPDATE", (user_id,))
+    conn.execute(
+        "DELETE FROM telegram_link_attempts WHERE chat_id=(SELECT telegram_user_id FROM app_users WHERE id=%s)",
+        (user_id,),
+    )
     for table in ("telegram_link_tokens", "telegram_preference_confirmations", "interaction_events", "recommendations", "preference_versions", "user_channel_follows"):
         conn.execute(f"DELETE FROM {table} WHERE user_id=%s", (user_id,))
     # Keep only an identity tombstone and canonical ingestion ownership. A still

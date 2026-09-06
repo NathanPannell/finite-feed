@@ -11,6 +11,25 @@ from psycopg import Connection
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+LINK_ATTEMPT_RETENTION_DAYS = 1
+PREFERENCE_CONFIRMATION_RETENTION_DAYS = 30
+
+
+def cleanup_telegram_ephemera(conn: Connection) -> tuple[int, int]:
+    """Delete globally stale Telegram security and confirmation state."""
+    attempts = conn.execute(
+        """DELETE FROM telegram_link_attempts
+           WHERE window_started_at < NOW() - (%s * INTERVAL '1 day')""",
+        (LINK_ATTEMPT_RETENTION_DAYS,),
+    ).rowcount
+    confirmations = conn.execute(
+        """DELETE FROM telegram_preference_confirmations
+           WHERE COALESCE(resolved_at, expires_at) <
+                 NOW() - (%s * INTERVAL '1 day')""",
+        (PREFERENCE_CONFIRMATION_RETENTION_DAYS,),
+    ).rowcount
+    return attempts, confirmations
+
 
 def _truncate_utf16(value: str, maximum_units: int) -> str:
     encoded = value.encode("utf-16-le")

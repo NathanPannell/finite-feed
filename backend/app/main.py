@@ -494,6 +494,7 @@ def telegram_webhook(
             (user_id, chat_id),
         ).fetchone()
         if owner:
+            conn.execute("DELETE FROM telegram_link_attempts WHERE chat_id=%s", (chat_id,))
             conn.execute(
                 "UPDATE app_users SET telegram_user_id=NULL,delivery_paused=TRUE,updated_at=NOW() WHERE id=%s AND telegram_user_id=%s",
                 (user_id, chat_id),
@@ -678,7 +679,9 @@ def telegram_webhook(
                VALUES (%s,%s,%s,%s,NOW()+INTERVAL '10 minutes')""",
             (confirmation_id, user_id, chat_id, text),
         )
-        conn.commit()
         bot.send_preference_confirmation(chat_id, confirmation_id, text)
+        # Commit only after Telegram accepted the prompt. A failed or ambiguous
+        # send rolls back update deduplication so Telegram can retry at least once.
+        conn.commit()
     conn.commit()
     return {"ok": True}

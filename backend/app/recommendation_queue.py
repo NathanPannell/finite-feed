@@ -154,6 +154,67 @@ def claim_queued_recommendation(
     return row["id"] if row else None
 
 
+def _adopt_orphaned_recommendation(conn: Connection, user_id: UUID) -> bool:
+    """Recover a committed generation whose queue bind did not complete."""
+    account = conn.execute(
+        """SELECT id FROM app_users
+           WHERE id = %s AND telegram_user_id IS NOT NULL AND deleted_at IS NULL
+           FOR UPDATE""",
+        (user_id,),
+    ).fetchone()
+    if not account:
+        conn.rollback()
+        return False
+    ensure_recommendation_queue(conn, user_id)
+    adopted = conn.execute(
+        """
+        WITH empty_slot AS (
+            SELECT q.user_id, q.slot, q.preference_version_id
+            FROM telegram_recommendation_queue q
+            WHERE q.user_id = %s AND q.recommendation_id IS NULL
+              AND (q.status = 'pending' OR
+                   (q.status = 'generating' AND q.lease_expires_at <= NOW()))
+            ORDER BY q.slot
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+        ), orphan AS (
+            SELECT r.id
+            FROM empty_slot slot
+            JOIN recommendations r ON r.user_id = slot.user_id
+                                     AND r.preference_version_id = slot.preference_version_id
+            JOIN videos v ON v.id = r.video_id
+            JOIN tracked_channels c ON c.id = v.tracked_channel_id
+            JOIN user_channel_follows f ON f.channel_id = c.id AND f.user_id = slot.user_id
+            WHERE r.delivered_at IS NULL
+              AND r.evidence->>'reranker_fallback' = 'false'
+              AND r.created_at >= COALESCE((
+                  SELECT MAX(created_at) FROM interaction_events
+                  WHERE user_id = slot.user_id
+                    AND event_type IN ('feedback_up', 'feedback_down')
+              ), r.created_at)
+              AND c.is_active AND v.is_available
+              AND COALESCE(v.default_audio_language, v.default_language, 'en') ~* '^en(-|$)'
+              AND NOT EXISTS (
+                  SELECT 1 FROM telegram_recommendation_queue used
+                  WHERE used.recommendation_id = r.id
+              )
+            ORDER BY r.created_at
+            FOR UPDATE OF r SKIP LOCKED
+            LIMIT 1
+        )
+        UPDATE telegram_recommendation_queue q
+        SET recommendation_id = orphan.id, status = 'ready', generation_token = NULL,
+            lease_expires_at = NULL, retry_after = NULL, last_error = NULL, updated_at = NOW()
+        FROM empty_slot, orphan
+        WHERE q.user_id = empty_slot.user_id AND q.slot = empty_slot.slot
+        RETURNING q.slot
+        """,
+        (user_id,),
+    ).fetchone()
+    conn.commit()
+    return bool(adopted)
+
+
 def _claim_refill_slot(conn: Connection, user_id: UUID, retry_minutes: int) -> dict | None:
     account = conn.execute(
         """SELECT id FROM app_users
@@ -204,7 +265,13 @@ def refill_recommendation_queue(
     from backend.app.recommendations import generate_recommendation
 
     filled = 0
-    while slot := _claim_refill_slot(conn, user_id, retry_minutes):
+    while True:
+        if _adopt_orphaned_recommendation(conn, user_id):
+            filled += 1
+            continue
+        slot = _claim_refill_slot(conn, user_id, retry_minutes)
+        if not slot:
+            break
         try:
             recommendation_id = generate_recommendation(
                 conn,

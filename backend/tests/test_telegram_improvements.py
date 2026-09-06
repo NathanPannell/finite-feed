@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from backend.app import accounts, main
 from backend.app.accounts import consume_telegram_link
 from backend.app.settings import Settings
+from backend.app.telegram import cleanup_telegram_ephemera
 
 
 @pytest.fixture
@@ -299,4 +300,99 @@ def test_recommend_command_consumes_two_ready_slots_then_retries_after_empty(dat
             conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
             for video_id in video_ids:
                 conn.execute("DELETE FROM videos WHERE id=%s", (video_id,))
+            conn.commit()
+
+
+def test_failed_preference_prompt_rolls_back_dedup_and_retry_sends_once(database_url, monkeypatch):
+    chat_id = uuid4().int % 2_000_000_000 + 7_000_000_000
+    update_id = uuid4().int % (2**62)
+    fail = True
+    sent = []
+
+    class Bot:
+        def __init__(self, _):
+            pass
+
+        def send_preference_confirmation(self, *args):
+            nonlocal fail
+            if fail:
+                raise RuntimeError("Telegram unavailable")
+            sent.append(args)
+
+    monkeypatch.setattr(
+        main, "settings",
+        Settings(_env_file=None, TELEGRAM_PRODUCTION_BOT_TOKEN="test", TELEGRAM_WEBHOOK_SECRET="test"),
+    )
+    monkeypatch.setattr(main, "TelegramBot", Bot)
+    update = {"update_id": update_id, "message": {
+        "chat": {"id": chat_id, "type": "private"}, "text": "retry this addition",
+    }}
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        user_id, _ = _create_user(conn, chat_id=chat_id)
+        try:
+            with pytest.raises(RuntimeError, match="unavailable"):
+                main.telegram_webhook("production", update, "test", conn)
+            conn.rollback()
+            assert conn.execute(
+                "SELECT COUNT(*) AS count FROM telegram_updates WHERE bot_kind='production' AND update_id=%s",
+                (update_id,),
+            ).fetchone()["count"] == 0
+            assert conn.execute(
+                "SELECT COUNT(*) AS count FROM telegram_preference_confirmations WHERE user_id=%s",
+                (user_id,),
+            ).fetchone()["count"] == 0
+
+            fail = False
+            assert main.telegram_webhook("production", update, "test", conn) == {"ok": True}
+            assert len(sent) == 1
+            assert conn.execute(
+                "SELECT COUNT(*) AS count FROM telegram_preference_confirmations WHERE user_id=%s",
+                (user_id,),
+            ).fetchone()["count"] == 1
+        finally:
+            conn.rollback()
+            conn.execute(
+                "DELETE FROM telegram_updates WHERE bot_kind='production' AND update_id=%s", (update_id,),
+            )
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            conn.commit()
+
+
+def test_ephemeral_cleanup_is_global_bounded_and_retained_rows_are_exported(database_url):
+    chats = [uuid4().int % 2_000_000_000 + 7_000_000_000 for _ in range(2)]
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        user_id, _ = _create_user(conn, chat_id=chats[0])
+        ids = [uuid4() for _ in range(3)]
+        try:
+            conn.execute(
+                """INSERT INTO telegram_link_attempts(chat_id,window_started_at,attempt_count)
+                   VALUES (%s,NOW()-INTERVAL '2 days',1),(%s,NOW(),1)""",
+                chats,
+            )
+            conn.execute(
+                """INSERT INTO telegram_preference_confirmations
+                   (id,user_id,chat_id,proposed_text,expires_at,resolved_at,accepted)
+                   VALUES
+                   (%s,%s,%s,'stale resolved',NOW()-INTERVAL '31 days',NOW()-INTERVAL '31 days',FALSE),
+                   (%s,%s,%s,'stale expired',NOW()-INTERVAL '31 days',NULL,NULL),
+                   (%s,%s,%s,'retained export text',NOW()+INTERVAL '10 minutes',NULL,NULL)""",
+                (ids[0], user_id, chats[0], ids[1], user_id, chats[0], ids[2], user_id, chats[0]),
+            )
+            conn.commit()
+
+            assert cleanup_telegram_ephemera(conn) == (1, 2)
+            conn.commit()
+            assert conn.execute(
+                "SELECT ARRAY_AGG(chat_id ORDER BY chat_id) AS chats FROM telegram_link_attempts WHERE chat_id=ANY(%s)",
+                (chats,),
+            ).fetchone()["chats"] == [chats[1]]
+            exported = accounts.export(user_id, conn)
+            confirmations = exported["telegram_preference_confirmations"]
+            assert len(confirmations) == 1
+            assert confirmations[0]["proposed_text"] == "retained export text"
+            assert "telegram_link_tokens" not in exported
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM telegram_link_attempts WHERE chat_id=ANY(%s)", (chats,))
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
             conn.commit()

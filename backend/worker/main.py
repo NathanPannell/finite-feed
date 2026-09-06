@@ -17,7 +17,7 @@ from backend.app.recommendations import (
 )
 from backend.app.recommendation_queue import claim_queued_recommendation, refill_recommendation_queue
 from backend.app.settings import get_settings
-from backend.app.telegram import TelegramBot
+from backend.app.telegram import TelegramBot, cleanup_telegram_ephemera
 from backend.app.youtube import YouTubeClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -126,6 +126,9 @@ def claim_delivery_attempt(conn, user_id, now: datetime, retry_minutes: int) -> 
 
 def run_recommendation_queue_pass(pool: ConnectionPool) -> None:
     settings = get_settings()
+    with pool.connection() as conn:
+        cleanup_telegram_ephemera(conn)
+        conn.commit()
     if not settings.openrouter_api_key:
         logger.info("Recommendation queue paused until OPENROUTER_API_KEY is configured")
         return
@@ -193,14 +196,27 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
                         AND (delivered_at AT TIME ZONE %s)::date = (%s AT TIME ZONE %s)::date""",
                         (user["id"], user["timezone"], now, user["timezone"]),
                     ).fetchone()["count"]
+                    queue_deferred = False
                     for _ in range(max(0, user["recommendation_count"] - count)):
                         active = conn.execute("SELECT delivery_paused, deleted_at FROM app_users WHERE id = %s", (user["id"],)).fetchone()
                         if not active or active["delivery_paused"] or active["deleted_at"]:
                             break
                         recommendation_id = claim_queued_recommendation(conn, user["id"], require_model=True)
                         if recommendation_id is None:
-                            logger.info("Telegram recommendation queue is empty for user %s", user["id"])
-                            break
+                            # Scheduled batches may exceed the two-item instant queue.
+                            # Refill through the same durable lease path after releasing
+                            # the account lock; interactive /recommend never does this.
+                            conn.commit()
+                            refill_recommendation_queue(
+                                conn, settings, user["id"], settings.delivery_retry_minutes,
+                            )
+                            recommendation_id = claim_queued_recommendation(
+                                conn, user["id"], require_model=True,
+                            )
+                            if recommendation_id is None:
+                                queue_deferred = True
+                                logger.info("Telegram recommendation queue is empty for user %s", user["id"])
+                                break
                         # The queue claim never calls the model. Lock the current account to
                         # serialize this send against unlink and deletion.
                         current = conn.execute(
@@ -213,7 +229,13 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
                         if lock_recommendation_for_delivery(conn, user["id"], recommendation_id):
                             bot.send_recommendation(conn, recommendation_id, current["telegram_user_id"], settings.public_app_url)
                             mark_recommendation_delivered(conn, user["id"], recommendation_id, scheduled=True)
-                    conn.execute("UPDATE app_users SET delivery_status = 'ready', delivery_error = NULL WHERE id = %s AND deleted_at IS NULL", (user["id"],))
+                    conn.execute(
+                        """UPDATE app_users
+                           SET delivery_status = %s, delivery_error = NULL,
+                               last_delivery_attempt_at = CASE WHEN %s THEN NULL ELSE last_delivery_attempt_at END
+                           WHERE id = %s AND deleted_at IS NULL""",
+                        ("waiting" if queue_deferred else "ready", queue_deferred, user["id"]),
+                    )
                     conn.commit()
                 except Exception as exc:
                     conn.rollback()
