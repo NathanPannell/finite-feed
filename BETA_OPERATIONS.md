@@ -4,7 +4,7 @@ Owner: NathanPannell. The implementation is intended for a small invited beta. A
 
 ## Release and identity
 
-GitHub CI applies all checksummed migrations, runs backend integration checks and frontend build/journeys. A PR deploys isolated Neon/Railway/Vercel resources. Check the API `/ready` commit against the PR head before browser verification; repeat against the merge commit in production. Google identity is verified live against the matching Neon Auth branch. Both API and frontend require the same branch-specific `NEON_AUTH_BASE_URL`; only Vercel receives `NEON_AUTH_COOKIE_SECRET`. Logout/revocation must deny the next personal API request. Existing dogfood identity is never claimed by matching email.
+GitHub CI applies all checksummed migrations, runs backend integration checks and frontend build/journeys. A PR deploys isolated Neon/Railway/Vercel resources. Check the API `/ready` commit against the PR head before browser verification; repeat against the merge commit in production. Google and email/password sessions are issued by the matching Neon Auth branch and verified live by the API. Both API and frontend require the same branch-specific `NEON_AUTH_BASE_URL`; only Vercel receives `NEON_AUTH_COOKIE_SECRET`. Logout/revocation must deny the next personal API request. Existing dogfood identity is never claimed by matching email.
 
 Personal routes are `/app` and `/app/settings`; `/match` stays public. Control Room remains behind Vercel SSO plus independently verified Vercel OIDC at Railway. Preview scheduled Telegram delivery stays disabled and production bot credentials are removed. Never change production webhook registration to a preview URL. Preview Connect registers only the developer bot to that preview API, requires an allowlisted tester, and fails without secure webhook configuration. Telegram permits one webhook per bot: the most recent preview Connect owns developer routing, so reconnect in the intended preview before testing. Workers do not register the developer bot or reclaim it; production webhook recovery registers only the production bot every six hours, retrying setup failures after fifteen minutes.
 
@@ -39,5 +39,29 @@ Preferences, follows, recommendation evidence and feedback support the account u
 ## Google OAuth operations
 
 Production and previews use a project-owned Google web OAuth client configured directly in Neon. Google must allow each branch's exact `${NEON_AUTH_BASE_URL}/callback/google` URI; a trusted frontend origin in Neon does not replace this Google callback registration. Before deploying a new preview branch, register that branch callback in the existing Google client and verify its provider configuration. The preview workflow starts OAuth through the deployed frontend and refuses to post its ready message when Google returns `redirect_uri_mismatch`; its failure names the exact callback to register, but it cannot change Google Cloud configuration. Keep client secrets in the provider configuration, never in repository files or browser-visible frontend variables. The Next.js auth middleware must exchange the callback verifier before the personal API can receive a session.
+
+The preview workflow posts the exact branch callback in its PR comment. That callback
+belongs to the Neon branch and remains stable across changing Vercel deployment URLs;
+each newly created Neon branch still needs its callback registered with Google.
+Email/password sign-up and sign-in are permanent supported account paths alongside
+Google. Neon Auth owns password handling and uses the supplied email address as the
+account identifier; the application receives the same verified session shape for
+both methods. Preview accounts and data remain isolated to the expiring preview
+branch, and previews must never fall back to the parent branch Auth endpoint.
+
+After a preview containing the fallback is deployed, run the opt-in smoke check from
+the linked repository checkout with
+`python scripts/smoke-preview-native-auth.py --preview-url https://finite-feed-…vercel.app`.
+It refuses production and non-Finite-Feed targets, verifies Vercel reports the exact
+deployment as `preview`, submits its generated password through stdin, and keeps its
+session cookie in a private temporary directory. It checks sign-up, sign-out,
+password sign-in and stable identity, then completes all onboarding stages using one
+model request. It verifies the audit export, delivery preferences and dashboard-only
+paused state before deleting its synthetic application account. The isolated Neon Auth identity remains
+until the preview branch closes or reaches its seven-day expiration. If a smoke run
+fails before cleanup, any synthetic records it created expire with that same branch.
+Use `--auth-only` after an authentication-only change to verify sign-up, sign-out,
+password sign-in, stable identity and cleanup without calling the model. The default
+full smoke remains the release check for a new onboarding implementation.
 
 The default OpenRouter route tries `google/gemma-4-31b-it:free`, then `google/gemma-4-26b-a4b-it:free`, then `nvidia/nemotron-3-super-120b-a12b:free` inside one request when a provider is unavailable or rate limited. This default route disables optional reasoning to preserve the 350-token JSON response budget. Custom model pins and their reasoning defaults remain exact. Shared account quota exhaustion can still stop every fallback; the app distinguishes daily, minute, and upstream limits without exposing provider payloads, and keeps the persisted request budget.

@@ -66,7 +66,11 @@ jobs:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
         run: |
           auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          parent_auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "${{ vars.NEON_PARENT_BRANCH }}" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          google_callback="$(NEON_AUTH_BASE_URL="$auth_url" PARENT_NEON_AUTH_BASE_URL="$parent_auth_url" node scripts/validate-preview-auth-config.mjs)"
           echo "NEON_AUTH_BASE_URL=$auth_url" >> "$GITHUB_ENV"
+          echo "PARENT_NEON_AUTH_BASE_URL=$parent_auth_url" >> "$GITHUB_ENV"
+          echo "GOOGLE_OAUTH_CALLBACK=$google_callback" >> "$GITHUB_ENV"
 
       - name: Create or update isolated Railway environment
         env:
@@ -170,6 +174,9 @@ jobs:
           if ! neon neon-auth domain list --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color | jq -e --arg url "$PREVIEW_URL" '.. | scalars | select(. == $url)' >/dev/null; then
             neon neon-auth domain add "$PREVIEW_URL" --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --no-color
           fi
+          domains_json="$(neon neon-auth domain list --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color)"
+          NEON_AUTH_DOMAINS_JSON="$domains_json" EXPECTED_FRONTEND_ORIGIN="$PREVIEW_URL" \
+            node scripts/validate-preview-auth-config.mjs >/dev/null
           railway redeploy --yes --service "$RAILWAY_API_SERVICE_ID" --environment "$PREVIEW_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
 
       - name: Verify final preview API readiness
@@ -234,10 +241,11 @@ jobs:
           API_URL: ${{ steps.railway.outputs.api_url }}
           PREVIEW_URL: ${{ steps.vercel.outputs.preview_url }}
           VERCEL_DEPLOYMENT_ID: ${{ steps.vercel.outputs.deployment_id }}
+          BRANCH_EXPIRES_AT: ${{ steps.expiry.outputs.expires_at }}
         with:
           script: |
             const marker = '<!-- full-stack-preview -->';
-            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
+            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth callback: \`${process.env.GOOGLE_OAUTH_CALLBACK}\`\n\nRegister this callback once for this Neon branch. A new Vercel deployment URL does not change it.\n\nAccounts created in this preview, including email/password accounts, are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
               issue_number: context.issue.number,

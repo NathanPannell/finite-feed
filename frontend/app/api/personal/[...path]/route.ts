@@ -4,7 +4,7 @@ type Context = { params: Promise<{ path: string[] }> };
 async function proxy(request: Request, context: Context) {
   const { path: parts } = await context.params;
   const path = parts.join("/");
-  if (!/^(account(?:\/(?:delivery|preferences|telegram-link|telegram|export))?|profile(?:\/(?:delivery|memory))?|channels(?:\/(?:resolve|[0-9a-f-]+))?|recommendations(?:\/(?:generate|[0-9a-f-]+\/feedback))?|metrics|pipeline\/status|r\/[0-9a-f-]+)$/i.test(path)) {
+  if (!/^(account(?:\/(?:delivery|preferences|telegram-link|telegram|export))?|onboarding(?:\/(?:answers|open-response|synthesize|profile|delivery|complete))?|profile(?:\/(?:delivery|memory))?|channels(?:\/(?:resolve|[0-9a-f-]+))?|recommendations(?:\/(?:generate|[0-9a-f-]+\/feedback))?|metrics|pipeline\/status|r\/[0-9a-f-]+)$/i.test(path)) {
     return Response.json({ detail: "Route not found" }, { status: 404 });
   }
   if (request.method !== "GET" && request.headers.get("origin") !== new URL(request.url).origin) {

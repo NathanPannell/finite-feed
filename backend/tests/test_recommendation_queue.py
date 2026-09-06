@@ -224,7 +224,8 @@ def test_scheduled_delivery_refills_beyond_two_item_instant_queue(monkeypatch):
         user_id, _, recommendation_ids = _seed_user(setup, recommendation_count=3)
         setup.execute(
             """UPDATE app_users SET timezone='UTC',cadence_days=ARRAY[0,1,2,3,4,5,6]::smallint[],
-                   delivery_hour=0,recommendation_count=3,last_delivery_attempt_at=NULL
+                   delivery_hour=0,recommendation_count=3,last_delivery_attempt_at=NULL,
+                   onboarding_completed_at=NOW()
                WHERE id=%s""",
             (user_id,),
         )
@@ -280,7 +281,8 @@ def test_scheduled_delivery_clears_attempt_when_another_refill_holds_lease(monke
         user_id, _, recommendation_ids = _seed_user(setup, recommendation_count=1)
         setup.execute(
             """UPDATE app_users SET timezone='UTC',cadence_days=ARRAY[0,1,2,3,4,5,6]::smallint[],
-                   delivery_hour=0,recommendation_count=2,last_delivery_attempt_at=NULL
+                   delivery_hour=0,recommendation_count=2,last_delivery_attempt_at=NULL,
+                   onboarding_completed_at=NOW()
                WHERE id=%s""",
             (user_id,),
         )

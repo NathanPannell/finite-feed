@@ -43,10 +43,16 @@ test("failed verifier on root or app returns to sign-in without leaking verifier
       const cookie = "__Secure-neon-auth.session_token=; Max-Age=0; Secure; HttpOnly";
       const response = new Response(null, { status: 307, headers: { Location: result.redirectUrl.href, "Set-Cookie": cookie } });
       assert.equal(finishOAuthRedirect(response, requestUrl), response);
-      assert.equal(response.headers.get("location"), "https://finite.example/app");
+      assert.equal(response.headers.get("location"), "https://finite.example/login");
       assert.equal(response.headers.get("set-cookie"), cookie);
     }
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test("successful OAuth completion enters onboarding directly", () => {
+  const response = new Response(null, { status: 307, headers: { Location: "https://finite.example/app" } });
+  finishOAuthRedirect(response, "https://finite.example/auth/callback");
+  assert.equal(response.headers.get("location"), "https://finite.example/onboarding");
 });
 
 test("app proxy wires OAuth exchange without opening admin or requiring public sign-in", async () => {
@@ -54,5 +60,6 @@ test("app proxy wires OAuth exchange without opening admin or requiring public s
   assert.match(source, /!isAdmin && request.nextUrl.searchParams.has\("neon_auth_session_verifier"\)/);
   assert.match(source, /getAuth\(\).middleware\(\)\(request\)/);
   assert.match(source, /"\/auth\/callback"/);
+  assert.match(source, /"\/login"/);
   assert.match(source, /if \(!isAdmin\) \{\s*return NextResponse.next\(\)/);
 });
