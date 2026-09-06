@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 from starlette.requests import Request
 
-from backend.app.accounts import consume_telegram_link, delete_account, DeleteAccount
+from backend.app.accounts import account, consume_telegram_link, delete_account, DeleteAccount
 from backend.app.main import get_profile, list_channels, record_feedback, remove_channel, track_click
 from backend.app.schemas import FeedbackCreate
 from backend.app.user_auth import current_user, verified_identity
@@ -88,6 +88,7 @@ def test_two_users_cannot_access_records_and_links_are_single_use():
             first = current_user(identity, conn)
             ids.append(first)
             assert current_user(identity, conn) == first
+            assert account(first, conn)["onboarding_completed"] is False
             second = current_user({**identity, "id": str(uuid4())}, conn)
             ids.append(second)
             assert second != first
@@ -123,6 +124,7 @@ def test_two_users_cannot_access_records_and_links_are_single_use():
             conn.execute("INSERT INTO onboarding_audit_logs(id,user_id,step,action) VALUES (%s,%s,'onboarding','completed')", (uuid4(),first))
             conn.execute("UPDATE app_users SET onboarding_completed_at=NOW() WHERE id=%s", (first,))
             conn.commit()
+            assert account(first, conn)["onboarding_completed"] is True
             delete_account(DeleteAccount(confirmation="DELETE"),first,conn)
             tombstone = conn.execute("SELECT onboarding_completed_at FROM app_users WHERE id=%s", (first,)).fetchone()
             assert tombstone["onboarding_completed_at"] is None

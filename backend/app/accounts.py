@@ -21,7 +21,7 @@ MANUAL_CODE_ATTEMPTS_PER_MINUTE = 5
 
 @router.get("")
 def account(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
-    return conn.execute("SELECT id,email,display_name,telegram_user_id IS NOT NULL AS telegram_connected,delivery_paused,delivery_status,delivery_error FROM app_users WHERE id=%s", (user_id,)).fetchone()
+    return conn.execute("SELECT id,email,display_name,telegram_user_id IS NOT NULL AS telegram_connected,delivery_paused,delivery_status,delivery_error,onboarding_completed_at IS NOT NULL AS onboarding_completed FROM app_users WHERE id=%s", (user_id,)).fetchone()
 
 
 class PauseUpdate(BaseModel):
