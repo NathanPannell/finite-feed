@@ -11,7 +11,7 @@ staging branch → finite-feed-staging.vercel.app → Railway staging API → Ne
                                                 Railway staging worker → same database
 ```
 
-Staging has its own Vercel project, permanent Railway environment, and permanent Neon database/Auth branch. Its Neon branch is created once from production and subsequently retains its own data and migrations; deployments do not recopy production data. Code promotion does not promote staging database contents. PR cleanup and expiry must never remove these resources. Staging uses its own Auth endpoint and Google callback, exact frontend origins, and disabled production Telegram delivery. Google sign-in and native sessions must work here before a release is prepared.
+Staging shares production's Vercel project but uses preview deployments and the stable `finite-feed-staging.vercel.app` domain bound to the staging Git branch. Its permanent Railway environment and Neon database/Auth branch are separate from production. Its Neon branch is created once from production and subsequently retains its own data and migrations; deployments do not recopy production data. Code promotion does not promote staging database contents. PR cleanup and expiry must never remove these resources. Staging uses its own Auth endpoint and Google callback, exact frontend origins, and disabled production Telegram delivery. Google sign-in and native sessions must work here before a release is prepared. Admin routes on the stable staging domain require the same protected-deployment redirect as production, despite Vercel classifying the build as a preview.
 
 ## Production
 
