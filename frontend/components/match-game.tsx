@@ -322,6 +322,7 @@ export function MatchGame() {
                 id="match-reason"
                 value={rationale}
                 onChange={(event) => setRationale(event.target.value)}
+                disabled={busy}
                 maxLength={1000}
                 placeholder="What made the fit clear or unclear?"
               />

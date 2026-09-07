@@ -584,9 +584,13 @@ test("replaces an unavailable pair after a 409 and clears its unsaved judgment",
   });
 });
 
-test("preserves a judgment after a retryable 500 and resubmits the same payload", async ({ page }) => {
+test("locks and preserves a judgment after a delayed retryable 500", async ({ page }) => {
   const annotationBodies: Record<string, unknown>[] = [];
   let saved = false;
+  let releaseFirstPost!: () => void;
+  const firstPostHeld = new Promise<void>((resolve) => {
+    releaseFirstPost = resolve;
+  });
   await page.route("**/api/match/annotations**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -603,6 +607,7 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
     if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
       annotationBodies.push(request.postDataJSON());
       if (annotationBodies.length === 1) {
+        await firstPostHeld;
         return route.fulfill({ status: 500, json: { detail: "Temporary failure" } });
       }
       saved = true;
@@ -614,12 +619,18 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
   await page.goto("/match/review");
   await page.getByRole("radio", { name: "No", exact: true }).click();
   const reason = page.getByLabel("Reason Optional. It is useful for close calls.");
-  await reason.fill("The evidence does not support this viewer's stated interest.");
+  const originalRationale = "The evidence does not support this viewer's stated interest.";
+  await reason.fill(originalRationale);
   await page.getByRole("button", { name: "Save judgment" }).click();
 
+  await expect(page.locator(".sr-only[role='status']")).toHaveText("Saving judgment.");
+  await expect(reason).toBeDisabled();
+  await expect(reason).toHaveValue(originalRationale);
+  releaseFirstPost();
   await expect(page.locator(".match-notice[role='alert']")).toHaveText("Your answer was not saved. Try again.");
   await expect(page.getByRole("radio", { name: "No", exact: true })).toBeChecked();
-  await expect(reason).toHaveValue("The evidence does not support this viewer's stated interest.");
+  await expect(reason).toBeEnabled();
+  await expect(reason).toHaveValue(originalRationale);
   await page.getByRole("button", { name: "Save judgment" }).click();
 
   await expect(page.getByRole("heading", { name: "No more pairs are available for you right now." })).toBeVisible();
