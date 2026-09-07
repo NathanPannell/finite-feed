@@ -13,7 +13,7 @@ test("staging deploy is serialized and restricted to the staging branch", () => 
   assert.ok((workflow.match(/node scripts\/assert-staging-source\.mjs/g) || []).length >= 3);
   assert.match(workflow, /actions: read/);
   assert.match(workflow, /Require successful CI for the exact staging commit/);
-  assert.match(workflow, /node scripts\/wait-for-staging-ci\.mjs\n          node scripts\/assert-staging-source\.mjs/);
+  assert.match(workflow, /node scripts\/wait-for-staging-ci\.mjs\r?\n          node scripts\/assert-staging-source\.mjs/);
 });
 
 test("staging resources are permanent, deterministic, and isolated", () => {
