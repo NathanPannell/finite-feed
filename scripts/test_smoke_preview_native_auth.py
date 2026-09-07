@@ -216,8 +216,12 @@ def test_full_onboarding_accepts_audited_fallback_and_preserves_verbatim_respons
         smoke.complete_synthetic_onboarding(FakeClient("tampered fallback profile"))
 
 
-def test_smoke_cleans_up_and_signs_out_after_synthesis_failure(monkeypatch):
+def test_smoke_cleans_up_and_signs_out_after_synthesis_failure(monkeypatch, tmp_path):
     clients = []
+    project_file = tmp_path / "frontend" / ".vercel" / "project.json"
+    project_file.parent.mkdir(parents=True)
+    project_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(smoke, "__file__", str(tmp_path / "scripts" / "smoke-preview-native-auth.py"))
 
     class FakeClient:
         def __init__(self, *args):

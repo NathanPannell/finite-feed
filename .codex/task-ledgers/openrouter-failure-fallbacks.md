@@ -25,3 +25,8 @@ Implementation checkpoint:
 - Video fallback selects highest raw cosine, retains that candidate through shortlist truncation, and is reusable by API/queue/scheduled delivery; valid explicit model abstention remains unchanged.
 - Builder: 214 backend tests passed against isolated PostgreSQL; 65 focused final tests passed. Preview smoke: 11 passed. Independent quality review running.
 - Documentation updated to reflect fallback delivery; no schema migration or frontend changes.
+
+PR #62: https://github.com/NathanPannell/finite-feed/pull/62
+- Initial CI: all 214 backend tests, frontend lint/typecheck/build/browser tests, and deployment contracts passed. Smoke cleanup test exposed reliance on ignored local Vercel metadata; fixed by using a temporary linked-project fixture. All 11 smoke tests pass with isolated fixture.
+- Initial preview run 34160454483 hit Railway's temporary rate limit before app deployment; next push retries isolated provisioning.
+- Offline recommendation eval passed 5/5 without model calls. Independent quality review remains in progress.
