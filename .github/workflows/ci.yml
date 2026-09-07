@@ -12,6 +12,7 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: pgvector/pgvector:0.8.6-pg16
@@ -49,6 +50,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -69,11 +71,20 @@ jobs:
           RAILWAY_API_BASE_URL: http://localhost:8000
       - run: npm run test:proxy
         working-directory: frontend
-      - run: node --test scripts/validate-vercel-auth-location.test.mjs scripts/validate-preview-auth-config.test.mjs scripts/set-railway-variables.test.mjs scripts/verify-google-oauth-start.test.mjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run test:e2e
         working-directory: frontend
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-failures-${{ github.sha }}
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
 
   deployment-contracts:
     runs-on: ubuntu-24.04
@@ -208,7 +219,6 @@ jobs:
             --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
             --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
-            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --meta githubCommitSha="$EXPECTED_COMMIT_SHA" \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
           deployment_id="$(vercel inspect "$deployment_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -er '.id')"

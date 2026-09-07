@@ -172,7 +172,6 @@ jobs:
             --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
             --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
-            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --meta githubCommitSha="$HEAD_SHA" \
             --meta previewRepository="$GITHUB_REPOSITORY" \
             --meta previewPullRequest="$PREVIEW_PULL_REQUEST" \
