@@ -16,3 +16,10 @@ test("admin proxy allows every dashboard overview request", () => {
     assert.match(proxySource, new RegExp(`\\["${route}", new Set\\(\\["GET"\\]\\)\\]`));
   }
 });
+
+test("admin proxy allows reading and updating homepage feature visibility", () => {
+  assert.match(
+    proxySource,
+    /\["feature-flags\/match-lab-homepage", new Set\(\["GET", "PATCH"\]\)\]/,
+  );
+});

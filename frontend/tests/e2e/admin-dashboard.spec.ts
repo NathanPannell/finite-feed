@@ -5,12 +5,23 @@ test("operates the records-first admin dashboard through its server API contract
   let createBody: Record<string, unknown> | null = null;
   let channelActive = true;
   let failNextChannelPatch = false;
+  let matchLabHomepageVisible = true;
+  let featureFlagPatch: Record<string, unknown> | null = null;
 
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace("/api/admin/", "");
     requestedUrls.push(`${path}${url.search}`);
+
+    if (path === "feature-flags/match-lab-homepage") {
+      if (request.method() === "PATCH") {
+        featureFlagPatch = request.postDataJSON();
+        matchLabHomepageVisible = Boolean(featureFlagPatch?.enabled);
+      }
+      await route.fulfill({ json: { key: "match_lab_homepage_visible", enabled: matchLabHomepageVisible } });
+      return;
+    }
 
     if (path === "summary") {
       await route.fulfill({ json: {
@@ -170,6 +181,12 @@ test("operates the records-first admin dashboard through its server API contract
   await expect(page.getByRole("img", { name: "Useful and not useful feedback over time" })).toBeVisible();
   await expect(page.getByRole("img", { name: "Useful feedback as a share of recommendations sent" })).toBeVisible();
   await expect(page.getByRole("table", { name: "Daily feedback data" })).toContainText("60%");
+  const homepageVisibility = page.getByLabel("Show Match Lab links");
+  await expect(homepageVisibility).toBeChecked();
+  await homepageVisibility.uncheck();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Match Lab links are hidden from the home page.")).toBeVisible();
+  expect(featureFlagPatch).toEqual({ enabled: false });
 
   const channelRow = page.getByRole("row").filter({ hasText: "Existing Channel" });
   const channelLogo = channelRow.locator("img");
@@ -355,7 +372,7 @@ test("announces loading and recovers from a list error into an empty state", asy
   await expect(page.getByRole("status")).toContainText("Loading channels");
   releaseChannels?.();
   await expect(page.locator(".admin-error")).toContainText("Channel records are temporarily unavailable");
-  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByRole("tabpanel").getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("heading", { name: "No channels yet" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("0 channels loaded");
 

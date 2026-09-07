@@ -365,6 +365,12 @@ export function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeError, setNoticeError] = useState(false);
+  const [matchLabHomepageVisible, setMatchLabHomepageVisible] = useState(true);
+  const [savedMatchLabHomepageVisible, setSavedMatchLabHomepageVisible] = useState(true);
+  const [featureFlagLoading, setFeatureFlagLoading] = useState(true);
+  const [featureFlagSaving, setFeatureFlagSaving] = useState(false);
+  const [featureFlagMessage, setFeatureFlagMessage] = useState("");
+  const [featureFlagError, setFeatureFlagError] = useState("");
   const [detail, setDetail] = useState<DetailState>(null);
   const [page, setPage] = useState<Record<Tab, number>>({ channels: 1, videos: 1, recommendations: 1 });
   const [searchDraft, setSearchDraft] = useState("");
@@ -446,6 +452,21 @@ export function AdminDashboard() {
     }
   }, []);
 
+  const loadFeatureFlag = useCallback(async () => {
+    setFeatureFlagLoading(true);
+    setFeatureFlagError("");
+    try {
+      const payload = await adminRequest<JsonRecord>("feature-flags/match-lab-homepage");
+      const enabled = booleanValue(payload, "enabled");
+      setMatchLabHomepageVisible(enabled);
+      setSavedMatchLabHomepageVisible(enabled);
+    } catch (error) {
+      setFeatureFlagError(requestMessage(error, "Homepage visibility could not be loaded."));
+    } finally {
+      setFeatureFlagLoading(false);
+    }
+  }, []);
+
   const loadList = useCallback(async () => {
     // A mutation begun on another tab must not reload its old query afterward.
     if (activeListKey.current !== listKey) return;
@@ -498,6 +519,10 @@ export function AdminDashboard() {
     return () => window.clearTimeout(task);
   }, [loadOverview]);
   useEffect(() => {
+    const task = window.setTimeout(() => void loadFeatureFlag(), 0);
+    return () => window.clearTimeout(task);
+  }, [loadFeatureFlag]);
+  useEffect(() => {
     const task = window.setTimeout(() => void loadList(), 0);
     return () => window.clearTimeout(task);
   }, [loadList]);
@@ -542,8 +567,29 @@ export function AdminDashboard() {
   async function refresh() {
     setRefreshing(true);
     announce("");
-    await Promise.all([loadOverview(), loadList()]);
+    await Promise.all([loadOverview(), loadList(), loadFeatureFlag()]);
     setRefreshing(false);
+  }
+
+  async function saveFeatureFlag(event: FormEvent) {
+    event.preventDefault();
+    setFeatureFlagSaving(true);
+    setFeatureFlagError("");
+    setFeatureFlagMessage("");
+    try {
+      const payload = await adminRequest<JsonRecord>("feature-flags/match-lab-homepage", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: matchLabHomepageVisible }),
+      });
+      const enabled = booleanValue(payload, "enabled");
+      setMatchLabHomepageVisible(enabled);
+      setSavedMatchLabHomepageVisible(enabled);
+      setFeatureFlagMessage(enabled ? "Match Lab links are visible on the home page." : "Match Lab links are hidden from the home page.");
+    } catch (error) {
+      setFeatureFlagError(requestMessage(error, "Homepage visibility did not save."));
+    } finally {
+      setFeatureFlagSaving(false);
+    }
   }
 
   function applySearch(event: FormEvent) {
@@ -696,6 +742,17 @@ export function AdminDashboard() {
             {listError ? <ErrorState message={listError} retry={() => void loadList()} /> : listLoading || list.items.length ? <RecordTable tab={tab} data={list} loading={listLoading} mutationId={mutationId} open={openDetail} patchChannel={patchChannel} hiddenColumns={hiddenColumns[tab]} /> : <EmptyState title={tab === "videos" && videoSearchMode === "vector" && !vectorPhrase ? "Search by meaning" : hasActiveFilters ? `No matching ${tab}` : `No ${tab} yet`} message={tab === "videos" && videoSearchMode === "vector" ? "Enter a phrase to rank compatible stored vectors." : hasActiveFilters ? "Clear filters to return to the full record set." : "Refresh after the next worker run."} />}
             {!listError && !!list.items.length && <Pagination data={list} go={(next) => setPage((current) => ({ ...current, [tab]: next }))} />}
           </div>
+        </section>
+
+        <section className="admin-feature" aria-labelledby="feature-heading">
+          <div className="admin-section-heading"><h2 id="feature-heading">Feature visibility</h2></div>
+          <form className="admin-feature-setting" onSubmit={saveFeatureFlag} aria-busy={featureFlagLoading || featureFlagSaving}>
+            <div><h3>Match Lab on the home page</h3><p>Hide the public links while keeping the Match Lab available at its direct URL.</p></div>
+            <label className="admin-check"><input type="checkbox" checked={matchLabHomepageVisible} disabled={featureFlagLoading || featureFlagSaving || Boolean(featureFlagError)} onChange={(event) => { setMatchLabHomepageVisible(event.target.checked); setFeatureFlagMessage(""); }} /><span>Show Match Lab links</span></label>
+            <button className="admin-primary" disabled={featureFlagLoading || featureFlagSaving || Boolean(featureFlagError) || matchLabHomepageVisible === savedMatchLabHomepageVisible}>{featureFlagSaving ? "Saving…" : "Save"}</button>
+          </form>
+          <p className={`admin-feature-feedback ${featureFlagError ? "error-text" : ""}`} aria-live="polite">{featureFlagLoading ? "Loading homepage visibility…" : featureFlagError || featureFlagMessage}</p>
+          {featureFlagError && <button className="admin-text-button" onClick={() => void loadFeatureFlag()}>Try again</button>}
         </section>
 
         <section className="admin-overview" aria-labelledby="health-heading">
