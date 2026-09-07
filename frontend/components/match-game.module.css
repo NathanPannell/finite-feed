@@ -52,6 +52,7 @@
   display: grid;
   gap: 3px 10px;
   grid-template-columns: 72px minmax(0, 1fr);
+  margin-top: 0;
   min-height: 58px;
   padding: 10px 12px;
   position: relative;
@@ -59,7 +60,7 @@
 }
 
 .response .choice + .choice {
-  border-top: 0;
+  margin-top: -1px;
 }
 
 .choice:hover {
@@ -93,29 +94,37 @@
   z-index: 1;
 }
 
-.choiceName {
-  font-size: 13px;
+.response .choice .choiceName {
+  color: inherit;
+  display: block;
+  font-size: 14px;
   font-weight: 800;
   grid-column: 1;
   grid-row: 1 / 3;
   text-transform: uppercase;
+  margin-top: 0;
   pointer-events: none;
 }
 
-.choiceDefinition {
-  font-size: 11px;
+.response .choice .choiceDefinition {
+  color: inherit;
+  display: block;
+  font-size: 12px;
   font-weight: 600;
   grid-column: 2;
   line-height: 1.35;
+  margin-top: 0;
   pointer-events: none;
 }
 
 .response .choice .choiceState {
+  color: inherit;
   display: block;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   grid-column: 2;
   letter-spacing: .04em;
+  margin-top: 0;
   text-transform: uppercase;
   pointer-events: none;
 }
@@ -179,13 +188,16 @@
   .response .choice + .choice {
     border-left: 0;
     border-top: 1px solid var(--paper-high);
+    margin-top: 0;
   }
 
-  .choiceName,
-  .choiceDefinition,
-  .choiceState {
+  .response .choice .choiceName,
+  .response .choice .choiceDefinition,
+  .response .choice .choiceState {
     grid-column: 1;
     grid-row: auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -264,14 +276,6 @@
     gap: 3px;
     min-height: 78px;
     padding: 9px 7px;
-  }
-
-  .choiceDefinition {
-    font-size: 10px;
-  }
-
-  .choiceState {
-    font-size: 8px;
   }
 
   .response .reasonLabel {

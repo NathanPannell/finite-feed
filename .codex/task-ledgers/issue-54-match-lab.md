@@ -20,6 +20,7 @@ Make Match Lab a clear single-choice review on desktop and 320–390px screens w
 - Final scoped Impeccable layout detector returned `[]` for `match-game.tsx`.
 - Desktop, 320px, and 390px Playwright screenshots were inspected. The decision rail remains aligned on desktop; mobile context is clamped with disclosure controls; all choices fit above the mobile navigation without document overflow.
 - Screenshot review exposed a legacy global selector that displayed every choice's `Selected` text. The state now renders only for the checked radio, with a regression assertion.
+- Coordinator screenshot review found the same legacy label selector still overrode choice typography and selected contrast. Scoped selectors now enforce 14px names, 12px definitions, carbon-on-paper selected text, clear row borders, and zero leaked label margins; focused computed-style assertions cover the regression.
 - `npm run lint`, `npm run typecheck`, `npm run build`, and `npm run test:proxy` passed. Proxy tests: 14/14.
 - `PLAYWRIGHT_PORT=3157`, two workers: `match-ux.spec.ts` passed 4/4; the relevant Match decision, desktop layout, retry, saved-answer, debug, 409, and 500 tests in `signal-surfaces.spec.ts` passed 7/7.
 

@@ -46,6 +46,33 @@ test("uses one native radio group with arrow-key selection and visible state", a
   await expect(page.getByText("Selected", { exact: true })).toHaveCount(1);
   await expect(page.locator('input[type="radio"]:checked')).toHaveCount(1);
 
+  const choiceVisuals = await page.locator('label:has(input[name="match-judgment"])').evaluateAll((labels) => labels.map((label) => {
+    const input = label.querySelector<HTMLInputElement>('input[name="match-judgment"]')!;
+    const spans = label.querySelectorAll("span");
+    const style = getComputedStyle(label);
+    return {
+      checked: input.checked,
+      background: style.backgroundColor,
+      borderTopWidth: style.borderTopWidth,
+      nameColor: getComputedStyle(spans[0]).color,
+      nameSize: Number.parseFloat(getComputedStyle(spans[0]).fontSize),
+      definitionColor: getComputedStyle(spans[1]).color,
+      definitionSize: Number.parseFloat(getComputedStyle(spans[1]).fontSize),
+      stateColor: spans[2] ? getComputedStyle(spans[2]).color : null,
+    };
+  }));
+  for (const choice of choiceVisuals) {
+    expect(choice.borderTopWidth).toBe("1px");
+    expect(choice.nameSize).toBeGreaterThanOrEqual(14);
+    expect(choice.definitionSize).toBeGreaterThanOrEqual(12);
+    expect(choice.nameColor).toBe(choice.checked ? "rgb(17, 17, 17)" : "rgb(250, 249, 242)");
+    expect(choice.definitionColor).toBe(choice.checked ? "rgb(17, 17, 17)" : "rgb(250, 249, 242)");
+    if (choice.checked) {
+      expect(choice.background).toBe("rgb(250, 249, 242)");
+      expect(choice.stateColor).toBe("rgb(17, 17, 17)");
+    }
+  }
+
   const focusOutline = await unsure.evaluate((radio) => getComputedStyle(radio.closest("label")!).outlineStyle);
   expect(focusOutline).not.toBe("none");
   if (process.env.MATCH_SCREENSHOTS) await page.screenshot({ path: testInfo.outputPath("match-desktop-selected.png"), fullPage: true });
@@ -58,6 +85,7 @@ for (const viewport of [{ width: 320, height: 800 }, { width: 390, height: 844 }
     await page.setViewportSize(viewport);
     await serveCard(page);
     await page.goto("/match/review");
+    await page.getByRole("radio", { name: "Unsure", exact: true }).check();
 
     const geometry = await page.locator(".match-workspace").evaluate((workspace) => {
       const firstChoice = workspace.querySelector("input[type=radio]")?.closest("label")?.getBoundingClientRect();
