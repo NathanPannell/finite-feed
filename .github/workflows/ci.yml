@@ -270,9 +270,8 @@ jobs:
             --arg production_url "$production_url" \
             '{commit:$commit,deployment_id:$deployment_id,deployment_url:$deployment_url,production_url:$production_url}' \
             > "$DEPLOYMENT_ARTIFACT_DIR/vercel-production-deployment.json"
-          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo "production_url=$production_url" >> "$GITHUB_OUTPUT"
-          echo "origins=$origins" >> "$GITHUB_OUTPUT"
+          printf 'deployment_url=%s\nproduction_url=%s\norigins=%s\n' \
+            "$deployment_url" "$production_url" "$origins" >> "$GITHUB_OUTPUT"
       - name: Trust the exact frontend origins
         env:
           DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}

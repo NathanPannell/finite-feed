@@ -10,6 +10,8 @@ role="${2:?service role is required}"
 case "$role" in api|worker) ;; *) echo "Service role must be api or worker." >&2; exit 1 ;; esac
 artifact_dir="${DEPLOYMENT_ARTIFACT_DIR:-artifacts}"
 stamp="backend/.railway-deployment-source"
+run_id="${GITHUB_RUN_ID:-local}"
+run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 mkdir -p "$artifact_dir"
 trap 'rm -f "$stamp"' EXIT
 
@@ -35,7 +37,7 @@ previous_json="$(railway deployment list --json --limit 1 \
   --project "$RAILWAY_PROJECT_ID")"
 previous_id="$(jq -r 'if type == "array" then (.[0].id // "") else (.deployments[0].id // "") end' <<<"$previous_json")"
 
-printf '%s:%s\n' "$EXPECTED_COMMIT_SHA" "$role" > "$stamp"
+printf '%s:%s:%s:%s\n' "$EXPECTED_COMMIT_SHA" "$role" "$run_id" "$run_attempt" > "$stamp"
 if ! railway up --ci --yes \
   --service "$service_id" \
   --environment "$RAILWAY_ENVIRONMENT" \

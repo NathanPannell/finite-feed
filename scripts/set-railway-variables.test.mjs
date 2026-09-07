@@ -14,12 +14,16 @@ const environment = {
 
 test("production batches exact service settings and preserves optional deletion", () => {
   const calls = [];
+  const current = { api: new Set(["TELEGRAM_DEVELOPER_BOT_TOKEN", "UNRELATED_SECRET"]), worker: new Set(["TELEGRAM_DEVELOPER_BOT_TOKEN", "UNRELATED_SECRET"]) };
   const plans = variablePlans("production", { ...environment, TELEGRAM_DEVELOPER_BOT_TOKEN: "", OPENROUTER_API_KEY: "a=b c\n$d", MATCH_LAB_DEBUG_ASSESSMENT: "true" });
   configureVariables(plans, (args) => {
     calls.push(args);
-    return args[1] === "list" ? (calls.filter((call) => call[1] === "list").length <= 2 ? JSON.stringify({ TELEGRAM_DEVELOPER_BOT_TOKEN: null, UNRELATED_SECRET: "untouched" }) : JSON.stringify({ UNRELATED_SECRET: "untouched" })) : "";
-  });
-  assert.equal(calls.filter((args) => args[1] === "list").length, 4);
+    const service = args[args.indexOf("--service") + 1];
+    if (args[1] === "list") return JSON.stringify(Object.fromEntries([...current[service]].map((key) => [key, null])));
+    if (args[1] === "delete") current[service].delete(args[2]);
+    return "";
+  }, { sleep: () => {}, delayMs: 0 });
+  assert.equal(calls.filter((args) => args[1] === "list").length, 6);
   const writes = calls.filter((args) => args[1] === "set");
   assert.equal(writes.length, 2);
   for (const args of writes) {
@@ -37,14 +41,16 @@ test("production batches exact service settings and preserves optional deletion"
 
 test("preview isolates database, strips production token and configures signing", () => {
   const calls = [];
+  const forbidden = ["TELEGRAM_PRODUCTION_BOT_TOKEN", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "PREVIEW_DATABASE_URL_UNPOOLED", "MATCH_LAB_COOKIE_SECRET"];
+  const current = { api: new Set(forbidden), worker: new Set(forbidden) };
   const plans = variablePlans("preview", { ...environment, MATCH_LAB_DEBUG_ASSESSMENT: "true" });
   configureVariables(plans, (args) => {
     calls.push(args);
-    if (args[1] !== "list") return "";
-    return calls.filter((call) => call[1] === "list").length <= 2
-      ? '{"TELEGRAM_PRODUCTION_BOT_TOKEN":null,"DATABASE_URL":null,"DATABASE_URL_UNPOOLED":null,"PREVIEW_DATABASE_URL_UNPOOLED":null,"MATCH_LAB_COOKIE_SECRET":null}'
-      : '{}';
-  });
+    const service = args[args.indexOf("--service") + 1];
+    if (args[1] === "list") return JSON.stringify(Object.fromEntries([...current[service]].map((key) => [key, null])));
+    if (args[1] === "delete") current[service].delete(args[2]);
+    return "";
+  }, { sleep: () => {}, delayMs: 0 });
   for (const plan of plans) {
     assert.equal(plan.target, "pr-21");
     assert.equal(plan.values.PREVIEW_DATABASE_URL, environment.PREVIEW_DATABASE_URL);
@@ -64,6 +70,7 @@ test("preview isolates database, strips production token and configures signing"
   assert.equal(calls.filter((args) => args[1] === "delete" && args[2] === "DATABASE_URL_UNPOOLED").length, 2);
   assert.equal(calls.filter((args) => args[1] === "delete" && args[2] === "PREVIEW_DATABASE_URL_UNPOOLED").length, 1);
   assert.equal(calls.filter((args) => args[1] === "delete" && args[2] === "MATCH_LAB_COOKIE_SECRET").length, 1);
+  assert.ok(calls.findLastIndex((args) => args[1] === "set") < calls.findIndex((args) => args[1] === "delete"));
   for (const service of ["api", "worker"]) {
     const serviceCalls = calls.filter((args) => args.includes(service));
     assert.ok(serviceCalls.findIndex((args) => args[1] === "set") < serviceCalls.findIndex((args) => args[1] === "delete"));
@@ -91,13 +98,44 @@ test("a failed or malformed listing cannot erase or update variables", () => {
 
 test("verification fails safely when a forbidden preview variable survives deletion", () => {
   const calls = [];
+  let failure;
   assert.throws(
-    () => configureVariables(variablePlans("preview", environment), (args) => {
-      calls.push(args);
-      return args[1] === "list" ? '{"DATABASE_URL":"secret-value-never-printed"}' : "";
-    }),
-    /API variable isolation failed for: DATABASE_URL/,
+    () => {
+      try {
+        configureVariables(variablePlans("preview", environment), (args) => {
+          calls.push(args);
+          return args[1] === "list" ? '{"DATABASE_URL":"secret-value-never-printed"}' : "";
+        }, { sleep: () => {}, delayMs: 0, maxAttempts: 3 });
+      } catch (error) {
+        failure = error;
+        throw error;
+      }
+    },
+    /API variable isolation failed for: DATABASE_URL.*worker variable isolation failed for: DATABASE_URL/,
   );
   assert.equal(calls.filter((args) => args[1] === "set").length, 2);
+  assert.deepEqual(new Set(calls.filter((args) => args[1] === "delete").map((args) => args[args.indexOf("--service") + 1])), new Set(["api", "worker"]));
   assert.ok(!calls.flat().includes("secret-value-never-printed"));
+  assert.ok(!failure.message.includes("secret-value-never-printed"));
+});
+
+test("late clone propagation is removed and must converge to three clean reads", () => {
+  const calls = [];
+  const listCounts = { api: 0, worker: 0 };
+  const current = { api: new Set(), worker: new Set() };
+  const late = ["TELEGRAM_PRODUCTION_BOT_TOKEN", "TELEGRAM_PRODUCTION_CHAT_ID", "DATABASE_URL_UNPOOLED"];
+  configureVariables(variablePlans("preview", environment), (args) => {
+    calls.push(args);
+    const service = args[args.indexOf("--service") + 1];
+    if (args[1] === "list") {
+      listCounts[service] += 1;
+      if (service === "api" && listCounts.api === 3) late.forEach((key) => current.api.add(key));
+      return JSON.stringify(Object.fromEntries([...current[service]].map((key) => [key, null])));
+    }
+    if (args[1] === "delete") current[service].delete(args[2]);
+    return "";
+  }, { sleep: () => {}, delayMs: 0, maxAttempts: 6 });
+  assert.deepEqual(calls.filter((args) => args[1] === "delete").map((args) => args[2]), late);
+  assert.equal(listCounts.api, 6);
+  assert.equal(listCounts.worker, 4);
 });

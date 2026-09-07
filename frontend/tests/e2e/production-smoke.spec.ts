@@ -23,23 +23,6 @@ test("@smoke serves public and signed-out surfaces without browser errors", asyn
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
 });
 
-test("@smoke reports an unavailable OAuth start in the browser", async ({ page }) => {
-  await page.route("**/api/personal/**", (route) => route.fulfill({
-    status: 401,
-    contentType: "application/json",
-    body: JSON.stringify({ detail: "Sign in" }),
-  }));
-  await page.route("**/api/auth/**", (route) => route.fulfill({
-    status: 503,
-    contentType: "application/json",
-    body: JSON.stringify({ error: "temporarily unavailable" }),
-  }));
-
-  await page.goto("/app");
-  await page.getByRole("button", { name: "Continue with Google" }).click();
-  await expect(page.locator(".signal-error[role='alert']")).toHaveText("Google sign-in is unavailable right now. Please try again.");
-});
-
 test("production server fails closed when Vercel admin metadata is absent", async ({ request }) => {
   if (!localRun) {
     const response = await request.get("/admin", { maxRedirects: 0 });

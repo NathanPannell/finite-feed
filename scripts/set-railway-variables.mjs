@@ -78,37 +78,62 @@ export function variablePlans(mode, environment) {
   ];
 }
 
-export function configureVariables(plans, execute) {
+function wait(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function variableNames(plan, scope, execute, operation) {
+  let parsed;
+  try {
+    parsed = JSON.parse(execute(["variable", "list", "--json", ...scope]));
+  } catch {
+    throw new Error(`Could not ${operation} ${plan.role} variable names`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid Railway variable listing");
+  return new Set(Object.keys(parsed));
+}
+
+export function configureVariables(plans, execute, { sleep = wait, delayMs = 2000, maxAttempts = 10 } = {}) {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 3) throw new Error("Variable verification requires at least three attempts");
   const inventories = [];
   for (const plan of plans) {
     const scope = ["--service", plan.service, "--environment", plan.target, "--project", plan.project];
-    // Keep the raw response in memory: lists can include secret values and sealed keys.
-    let parsed;
-    try {
-      parsed = JSON.parse(execute(["variable", "list", "--json", ...scope]));
-    } catch {
-      throw new Error(`Could not read ${plan.role} variable names; no variables changed for this service`);
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid Railway variable listing");
-    inventories.push({ plan, scope, names: new Set(Object.keys(parsed)) });
+    // Preflight every service before mutating either one. Raw listings remain in
+    // memory because Railway JSON can include secret values and sealed keys.
+    variableNames(plan, scope, execute, "read");
+    inventories.push({ plan, scope });
   }
-  for (const { plan, scope, names } of inventories) {
-    execute(["variable", "set", ...Object.entries(plan.values).map(([key, value]) => `${key}=${value}`), "--skip-deploys", ...scope]);
-    for (const key of plan.remove) {
-      if (names.has(key)) execute(["variable", "delete", key, ...scope]);
-    }
-  }
+  // Apply all safe preview values before any delete can trigger a deployment.
   for (const { plan, scope } of inventories) {
-    let parsed;
-    try {
-      parsed = JSON.parse(execute(["variable", "list", "--json", ...scope]));
-    } catch {
-      throw new Error(`Could not verify ${plan.role} variable isolation`);
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid Railway variable listing");
-    const forbidden = plan.remove.filter((key) => Object.hasOwn(parsed, key));
-    if (forbidden.length) throw new Error(`${plan.role} variable isolation failed for: ${forbidden.join(", ")}`);
+    execute(["variable", "set", ...Object.entries(plan.values).map(([key, value]) => `${key}=${value}`), "--skip-deploys", ...scope]);
   }
+  const failures = [];
+  for (const { plan, scope } of inventories) {
+    try {
+      const requiredCleanReads = plan.target === "production" ? 1 : 3;
+      let cleanReads = 0;
+      let forbidden = [];
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const names = variableNames(plan, scope, execute, "verify");
+        forbidden = plan.remove.filter((key) => names.has(key));
+        if (forbidden.length) {
+          cleanReads = 0;
+          for (const key of forbidden) execute(["variable", "delete", key, ...scope]);
+        } else {
+          cleanReads += 1;
+          if (cleanReads === requiredCleanReads) break;
+        }
+        if (attempt + 1 < maxAttempts) sleep(delayMs);
+      }
+      if (forbidden.length || cleanReads < requiredCleanReads) {
+        const detail = forbidden.length ? ` for: ${forbidden.join(", ")}` : " before the verification timeout";
+        failures.push(`${plan.role} variable isolation failed${detail}`);
+      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : `${plan.role} variable isolation failed`);
+    }
+  }
+  if (failures.length) throw new Error(failures.join("; "));
 }
 
 function railway(args) {

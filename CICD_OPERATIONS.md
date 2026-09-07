@@ -4,7 +4,7 @@ Agents push feature branches and merge passing PRs. Direct pushes to `main`, inc
 
 ## GitHub protection
 
-`.github/main-protection.json` requires a PR, up-to-date passing `backend`, `frontend` and `deployment-contracts` checks, resolved review conversations, and enforcement for administrators. It blocks force pushes and deletion. Zero required approvals deliberately allows agents to merge without a human reviewer; it does not waive the PR or checks.
+`.github/main-protection.json` requires a PR, up-to-date `backend`, `frontend`, `deployment-contracts` and preview `deploy` checks, resolved review conversations, and enforcement for administrators. It blocks force pushes and deletion. Zero required approvals deliberately allows agents to merge without a human reviewer; it does not waive the PR or checks. The preview check is intentionally skipped for untrusted actors and dependency bots, which never receive deployment credentials.
 
 Apply it after the repository's GitHub plan supports private-repository branch protection:
 
@@ -24,5 +24,7 @@ Neon preview branches already isolate database changes. Preview credential hygie
 Close-event cleanup enumerates all tagged Vercel previews for the PR and safely handles the latest legacy bot-recorded ID. Older untagged deployments without trustworthy attribution need a separate inventory; do not guess their ownership. Failed cleanup can be rerun. A scheduled reconciliation sweep is not enabled: it must share the per-PR deployment lock and recheck closure before deleting resources, including when a PR is reopened.
 
 Production-build browser tests and isolated preview smoke checks complement backend integration tests. OAuth-start verification establishes that the provider accepts the callback; it does not prove an interactive Google login, account session, or Telegram delivery succeeded. Those journeys require an authorized test account and controlled delivery conditions.
+
+The preview native-auth check uses a synthetic account to verify sign-up, session restoration, sign-out and application-account cleanup without model calls or Telegram delivery. Run workflow linting on Linux with ShellCheck available; Windows actionlint alone does not exercise the same shell checks as the GitHub runner.
 
 Recovery rehearsal and proactive pipeline alerts remain tracked in issue #34. Never automatically roll back database migrations or restore production data from a preview.
