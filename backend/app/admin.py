@@ -9,18 +9,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
-from pydantic import AnyHttpUrl, BaseModel, Field, field_validator, model_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.app.admin_auth import require_admin
 from backend.app.budgets import reserve_request
 from backend.app.db import connection
 from backend.app.description_processing import DESCRIPTION_PROCESSING_VERSION
 from backend.app.embeddings import configured_embedder
+from backend.app.feature_flags import MATCH_LAB_HOMEPAGE_VISIBLE
 from backend.app.settings import Settings, get_settings
 from backend.app.youtube import YouTubeClient
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 MAX_PAGE_SIZE = 100
+MATCH_LAB_FLAG_AUDIT_ID = UUID("00000000-0000-0000-0000-000000000018")
 
 
 class ChannelUrl(BaseModel):
@@ -62,6 +64,21 @@ class VectorSearch(BaseModel):
         if not normalized:
             raise ValueError("Phrase cannot be blank")
         return normalized
+
+
+class FeatureFlagPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(strict=True)
+
+
+def _feature_flag_response(row: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "key": MATCH_LAB_HOMEPAGE_VISIBLE,
+        "enabled": bool(row["enabled"]) if row else True,
+        "updated_at": row.get("updated_at") if row else None,
+        "updated_by": row.get("updated_by") if row else None,
+    }
 
 
 def parse_channel_reference(url: str) -> tuple[str, str]:
@@ -268,6 +285,56 @@ def _page(items: list[dict[str, Any]], total: int, page: int, page_size: int) ->
 def _channel_response(row: dict[str, Any]) -> dict[str, Any]:
     """Keep internal channel ownership out of Control Room payloads."""
     return {key: value for key, value in row.items() if key not in {"user_id", "owner_name"}}
+
+
+@router.get("/feature-flags/match-lab-homepage")
+def match_lab_homepage_flag(conn: Connection = Depends(connection)):
+    row = conn.execute(
+        "SELECT enabled, updated_at, updated_by FROM app_feature_flags WHERE key = %s",
+        (MATCH_LAB_HOMEPAGE_VISIBLE,),
+    ).fetchone()
+    return _feature_flag_response(row)
+
+
+@router.patch("/feature-flags/match-lab-homepage")
+def update_match_lab_homepage_flag(
+    payload: FeatureFlagPatch,
+    claims: dict[str, Any] = Depends(require_admin),
+    conn: Connection = Depends(connection),
+):
+    current = conn.execute(
+        "SELECT enabled, updated_at, updated_by FROM app_feature_flags WHERE key = %s FOR UPDATE",
+        (MATCH_LAB_HOMEPAGE_VISIBLE,),
+    ).fetchone()
+    previous = bool(current["enabled"]) if current else True
+    actor = claims.get("sub")
+    row = conn.execute(
+        """
+        INSERT INTO app_feature_flags (key, enabled, updated_at, updated_by)
+        VALUES (%s, %s, NOW(), %s)
+        ON CONFLICT (key) DO UPDATE
+        SET enabled = EXCLUDED.enabled, updated_at = NOW(), updated_by = EXCLUDED.updated_by
+        RETURNING enabled, updated_at, updated_by
+        """,
+        (MATCH_LAB_HOMEPAGE_VISIBLE, payload.enabled, actor),
+    ).fetchone()
+    conn.execute(
+        """
+        INSERT INTO admin_audit_events
+            (id, action, target_type, target_id, user_id, actor, before_values,
+             after_values, outcome, error_message)
+        VALUES (%s, 'update_feature_flag', 'feature_flag', %s, NULL, %s, %s, %s, 'success', NULL)
+        """,
+        (
+            uuid4(),
+            MATCH_LAB_FLAG_AUDIT_ID,
+            actor,
+            Jsonb({"enabled": previous}),
+            Jsonb({"enabled": payload.enabled}),
+        ),
+    )
+    conn.commit()
+    return _feature_flag_response(row)
 
 
 @router.get("/summary")

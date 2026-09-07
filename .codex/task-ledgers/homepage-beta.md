@@ -1,0 +1,12 @@
+# Homepage frontend PR
+
+Goal: implement issue #45 homepage copy/proof/motion/mobile/social fixes; create and verify a PR with isolated deployed preview.
+Base: origin/main 25cbfa9c90daec2d8d5a3485ca002bed22e9a731; branch codex/homepage-beta; isolated worktree homepage-beta.
+User steering: include concrete recommendation examples using real public videos; remove all beta/illustrative/example-style caveats from public-facing copy. Use real curated videos and grounded reasons, no invented users, fake generated output, or delivery states.
+Scope: frontend/copy/social image/tests. Keep current working hostname. No auth, enrollment, domain purchase, production deployment, social posting, or private user data reuse.
+Owners: homepage_builder frontend implementation/test; recommendation_examples safe public sources and evidence; root integration/PR/CI/browser/ledger. Independent quality review after builder checks.
+Next: builder consumes real examples, completes scoped refinement and tests; root reviews diff, commits/pushes PR, checks CI/preview and deployed browser.
+
+Implementation complete: three sourced TED videos with interest selection and real YouTube actions, one-shot/replay selection motion, marketing-only navigation, authored social PNG/metadata, and removal of beta/illustrative wording from user-facing surfaces. Simulated feedback controls were removed to avoid a disclaimer for non-persistent behavior. Builder reports lint/typecheck/production build, 14 Node proxy/auth checks, 11 focused homepage Playwright tests, and detector [] passed. Independent quality review running. Next: PR CI/preview and deployed desktop/mobile browser verification.
+
+Integration review: desktop1260 and mobile390x844 production-build browser views show real thumbnails, legible card, and no app-nav overlay; no warning/error logs. Tightened two rationale sentences against TED source evidence, then rebuilt and reran focused switching test successfully. Independent quality review found no blocking/material implementation issue; optional future fixture-integrity test can compare public records directly with source snapshot. Original-head CI34070397738 passes backend/frontend/deployment-contracts. PR52 https://github.com/NathanPannell/finite-feed/pull/52; preview34070397773 still provisioning. Root local server3217 stopped. Next: push final copy, verify final CI/preview and deployed browser.
