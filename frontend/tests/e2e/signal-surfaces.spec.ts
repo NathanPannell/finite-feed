@@ -721,7 +721,7 @@ test("resumes saved onboarding copy, retries synthesis, and accepts a profile ed
   await expect(page.locator(".onboarding-error")).toContainText("temporarily unavailable");
   await expect(page.getByLabel("In your own words")).toHaveValue(state.open_response);
   await page.getByRole("button", { name: "Build my profile" }).click();
-  await page.getByRole("button", { name: "I’d like to make a change" }).click();
+  await page.getByRole("button", { name: "Edit profile" }).click();
   await page.getByLabel("Edit preference profile").fill("I want rigorous systems thinking grounded in evidence. Skip empty hype and broad motivational talks.");
   await page.getByRole("button", { name: "Save my changes" }).click();
   expect(profilePayload).toEqual({ action: "change", profile: "I want rigorous systems thinking grounded in evidence. Skip empty hype and broad motivational talks." });
@@ -811,11 +811,11 @@ test("completes onboarding one saved step at a time", async ({ page }) => {
   await page.getByLabel("In your own words").fill("I want careful technology and science explanations. I value practical detail and want to avoid breathless hype.");
   await page.getByRole("button", { name: "Build my profile" }).click();
   await expect(page.getByText(/You want rigorous explanations/)).toBeVisible();
-  await page.getByRole("button", { name: "Okay" }).click();
+  await page.getByRole("button", { name: "Use this profile" }).click();
   await expect(page.getByRole("heading", { name: "Set a pace that feels useful." })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByText("Coming soon")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Email & SMS" })).toBeVisible();
+  await expect(page.getByText("Email and SMS delivery isn’t available yet.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Email/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Use dashboard only" }).click();
   await expect(page).toHaveURL(/\/app$/);
 
