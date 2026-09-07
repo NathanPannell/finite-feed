@@ -225,7 +225,7 @@ test("saves preference memory with an optimistic version and no delivery fields"
   const captured = await mockPublicApi(page);
   await page.goto("/app/settings");
 
-  await page.getByRole("button", { name: "Shape memory" }).click();
+  await page.getByRole("button", { name: "Edit interests" }).click();
   await page.getByLabel("Your interests and exclusions").fill("Systems thinking with practical evidence.");
   await page.getByRole("button", { name: "Save memory" }).click();
 

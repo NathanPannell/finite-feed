@@ -4,8 +4,9 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AccountControls } from "@/components/account-controls";
+import { Account, AccountControls } from "@/components/account-controls";
 import { SignalShell } from "@/components/signal-shell";
+import settingsStyles from "@/components/settings-layout.module.css";
 
 type Profile = {
   preference_statement: string;
@@ -36,6 +37,7 @@ type Recommendation = {
   rating: "up" | "down" | null;
 };
 type Notice = { message: string; tone: "error" | "success" } | null;
+type FormNotice = Notice;
 type SourceState = "idle" | "loading" | "resolved" | "invalid" | "error" | "duplicate";
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -64,6 +66,15 @@ function validYouTubeUrl(value: string) {
   }
 }
 
+function validTimezone(value: string) {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function responseMessage(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
   if (body && typeof body === "object" && typeof body.detail === "string") return body.detail;
@@ -84,6 +95,18 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
   const [notice, setNotice] = useState<Notice>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [deliveryBaseline, setDeliveryBaseline] = useState<Pick<Profile, "timezone" | "cadence_days" | "delivery_hour" | "recommendation_count"> | null>(null);
+  const [deliveryNotice, setDeliveryNotice] = useState<FormNotice>(null);
+  const [memoryNotice, setMemoryNotice] = useState<FormNotice>(null);
+  const [accountDelivery, setAccountDelivery] = useState<Account | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<Channel | null>(null);
+  const [timezoneError, setTimezoneError] = useState(false);
+  const deliveryDirty = Boolean(profile && deliveryBaseline && (
+    profile.timezone !== deliveryBaseline.timezone ||
+    profile.delivery_hour !== deliveryBaseline.delivery_hour ||
+    profile.recommendation_count !== deliveryBaseline.recommendation_count ||
+    profile.cadence_days.join(",") !== deliveryBaseline.cadence_days.join(",")
+  ));
 
   const load = useCallback(async () => {
     if (!apiBaseUrl) return;
@@ -104,6 +127,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
       if (responses.some((response) => !response.ok)) throw new Error("The feed could not reach its source. Try again in a moment.");
       const [nextProfile, nextChannels, nextRecommendations = []] = await Promise.all(responses.map((response) => response.json()));
       setProfile(nextProfile);
+      setDeliveryBaseline({ timezone: nextProfile.timezone, cadence_days: nextProfile.cadence_days, delivery_hour: nextProfile.delivery_hour, recommendation_count: nextProfile.recommendation_count });
       setMemoryDraft(nextProfile.preference_statement);
       setChannels(nextChannels);
       setRecommendations(nextRecommendations);
@@ -168,7 +192,13 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
   async function saveDelivery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!profile) return;
+    if (!validTimezone(profile.timezone)) {
+      setTimezoneError(true);
+      setDeliveryNotice({ message: "Enter an IANA timezone such as America/Los_Angeles, then save again.", tone: "error" });
+      return;
+    }
     setBusyAction("delivery");
+    setDeliveryNotice(null);
     try {
       const response = await fetch(`${apiBaseUrl}/profile/delivery`, {
         method: "PUT",
@@ -181,14 +211,15 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
         }),
       });
       if (!response.ok) {
-        setNotice({ message: "Delivery preferences were not saved. Try again.", tone: "error" });
+        setDeliveryNotice({ message: "Could not save your delivery preferences. Try again.", tone: "error" });
         return;
       }
       const saved = (await response.json()) as Profile;
-      setProfile(saved);
-      setNotice({ message: "Delivery preferences saved.", tone: "success" });
+      setProfile((current) => current ? { ...saved, preference_statement: current.preference_statement } : saved);
+      setDeliveryBaseline({ timezone: saved.timezone, cadence_days: saved.cadence_days, delivery_hour: saved.delivery_hour, recommendation_count: saved.recommendation_count });
+      setDeliveryNotice({ message: "Delivery preferences saved.", tone: "success" });
     } catch {
-      setNotice({ message: "Delivery preferences were not saved. Check your connection and try again.", tone: "error" });
+      setDeliveryNotice({ message: "Could not save your delivery preferences. Check your connection and try again.", tone: "error" });
     } finally {
       setBusyAction(null);
     }
@@ -198,6 +229,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
     event.preventDefault();
     if (!profile) return;
     setBusyAction("memory");
+    setMemoryNotice(null);
     try {
       const response = await fetch(`${apiBaseUrl}/profile/memory`, {
         method: "PUT",
@@ -205,21 +237,22 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
         body: JSON.stringify({ preference_statement: memoryDraft, expected_version: profile.version }),
       });
       if (!response.ok) {
-        setNotice({
-          message: response.status === 409
-            ? "Preference memory changed elsewhere. Reload and try again."
-            : "Preference memory was not saved. Check the field and try again.",
-          tone: "error",
-        });
+        setMemoryNotice({ message: response.status === 409 ? "Your interests changed elsewhere. Reload and try again." : "Could not save your interests. Check the field and try again.", tone: "error" });
         return;
       }
       const saved = (await response.json()) as Profile;
-      setProfile(saved);
+      setProfile((current) => current ? {
+        ...saved,
+        timezone: current.timezone,
+        cadence_days: current.cadence_days,
+        delivery_hour: current.delivery_hour,
+        recommendation_count: current.recommendation_count,
+      } : saved);
       setMemoryDraft(saved.preference_statement);
       setMemoryEditing(false);
-      setNotice({ message: "Preference memory saved.", tone: "success" });
+      setMemoryNotice({ message: "Your interests were saved.", tone: "success" });
     } catch {
-      setNotice({ message: "Preference memory was not saved. Check your connection and try again.", tone: "error" });
+      setMemoryNotice({ message: "Could not save your interests. Check your connection and try again.", tone: "error" });
     } finally {
       setBusyAction(null);
     }
@@ -271,6 +304,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
         return;
       }
       setChannels((current) => current.filter((item) => item.id !== channel.id));
+      setPendingRemoval(null);
       setNotice({ message: `${channel.name} is no longer tracked.`, tone: "success" });
     } catch {
       setNotice({ message: `${channel.name} was not removed. Check your connection and try again.`, tone: "error" });
@@ -333,10 +367,12 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
 
         {notice && <p className={notice.tone === "error" ? "signal-error" : "signal-notice"} role={notice.tone === "error" ? "alert" : "status"}>{notice.message}</p>}
 
-        {settings && <AccountControls />}
+        {settings && <nav className={settingsStyles.settingsNav} aria-label="Settings sections">
+          <a href="#delivery">Delivery</a><a href="#interests">Interests</a><a href="#sources">Sources</a><a href="#account">Account</a>
+        </nav>}
         {!settings && <p className="feed-settings-link"><Link href="/settings">Shape your interests, sources, and Telegram delivery</Link></p>}
-        <div className="reading-grid">
-          <section id="recommendations" className="feed-column" aria-labelledby="recommendations-heading">
+        <div className={settings ? settingsStyles.settingsGrid : "reading-grid"}>
+          {!settings && <section id="recommendations" className="feed-column" aria-labelledby="recommendations-heading">
             <header className="section-line">
               <h2 id="recommendations-heading">For you</h2>
               <span>{recommendations.length ? `${recommendations.length} recent` : "Queue open"}</span>
@@ -371,14 +407,15 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
                 <p><Link href="/settings">Tell us your interests and check your sources</Link>, then choose your first recommendation. New sources may need a refresh before videos are ready.</p>
               </div>
             )}
-          </section>
+          </section>}
 
-          <aside className="memory-column">
-            <section id="preferences" className="delivery-sheet" aria-labelledby="delivery-heading">
+          <aside className={settings ? settingsStyles.settingsColumn : "memory-column"}>
+            <section id={settings ? "delivery" : "preferences"} className={settings ? `${settingsStyles.taskSection} delivery-sheet` : "delivery-sheet"} aria-labelledby="delivery-heading">
               <header className="section-line"><h2 id="delivery-heading">Delivery preferences</h2></header>
+              {accountDelivery && <p className={settingsStyles.formFeedback} role="status">Telegram is {accountDelivery.telegram_connected ? "connected" : "not connected"}.{accountDelivery.delivery_paused ? " Delivery is paused." : ""} Manage the connection below in Account & privacy.</p>}
               {profile ? (
                 <form className="delivery-form" onSubmit={saveDelivery}>
-                  <label htmlFor="delivery-timezone">Timezone</label><input id="delivery-timezone" value={profile.timezone} onChange={(event) => setProfile({ ...profile, timezone: event.target.value })} placeholder="America/Los_Angeles" required /><label htmlFor="delivery-hour">Delivery hour (local time)</label><select id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
+                  <label htmlFor="delivery-timezone">Timezone</label><input id="delivery-timezone" value={profile.timezone} onChange={(event) => { setTimezoneError(false); setProfile({ ...profile, timezone: event.target.value }); }} placeholder="America/Los_Angeles" aria-invalid={timezoneError || undefined} aria-describedby={timezoneError ? "delivery-timezone-error" : undefined} required />{timezoneError && <p id="delivery-timezone-error" className={settingsStyles.formFeedback} data-tone="error" role="alert">Enter an IANA timezone such as America/Los_Angeles.</p>}<label htmlFor="delivery-hour">Delivery hour (local time)</label><select id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
                   <fieldset className="day-fieldset">
                     <legend>Delivery days</legend>
                     <div className="day-picker">{days.map((day, index) => {
@@ -400,38 +437,45 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
                       <button type="button" aria-label="Increase picks" disabled={profile.recommendation_count >= maximumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.min(maximumPicks, profile.recommendation_count + 1) })}>+</button>
                     </div>
                   </div>
-                  <button className="save-action" disabled={busyAction === "delivery"}>{busyAction === "delivery" ? "Saving…" : "Save preferences"}</button>
+                  <button className="save-action" disabled={busyAction === "delivery" || !deliveryDirty}>{busyAction === "delivery" ? "Saving…" : deliveryDirty ? "Save delivery preferences" : "Delivery preferences saved"}</button>
+                  {deliveryNotice && <p className={settingsStyles.formFeedback} data-tone={deliveryNotice.tone} role={deliveryNotice.tone === "error" ? "alert" : "status"}>{deliveryNotice.message}</p>}
                 </form>
               ) : <div className="sheet-skeleton" aria-label="Loading delivery preferences" />}
             </section>
 
-            <section className="preference-memory" aria-labelledby="memory-heading">
+            <section id={settings ? "interests" : "memory"} className={settings ? `${settingsStyles.taskSection} preference-memory` : "preference-memory"} aria-labelledby="memory-heading">
               <header className="section-line"><h2 id="memory-heading">Preference memory</h2>{profile && <span>Version {profile.version}</span>}</header>
               {profile ? <>
                 <p className="memory-summary">{profile.preference_statement}</p>
                 {!memoryEditing ? (
-                  <button className="memory-action" onClick={() => setMemoryEditing(true)}>Shape memory</button>
+                  <button className="memory-action" onClick={() => { setMemoryNotice(null); setMemoryEditing(true); }}>Edit interests</button>
                 ) : (
                   <form className="memory-editor" onSubmit={saveMemory}>
                     <label htmlFor="memory-draft">Your interests and exclusions</label><p>Describe what you want to learn and what to avoid. For example: practical psychology and new research; skip motivational speeches.</p>
                     <textarea id="memory-draft" value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} maxLength={5000} required autoFocus />
                     <div>
-                      <button className="save-action" disabled={busyAction === "memory"}>{busyAction === "memory" ? "Saving…" : "Save memory"}</button>
+                      <button className="save-action" disabled={busyAction === "memory"}>{busyAction === "memory" ? "Saving…" : "Save interests"}</button>
                       <button type="button" className="cancel-action" onClick={() => { setMemoryDraft(profile.preference_statement); setMemoryEditing(false); }}>Cancel</button>
                     </div>
                   </form>
                 )}
               </> : <div className="sheet-skeleton memory-skeleton" aria-label="Loading preference memory" />}
+              {memoryNotice && <p className={settingsStyles.formFeedback} data-tone={memoryNotice.tone} role={memoryNotice.tone === "error" ? "alert" : "status"}>{memoryNotice.message}</p>}
             </section>
 
-            <section id="channels" className="source-ledger" aria-labelledby="sources-heading">
+            <section id={settings ? "sources" : "channels"} className={settings ? `${settingsStyles.taskSection} source-ledger` : "source-ledger"} aria-labelledby="sources-heading">
               <header className="section-line"><h2 id="sources-heading">Tracked sources</h2><span>{channels.length}</span></header>
               <div className="source-list">
                 {channels.map((channel) => (
                   <div key={channel.id} className="source-row">
                     {channel.thumbnail_url ? <img src={channel.thumbnail_url} alt="" width="48" height="48" /> : <span className="source-fallback" aria-hidden="true">{channel.name.slice(0, 1)}</span>}
                     <a href={channel.url} target="_blank" rel="noreferrer">{channel.name}</a>
-                    <button aria-label={`Remove ${channel.name}`} disabled={busyAction === `remove-${channel.id}`} onClick={() => void removeChannel(channel)}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove"}</button>
+                    <button aria-label={`Remove ${channel.name}`} disabled={busyAction === `remove-${channel.id}`} onClick={() => settings ? setPendingRemoval(channel) : void removeChannel(channel)}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove"}</button>
+                    {settings && pendingRemoval?.id === channel.id && <div className={settingsStyles.removeConfirmation} role="group" aria-label={`Confirm removal of ${channel.name}`}>
+                      <span>Remove {channel.name}? You can add it again later.</span>
+                      <button className="cancel-action" type="button" disabled={busyAction === `remove-${channel.id}`} onClick={() => void removeChannel(channel)}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove source"}</button>
+                      <button className="cancel-action" type="button" autoFocus disabled={busyAction === `remove-${channel.id}`} onClick={() => setPendingRemoval(null)}>Cancel</button>
+                    </div>}
                   </div>
                 ))}
               </div>
@@ -450,6 +494,11 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
             </section>
           </aside>
         </div>
+        {settings && <section id="account" className={settingsStyles.accountSection} aria-labelledby="account-settings-heading">
+          <h2 id="account-settings-heading">Account & privacy</h2>
+          <p>Manage your sign-in, Telegram connection, data history, export, and account deletion.</p>
+          <AccountControls onAccountChange={setAccountDelivery} />
+        </section>}
       </main>
     </SignalShell>
   );
