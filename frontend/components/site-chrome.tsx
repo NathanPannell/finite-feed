@@ -5,13 +5,14 @@ type SiteHeaderProps = {
   active?: "home" | "feed" | "match" | "admin" | "settings" | "privacy";
   action?: ReactNode;
   context?: ReactNode;
+  showMatchLab?: boolean;
 };
 
-function PrimaryLinks({ active }: Pick<SiteHeaderProps, "active">) {
-  return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link><Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/app/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
+function PrimaryLinks({ active, showMatchLab = true }: Pick<SiteHeaderProps, "active" | "showMatchLab">) {
+  return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link>{showMatchLab && <Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>}{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/app/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
 }
 
-export function SiteHeader({ active, action, context }: SiteHeaderProps) {
+export function SiteHeader({ active, action, context, showMatchLab = true }: SiteHeaderProps) {
   return (
     <>
       <header className="signal-masthead">
@@ -20,9 +21,9 @@ export function SiteHeader({ active, action, context }: SiteHeaderProps) {
           Finite Feed
         </Link>
         <div className={`signal-masthead-context ${context ? "signal-masthead-context-title" : "signal-masthead-context-tagline"}`}>{context ?? <p>Your attention, better spent.</p>}</div>
-        <nav aria-label="Primary navigation"><PrimaryLinks active={active} />{action}</nav>
+        <nav aria-label="Primary navigation"><PrimaryLinks active={active} showMatchLab={showMatchLab} />{action}</nav>
       </header>
-      <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} /></nav>
+      <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} showMatchLab={showMatchLab} /></nav>
     </>
   );
 }

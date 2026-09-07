@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { loadHomepageFeatureFlags } from "@/lib/public-feature-flags";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Finite Feed: Your attention has better places to be",
@@ -10,16 +13,17 @@ export const metadata: Metadata = {
   twitter: { card: "summary", title: "Finite Feed", description: "Your attention has better places to be." },
 };
 
-export default function Home() {
+export default async function Home() {
+  const { matchLabHomepageVisible } = await loadHomepageFeatureFlags();
   return <div className="landing">
     <a className="skip-link" href="#main">Skip to content</a>
-    <SiteHeader active="home" action={<Link className="nav-primary" href="/app">Build my feed</Link>} />
+    <SiteHeader active="home" showMatchLab={matchLabHomepageVisible} action={<Link className="nav-primary" href="/app">Build my feed</Link>} />
     <main id="main">
       <section className="landing-hero">
         <div className="landing-lead">
           <h1><span className="headline-line">Your attention{" "}</span><span className="headline-line headline-accent">has better{" "}</span><span className="headline-line">places to be.</span></h1>
           <p>Finite Feed learns what you care about, checks new uploads from the YouTube channels you choose, and sends your picks to Telegram on your schedule.</p>
-          <div className="landing-actions"><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link><Link className="landing-secondary" href="/match">Try the public Match Lab <span aria-hidden="true">→</span></Link></div>
+          <div className="landing-actions"><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link>{matchLabHomepageVisible && <Link className="landing-secondary" href="/match">Try the public Match Lab <span aria-hidden="true">→</span></Link>}</div>
           <p className="landing-note">Private beta. Google sign-in gets you started.</p>
         </div>
         <div className="recommendation-stage" aria-label="Illustrative Finite Feed recommendation">
@@ -55,7 +59,7 @@ export default function Home() {
         <div className="control-statement"><span>Your preference memory</span><p>“Give me practical ideas about creativity, behavior, and technology. Skip broad motivation and trend recaps.”</p><b>Readable. Editable. Yours to shape.</b></div>
         <div><h2 id="control-title">The filter stays visible.</h2><p>Your interests are written in plain language. Every recommendation can include its reason, and your feedback becomes part of what Finite Feed knows about you.</p><Link className="landing-text-link" href="/privacy">See how your data is handled <span aria-hidden="true">→</span></Link></div>
       </section>
-      <section className="landing-close"><h2>Ready for a feed<br />with a finish line?</h2><div><p>Choose what matters, set your pace, and let one recommendation be enough.</p><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link><Link className="landing-secondary" href="/match">Try Match Lab first</Link></div></section>
+      <section className="landing-close"><h2>Ready for a feed<br />with a finish line?</h2><div><p>Choose what matters, set your pace, and let one recommendation be enough.</p><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link>{matchLabHomepageVisible && <Link className="landing-secondary" href="/match">Try Match Lab first</Link>}</div></section>
     </main>
     <SiteFooter />
   </div>;

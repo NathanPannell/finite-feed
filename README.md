@@ -19,6 +19,7 @@ Finite Feed reduces fire-hose YouTube channels to one unusually valuable recomme
 - An authenticated dashboard redirect that records `clicked`; Telegram opens YouTube directly.
 - A responsive dashboard for preferences, sources, history, feedback, and quality metrics.
 - A public match lab for collecting anonymous, reasoned human judgments on profile-video pairs.
+- A runtime Control Room switch that shows or hides Match Lab links on the public home page without disabling direct access.
 - A production-safe worker that ingests previews but disables preview delivery.
 
 Transcript ingestion, developer-bot preview routing, and a repeatable human-scored evaluation set remain post-baseline work.
@@ -71,6 +72,7 @@ continues to serve `/match`, while the Next.js route proxy redirects only
 `/admin` and `/api/admin` to the SSO-protected generated deployment URL.
 The proxy fails closed with 503 in production if `VERCEL_URL` is unavailable.
 Vercel OIDC independently secures the Railway admin API hop.
+Home-page feature visibility is loaded from the API without caching. If that read is unavailable, Match Lab links remain visible to preserve the default experience.
 
 ## Verify
 
