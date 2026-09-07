@@ -1,0 +1,290 @@
+name: Persistent staging deployment
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finite-feed-staging
+  cancel-in-progress: false
+
+env:
+  EXPECTED_COMMIT_SHA: ${{ github.sha }}
+  NEON_BRANCH: staging
+  NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+  NEON_PARENT_BRANCH: ${{ vars.NEON_PARENT_BRANCH }}
+  RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+  RAILWAY_BASE_ENVIRONMENT_ID: ${{ vars.RAILWAY_BASE_ENVIRONMENT_ID }}
+  RAILWAY_API_SERVICE_ID: ${{ vars.RAILWAY_API_SERVICE_ID }}
+  RAILWAY_WORKER_SERVICE_ID: ${{ vars.RAILWAY_WORKER_SERVICE_ID }}
+  RAILWAY_ENVIRONMENT: staging
+  VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+  VERCEL_OIDC_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
+  VERCEL_OIDC_PROJECT_NAME: ${{ vars.VERCEL_PROJECT_NAME }}
+  STAGING_FRONTEND_URL: ${{ vars.STAGING_FRONTEND_URL }}
+
+jobs:
+  deploy-staging:
+    if: vars.BOOTSTRAP_COMPLETE == 'true' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Keep sanitized deployment evidence outside the source upload
+        run: echo "DEPLOYMENT_ARTIFACT_DIR=$RUNNER_TEMP/deployment-artifacts" >> "$GITHUB_ENV"
+
+      - name: Install deployment CLIs
+        run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
+
+      - name: Require the current staging branch head
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-staging-source.mjs
+
+      - name: Require protected staging branch domain in the shared Vercel project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID repository variable is required}"
+          : "${VERCEL_OIDC_PROJECT_NAME:?VERCEL_PROJECT_NAME repository variable is required}"
+          : "${STAGING_FRONTEND_URL:?STAGING_FRONTEND_URL repository variable is required}"
+          [[ "$STAGING_FRONTEND_URL" == https://* ]] || { echo 'STAGING_FRONTEND_URL must use HTTPS.' >&2; exit 1; }
+          staging_host="${STAGING_FRONTEND_URL#https://}"
+          [[ -n "$staging_host" && "$staging_host" != */* && "$staging_host" != *@* && "$staging_host" != *:* ]] || {
+            echo 'STAGING_FRONTEND_URL must be one HTTPS origin without credentials, a port, or a path.' >&2
+            exit 1
+          }
+          project_json="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID")"
+          [[ "$(jq -r '.name // empty' <<<"$project_json")" == "$VERCEL_OIDC_PROJECT_NAME" ]] || {
+            echo 'VERCEL_STAGING_PROJECT_NAME does not match the staging project ID.' >&2
+            exit 1
+          }
+          [[ "$(jq -r '.ssoProtection.deploymentType // empty' <<<"$project_json")" == "all_except_custom_domains" ]] || {
+            echo 'Vercel staging Standard Protection (all_except_custom_domains) is required.' >&2
+            exit 1
+          }
+          domain_count="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_ORG_ID" \
+            | jq -r --arg host "$staging_host" '[.domains[] | select(.name == $host and .gitBranch == "staging")] | length')"
+          [[ "$domain_count" == "1" ]] || { echo 'STAGING_FRONTEND_URL must be assigned to the shared Vercel project with gitBranch staging.' >&2; exit 1; }
+
+      - name: Create or reuse permanent Neon staging branch
+        id: neon
+        uses: neondatabase/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b # v6.4.0
+        with:
+          project_id: ${{ env.NEON_PROJECT_ID }}
+          branch_name: ${{ env.NEON_BRANCH }}
+          parent_branch: ${{ env.NEON_PARENT_BRANCH }}
+          database: app
+          role: app_owner
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+      - name: Resolve permanent staging Auth endpoint
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          auth_url="$(neon neon-auth status --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          parent_auth_url="$(neon neon-auth status --project-id "$NEON_PROJECT_ID" --branch "$NEON_PARENT_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          [[ "$auth_url" != "$parent_auth_url" ]] || { echo 'Staging Neon Auth must be isolated from production.' >&2; exit 1; }
+          printf 'NEON_AUTH_BASE_URL=%s\n' "$auth_url" >> "$GITHUB_ENV"
+
+      - name: Create or update isolated Railway staging environment
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          STAGING_DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+          STAGING_DATABASE_URL_UNPOOLED: ${{ steps.neon.outputs.db_url }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TELEGRAM_DEVELOPER_BOT_TOKEN: ${{ secrets.TELEGRAM_DEVELOPER_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          MATCH_LAB_COOKIE_SECRET: ${{ secrets.MATCH_LAB_COOKIE_SECRET }}
+          MATCH_LAB_DEBUG_ASSESSMENT: ${{ vars.MATCH_LAB_PREVIEW_DEBUG_ASSESSMENT }}
+          DEVELOPER_TELEGRAM_USER_IDS: ${{ vars.DEVELOPER_TELEGRAM_USER_IDS }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
+          EMBEDDING_MODEL_REVISION: ${{ vars.EMBEDDING_MODEL_REVISION }}
+          EMBEDDING_BATCH_SIZE: ${{ vars.EMBEDDING_BATCH_SIZE }}
+          MODEL_DAILY_REQUEST_LIMIT: ${{ vars.MODEL_DAILY_REQUEST_LIMIT }}
+          YOUTUBE_DAILY_REQUEST_LIMIT: ${{ vars.YOUTUBE_DAILY_REQUEST_LIMIT }}
+        run: |
+          : "${YOUTUBE_API_KEY:?YOUTUBE_API_KEY is required}"
+          : "${MATCH_LAB_COOKIE_SECRET:?MATCH_LAB_COOKIE_SECRET is required}"
+          node scripts/create-railway-staging-environment.mjs
+          node scripts/set-railway-staging-variables.mjs
+
+      - name: Check provider account quota
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python3 scripts/check-provider-quota.py
+
+      - name: Recheck staging source before service deployment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-staging-source.mjs
+
+      - name: Deploy checked-out staging API
+        timeout-minutes: 15
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: bash scripts/deploy-railway-service.sh "$RAILWAY_API_SERVICE_ID" api
+
+      - name: Wait for exact migrated staging API commit
+        id: railway
+        timeout-minutes: 12
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          READINESS_ARTIFACT_NAME: staging-api-readiness
+        run: bash scripts/wait-for-railway-api.sh
+
+      - name: Configure staging public URL and deploy worker
+        timeout-minutes: 15
+        env:
+          API_URL: ${{ steps.railway.outputs.api_url }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          for service in "$RAILWAY_API_SERVICE_ID" "$RAILWAY_WORKER_SERVICE_ID"; do
+            printf '%s' "$API_URL" | railway variable set PUBLIC_APP_URL --stdin --skip-deploys --service "$service" --environment "$RAILWAY_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          done
+          bash scripts/deploy-railway-service.sh "$RAILWAY_WORKER_SERVICE_ID" worker
+
+      - name: Wait for exact healthy staging worker commit
+        timeout-minutes: 12
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          REQUIRE_WORKER_READY: "true"
+          READINESS_ARTIFACT_NAME: staging-worker-readiness
+        run: bash scripts/wait-for-railway-api.sh
+
+      - name: Recheck staging source before frontend promotion
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-staging-source.mjs
+
+      - name: Deploy and promote shared-project staging frontend
+        id: vercel
+        timeout-minutes: 15
+        env:
+          API_URL: ${{ steps.railway.outputs.api_url }}
+          NEON_AUTH_COOKIE_SECRET: ${{ secrets.NEON_AUTH_COOKIE_SECRET }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          app_version="$(tr -d '[:space:]' < VERSION)"
+          [[ -n "$app_version" ]] || { echo 'VERSION must not be empty.' >&2; exit 1; }
+          deployment_url="$(vercel deploy --target preview --yes --cwd frontend \
+            --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
+            --build-env RAILWAY_API_BASE_URL="$API_URL" \
+            --build-env NEXT_PUBLIC_APP_VERSION="$app_version" \
+            --build-env NEXT_PUBLIC_APP_ENV=staging \
+            --build-env NEXT_PUBLIC_APP_COMMIT="$EXPECTED_COMMIT_SHA" \
+            --env NEXT_PUBLIC_APP_ENV=staging \
+            --env RAILWAY_API_BASE_URL="$API_URL" \
+            --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
+            --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
+            --meta githubCommitSha="$EXPECTED_COMMIT_SHA" \
+            --meta githubCommitRef=staging \
+            --meta deploymentEnvironment=staging \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          deployment_id="$(vercel inspect "$deployment_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -er '.id')"
+          node scripts/assert-staging-source.mjs
+          staging_host="${STAGING_FRONTEND_URL#https://}"
+          vercel alias set "$deployment_url" "$staging_host" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          stable_deployment_id=""
+          for _ in $(seq 1 12); do
+            stable_deployment_id="$(vercel inspect "$STAGING_FRONTEND_URL" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r '.id // empty')"
+            [[ "$stable_deployment_id" == "$deployment_id" ]] && break
+            sleep 5
+          done
+          [[ "$stable_deployment_id" == "$deployment_id" ]] || { echo 'Stable staging URL did not resolve to this deployment.' >&2; exit 1; }
+
+          for admin_path in /admin /api/admin/summary; do
+            headers_file="$(mktemp)"
+            admin_status="$(curl --silent --show-error --dump-header "$headers_file" --output /dev/null --write-out '%{http_code}' "$deployment_url$admin_path")"
+            case "$admin_status" in
+              401|403) ;;
+              301|302|303|307|308)
+                auth_location="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }' "$headers_file")"
+                node scripts/validate-vercel-auth-location.mjs "$auth_location" || { echo "Generated staging deployment $admin_path did not redirect to Vercel authentication." >&2; exit 1; }
+                ;;
+              *) echo "Generated staging deployment $admin_path did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
+            esac
+          done
+          [[ "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$STAGING_FRONTEND_URL/match")" == "200" ]] || {
+            echo 'Stable staging /match did not return HTTP 200.' >&2
+            exit 1
+          }
+          origins="$(jq -nr --arg deployment "$deployment_url" --arg stable "$STAGING_FRONTEND_URL" '[$deployment, $stable] | unique | join(",")')"
+          mkdir -p "$DEPLOYMENT_ARTIFACT_DIR"
+          jq -n --arg commit "$EXPECTED_COMMIT_SHA" --arg deployment_id "$deployment_id" --arg deployment_url "$deployment_url" --arg staging_url "$STAGING_FRONTEND_URL" \
+            '{commit:$commit,deployment_id:$deployment_id,deployment_url:$deployment_url,staging_url:$staging_url}' \
+            > "$DEPLOYMENT_ARTIFACT_DIR/vercel-staging-deployment.json"
+          printf 'deployment_url=%s\norigins=%s\n' "$deployment_url" "$origins" >> "$GITHUB_OUTPUT"
+
+      - name: Trust exact staging frontend origins
+        env:
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}
+          FRONTEND_ORIGINS: ${{ steps.vercel.outputs.origins }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          STAGING_DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}
+        run: |
+          printf '%s' "$FRONTEND_ORIGINS" | railway variable set FRONTEND_ORIGINS --stdin --skip-deploys --service "$RAILWAY_API_SERVICE_ID" --environment "$RAILWAY_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+          node scripts/reconcile-neon-staging-domains.mjs
+          railway redeploy --yes --service "$RAILWAY_API_SERVICE_ID" --environment "$RAILWAY_ENVIRONMENT" --project "$RAILWAY_PROJECT_ID"
+
+      - name: Verify final staging API and worker readiness
+        timeout-minutes: 12
+        env:
+          EXPECTED_FRONTEND_ORIGIN: ${{ env.STAGING_FRONTEND_URL }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          REQUIRE_WORKER_READY: "true"
+          READINESS_ARTIFACT_NAME: staging-final-readiness
+        run: bash scripts/wait-for-railway-api.sh
+
+      - name: Verify Google OAuth accepts permanent staging callback
+        timeout-minutes: 2
+        env:
+          FRONTEND_URL: ${{ env.STAGING_FRONTEND_URL }}
+        run: |
+          oauth_start_file="$(mktemp)"
+          trap 'rm -f "$oauth_start_file"' EXIT
+          curl --fail --silent --show-error --max-time 20 \
+            --request POST \
+            -H 'Content-Type: application/json' \
+            -H "Origin: $FRONTEND_URL" \
+            --data "$(jq -nc --arg callback "$FRONTEND_URL/auth/callback" '{provider:"google",callbackURL:$callback,disableRedirect:true}')" \
+            "$FRONTEND_URL/api/auth/sign-in/social" \
+            -o "$oauth_start_file"
+          node scripts/verify-google-oauth-start.mjs \
+            --payload-file "$oauth_start_file" \
+            --expected-callback "$NEON_AUTH_BASE_URL/callback/google"
+
+      - name: Confirm source remained current after promotion
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-staging-source.mjs
+
+      - name: Upload sanitized staging deployment evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-deployment-${{ github.sha }}
+          path: ${{ runner.temp }}/deployment-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
