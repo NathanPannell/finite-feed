@@ -48,6 +48,24 @@ jobs:
       - run: python -m pytest scripts/test_smoke_preview_native_auth.py
       - run: python -m backend.evals.run_recommendation_eval
 
+  backend-docker-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build the production Python runtime
+        run: docker build --file backend/Dockerfile.api --tag finite-feed-api:ci .
+      - name: Import the API from the production image
+        run: >-
+          docker run --rm --entrypoint python finite-feed-api:ci
+          -c "from backend.app.main import app; assert '/ready' in app.openapi()['paths']"
+      - name: Build the production worker runtime
+        run: docker build --file backend/Dockerfile.worker --tag finite-feed-worker:ci .
+      - name: Import the worker from the production image
+        run: >-
+          docker run --rm --entrypoint python finite-feed-worker:ci
+          -c "import backend.worker.main"
+
   frontend:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -107,7 +125,7 @@ jobs:
 
   deploy-production:
     if: vars.BOOTSTRAP_COMPLETE == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    needs: [backend, frontend, deployment-contracts]
+    needs: [backend, backend-docker-runtime, frontend, deployment-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     concurrency:
