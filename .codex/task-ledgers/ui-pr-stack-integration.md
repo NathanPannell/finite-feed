@@ -12,6 +12,10 @@ Integrate PR 52 into 56, then 56 into 58 and 58 into 61 while preserving each br
 - Renamed PR 58's duplicate preview-retry ledger without changing its content.
 - Merged corrected PR 56 into PR 58.
 - Resolved the admin conflicts by retaining the records-first layout, resilient list behavior, and expanded interaction coverage while adding feature visibility state, refresh behavior, controls, and assertions.
+- Renamed PR 61's duplicate preview-retry ledger without changing its content.
+- Merged corrected PR 58 into PR 61.
+- Resolved shared UI conflicts by combining canonical `/settings` routes, skip-link targets, the local privacy support target, polished public copy, account controls, the records-first admin module styles, and the runtime Match Lab visibility controls.
+- Verified PR 61 with the Impeccable detector, 17 frontend proxy/unit checks, 5 backend feature-flag tests, typecheck, lint, production build, and 37 focused Playwright journeys.
 
 ## Active decisions and evidence
 
@@ -21,4 +25,4 @@ Integrate PR 52 into 56, then 56 into 58 and 58 into 61 while preserving each br
 
 ## Next action
 
-Run PR 58 frontend, admin, and feature-flag verification, commit it, then integrate it into PR 61.
+Commit PR 61, hand all three heads to the serialized preview queue, then assemble a temporary all-PR integration branch for final local verification.

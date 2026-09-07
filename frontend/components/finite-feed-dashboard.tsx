@@ -318,12 +318,12 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
     }
   }
 
-  if (!routeReady) return <main className="route-loading"><span className="onboarding-mark" aria-hidden="true">F/</span><p role={notice ? "alert" : "status"}>{notice?.message || "Opening your feed…"}</p>{notice && <button onClick={() => void load()}>Try again</button>}</main>;
-  if (!loading && !profile) return <SignalShell active={settings ? "settings" : "feed"}><main className="public-main"><h1>We couldn’t load your feed.</h1><p role="alert">{notice?.message}</p><button className="save-action" onClick={() => void load()}>Try again</button><p><Link href="/">Return home</Link></p></main></SignalShell>;
+  if (!routeReady) return <main id="main" tabIndex={-1} className="route-loading"><span className="onboarding-mark" aria-hidden="true">F/</span><p role={notice ? "alert" : "status"}>{notice?.message || "Opening your feed…"}</p>{notice && <button onClick={() => void load()}>Try again</button>}</main>;
+  if (!loading && !profile) return <SignalShell active={settings ? "settings" : "feed"}><main id="main" tabIndex={-1} className="public-main"><h1>We couldn’t load your feed.</h1><p role="alert">{notice?.message}</p><button className="save-action" onClick={() => void load()}>Try again</button><p><Link href="/">Return home</Link></p></main></SignalShell>;
 
   return (
     <SignalShell active={settings ? "settings" : "feed"}>
-      <main id="top" className={`public-main ${settings ? "personal-settings" : "personal-feed"}`}>
+      <main id="main" tabIndex={-1} className={`public-main ${settings ? "personal-settings" : "personal-feed"}`}>
         {!settings && <header className="feed-toolbar">
           <p>Selected from your sources and shaped by what you find useful.</p>
           <button className="signal-action" onClick={() => void generate()} disabled={busyAction === "generate" || loading}>

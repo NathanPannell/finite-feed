@@ -191,7 +191,7 @@ export function MatchGame() {
 
   return (
     <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
-      <main className="match-main">
+      <main id="main" tabIndex={-1} className="match-main">
         <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{liveMessage}</p>
         {notice && <p className="signal-notice match-notice">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}

@@ -709,7 +709,7 @@ export function AdminDashboard() {
 
   return (
     <SignalShell active="admin" className="admin-shell">
-      <main className={`${styles.adminMain} admin-main`}>
+      <main id="main" tabIndex={-1} className={`${styles.adminMain} admin-main`}>
         <header className="admin-header">
           <button className="admin-refresh" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </header>

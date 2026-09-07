@@ -23,7 +23,7 @@ export default async function Home() {
   return <div className="landing">
     <a className="skip-link" href="#main">Skip to content</a>
     <SiteHeader active="home" marketing showMatchLab={matchLabHomepageVisible} action={<Link className="nav-primary" href="/app">Build my feed</Link>} />
-    <main id="main">
+    <main id="main" tabIndex={-1}>
       <section className="landing-hero">
         <div className="landing-lead">
           <h1><span className="headline-line">Your attention{" "}</span><span className="headline-line headline-accent">has better{" "}</span><span className="headline-line">places to be.</span></h1>

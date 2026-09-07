@@ -166,7 +166,7 @@ async function main() {
     startPayload: await readFile(payloadPath, "utf8"),
     expectedCallback,
   });
-  console.log(`Google accepted the preview OAuth callback: ${result.callback}`);
+  console.log(`Google reached sign-in with the expected preview callback: ${result.callback}; authenticated sign-in still requires browser verification.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
