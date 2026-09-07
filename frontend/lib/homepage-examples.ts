@@ -34,7 +34,7 @@ export const homepageExamples: HomepageExample[] = [
     thumbnail: "https://i.ytimg.com/vi/rKgtm81yi94/hqdefault.jpg",
     duration: "11:23",
     url: "https://www.youtube.com/watch?v=rKgtm81yi94",
-    reason: "It connects modern sedentary routines with a concrete, small-scale movement practice.",
+    reason: "Keith Diaz explains how short movement breaks can interrupt long stretches of sitting.",
   },
   {
     id: "YCldrsmxi_s",
@@ -46,6 +46,6 @@ export const homepageExamples: HomepageExample[] = [
     thumbnail: "https://i.ytimg.com/vi/YCldrsmxi_s/hqdefault.jpg",
     duration: "12:44",
     url: "https://www.youtube.com/watch?v=YCldrsmxi_s",
-    reason: "It examines how AI changes online publishing and proposes a different relationship between platforms and creators.",
+    reason: "Matthew Prince explains what AI means for online publishers and how creators could be paid for their work.",
   },
 ];

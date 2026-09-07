@@ -21,11 +21,12 @@ test("shows verified video picks and switches interests without personal API cal
 
   await page.getByRole("button", { name: "Everyday behavior" }).click();
   await expect(page.getByRole("heading", { name: "What Sitting All Day Does to Your Brain and Body" })).toBeVisible();
-  await expect(page.getByText("It connects modern sedentary routines with a concrete, small-scale movement practice.")).toBeVisible();
+  await expect(page.getByText("Keith Diaz explains how short movement breaks can interrupt long stretches of sitting.")).toBeVisible();
 
   await page.getByRole("button", { name: "Technology + media" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "How AI Is Breaking the Internet (and What to Do About It)" })).toBeVisible();
+  await expect(page.getByText("Matthew Prince explains what AI means for online publishers and how creators could be paid for their work.")).toBeVisible();
   await expect(page.locator("[aria-live='polite']")).toContainText("Technology, media, and the open web");
   expect(personalRequests).toBe(0);
 });

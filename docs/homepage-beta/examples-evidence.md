@@ -15,7 +15,7 @@ These are real public videos present in `database/datasets/match-lab-v2/source-s
 - **What Sitting All Day Does to Your Brain and Body** — Keith Diaz, TED
 - Video: `rKgtm81yi94` · [YouTube](https://www.youtube.com/watch?v=rKgtm81yi94) · [thumbnail](https://i.ytimg.com/vi/rKgtm81yi94/hqdefault.jpg) · 11:23
 - Interest: Practical health and habits
-- Why it fits: It connects modern sedentary routines with a concrete, small-scale movement practice.
+- Why it fits: Keith Diaz explains how short movement breaks can interrupt long stretches of sitting.
 - Evidence: [TED talk page](https://www.ted.com/talks/keith_diaz_what_sitting_all_day_does_to_your_brain_and_body) identifies Diaz and describes short movement breaks; [TED's exercise collection](https://www.ted.com/topics/exercise) verifies the 11:23 duration.
 
 ## Technology and the internet
@@ -23,5 +23,5 @@ These are real public videos present in `database/datasets/match-lab-v2/source-s
 - **How AI Is Breaking the Internet (and What to Do About It)** — Matthew Prince, TED
 - Video: `YCldrsmxi_s` · [YouTube](https://www.youtube.com/watch?v=YCldrsmxi_s) · [thumbnail](https://i.ytimg.com/vi/YCldrsmxi_s/hqdefault.jpg) · 12:44
 - Interest: Technology, media, and the open web
-- Why it fits: It examines how AI changes online publishing and proposes a different relationship between platforms and creators.
-- Evidence: [TED talk page](https://www.ted.com/talks/matthew_prince_how_ai_is_breaking_the_internet_and_what_to_do_about_it) identifies Prince and summarizes the proposal; [TED's internet collection](https://www.ted.com/topics/internet) verifies the 12:44 duration.
+- Why it fits: Matthew Prince explains what AI means for online publishers and how creators could be paid for their work.
+- Evidence: [TED talk page](https://www.ted.com/talks/matthew_prince_how_ai_is_breaking_the_internet_and_what_to_do_about_it) identifies Prince and summarizes the proposal; the stored TED description says the proposed deal would have technology companies pay people for content that feeds AI models; [TED's internet collection](https://www.ted.com/topics/internet) verifies the 12:44 duration.
