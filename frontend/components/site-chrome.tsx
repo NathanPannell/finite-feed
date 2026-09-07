@@ -5,14 +5,15 @@ type SiteHeaderProps = {
   active?: "home" | "feed" | "match" | "admin" | "settings" | "privacy";
   action?: ReactNode;
   context?: ReactNode;
+  showMatchLab?: boolean;
   marketing?: boolean;
 };
 
-function PrimaryLinks({ active }: Pick<SiteHeaderProps, "active">) {
-  return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link><Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/app/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
+function PrimaryLinks({ active, showMatchLab = true }: Pick<SiteHeaderProps, "active" | "showMatchLab">) {
+  return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link>{showMatchLab && <Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>}{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/app/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
 }
 
-export function SiteHeader({ active, action, context, marketing = false }: SiteHeaderProps) {
+export function SiteHeader({ active, action, context, showMatchLab = true, marketing = false }: SiteHeaderProps) {
   return (
     <>
       <header className={`signal-masthead ${marketing ? "marketing-masthead" : ""}`}>
@@ -21,9 +22,9 @@ export function SiteHeader({ active, action, context, marketing = false }: SiteH
           Finite Feed
         </Link>
         <div className={`signal-masthead-context ${context ? "signal-masthead-context-title" : "signal-masthead-context-tagline"}`}>{context ?? <p>Your attention, better spent.</p>}</div>
-        <nav aria-label="Primary navigation">{marketing ? <><a href="#how-it-works">How it works</a><Link href="/match">Rate a match</Link></> : <PrimaryLinks active={active} />}{action}</nav>
+        <nav aria-label="Primary navigation">{marketing ? <><a href="#how-it-works">How it works</a>{showMatchLab && <Link href="/match">Rate a match</Link>}</> : <PrimaryLinks active={active} showMatchLab={showMatchLab} />}{action}</nav>
       </header>
-      {!marketing && <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} /></nav>}
+      {!marketing && <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} showMatchLab={showMatchLab} /></nav>}
     </>
   );
 }

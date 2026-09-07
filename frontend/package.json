@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test tests/e2e/production-smoke.spec.ts",
-    "test:proxy": "node --test tests/admin-route-proxy.test.mjs tests/admin-navigation.test.mjs tests/match-route-proxy.test.mjs tests/oauth-callback.test.mjs"
+    "test:proxy": "node --test tests/admin-route-proxy.test.mjs tests/admin-navigation.test.mjs tests/match-route-proxy.test.mjs tests/oauth-callback.test.mjs tests/public-feature-flags.test.mjs"
   },
   "dependencies": {
     "@neondatabase/auth": "^0.5.0-beta",

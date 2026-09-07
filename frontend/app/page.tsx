@@ -2,6 +2,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { HomepageShowcase } from "@/components/homepage-showcase";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { loadHomepageFeatureFlags } from "@/lib/public-feature-flags";
+
+export const dynamic = "force-dynamic";
 
 const publicUrl = "https://finite-feed-rho.vercel.app";
 const description = "Choose your YouTube sources, tell Finite Feed what you want to watch, and get video picks at your pace.";
@@ -15,16 +18,17 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: "Finite Feed", description, images: [shareImage] },
 };
 
-export default function Home() {
+export default async function Home() {
+  const { matchLabHomepageVisible } = await loadHomepageFeatureFlags();
   return <div className="landing">
     <a className="skip-link" href="#main">Skip to content</a>
-    <SiteHeader active="home" marketing action={<Link className="nav-primary" href="/app">Build my feed</Link>} />
+    <SiteHeader active="home" marketing showMatchLab={matchLabHomepageVisible} action={<Link className="nav-primary" href="/app">Build my feed</Link>} />
     <main id="main">
       <section className="landing-hero">
         <div className="landing-lead">
           <h1><span className="headline-line">Your attention{" "}</span><span className="headline-line headline-accent">has better{" "}</span><span className="headline-line">places to be.</span></h1>
           <p>Tell Finite Feed what you want to watch. Choose your YouTube channels, and get video picks on the dashboard or in Telegram when you want them.</p>
-          <div className="landing-actions"><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link><Link className="landing-secondary" href="/match">Rate a video match <span aria-hidden="true">→</span></Link></div>
+          <div className="landing-actions"><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link>{matchLabHomepageVisible && <Link className="landing-secondary" href="/match">Rate a video match <span aria-hidden="true">→</span></Link>}</div>
           <p className="landing-note">Sign in with Google or email. Telegram delivery is optional.</p>
         </div>
         <HomepageShowcase />
@@ -48,7 +52,7 @@ export default function Home() {
         <div className="control-statement"><span>What you want to watch</span><p>“Give me practical ideas about creativity, behavior, and technology. Skip broad motivation and trend recaps.”</p><b>Change your interests whenever you like.</b></div>
         <div><h2 id="control-title">See why it was picked.</h2><p>Your interests stay readable and editable. Each recommendation keeps its selection reason beside it, so you can judge the fit before you press play.</p><Link className="landing-text-link" href="/privacy">See how your data is handled <span aria-hidden="true">→</span></Link></div>
       </section>
-      <section className="landing-close"><h2>A feed with<br />a finish line.</h2><div><p>Choose your channels, set your pace, and get your first pick.</p><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link><Link className="landing-secondary" href="/match">Rate a match first</Link></div></section>
+      <section className="landing-close"><h2>A feed with<br />a finish line.</h2><div><p>Choose your channels, set your pace, and get your first pick.</p><Link className="landing-cta" href="/app">Build my finite feed <span aria-hidden="true">→</span></Link>{matchLabHomepageVisible && <Link className="landing-secondary" href="/match">Rate a match first</Link>}</div></section>
     </main>
     <SiteFooter />
   </div>;

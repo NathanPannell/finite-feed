@@ -4,12 +4,23 @@ test("operates the private admin dashboard through its server API contract", asy
   const requestedUrls: string[] = [];
   let createBody: Record<string, unknown> | null = null;
   let channelActive = true;
+  let matchLabHomepageVisible = true;
+  let featureFlagPatch: Record<string, unknown> | null = null;
 
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace("/api/admin/", "");
     requestedUrls.push(`${path}${url.search}`);
+
+    if (path === "feature-flags/match-lab-homepage") {
+      if (request.method() === "PATCH") {
+        featureFlagPatch = request.postDataJSON();
+        matchLabHomepageVisible = Boolean(featureFlagPatch?.enabled);
+      }
+      await route.fulfill({ json: { key: "match_lab_homepage_visible", enabled: matchLabHomepageVisible } });
+      return;
+    }
 
     if (path === "summary") {
       await route.fulfill({ json: {
@@ -143,6 +154,12 @@ test("operates the private admin dashboard through its server API contract", asy
   await expect(page.getByRole("img", { name: "Useful and not useful feedback over time" })).toBeVisible();
   await expect(page.getByRole("img", { name: "Useful feedback as a share of recommendations sent" })).toBeVisible();
   await expect(page.getByText("Existing Channel", { exact: true }).first()).toBeVisible();
+  const homepageVisibility = page.getByLabel("Show Match Lab links");
+  await expect(homepageVisibility).toBeChecked();
+  await homepageVisibility.uncheck();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Match Lab links are hidden from the home page.")).toBeVisible();
+  expect(featureFlagPatch).toEqual({ enabled: false });
   await expect(page.getByLabel("Owner")).toHaveCount(0);
 
   const channelRow = page.getByRole("row").filter({ hasText: "Existing Channel" });
