@@ -28,3 +28,7 @@ Routine preferences lead the page, account controls follow them, and focused tes
 
 ## Next
 - Independent quality review, then root creates the issue-linked PR; no merge.
+
+## Independent review follow-up
+- Canonicalize trimmed timezone aliases to the IANA name sent to the server and reject numeric offsets before submission. This prevents browser-accepted values from failing the Python ZoneInfo contract.
+- Final focused settings run: 7/7 passed, including alias normalization, offset rejection, and delayed cross-form draft preservation. Production build and lint passed again after the fix.

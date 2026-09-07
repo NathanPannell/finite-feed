@@ -66,12 +66,12 @@ function validYouTubeUrl(value: string) {
   }
 }
 
-function validTimezone(value: string) {
+function canonicalTimezone(value: string): string | null {
   try {
-    new Intl.DateTimeFormat(undefined, { timeZone: value });
-    return true;
+    const zone = new Intl.DateTimeFormat(undefined, { timeZone: value.trim() }).resolvedOptions().timeZone;
+    return /^[+-]/.test(zone) ? null : zone;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -194,7 +194,8 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
   async function saveDelivery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!profile || busyAction) return;
-    if (!validTimezone(profile.timezone)) {
+    const timezone = canonicalTimezone(profile.timezone);
+    if (!timezone) {
       setTimezoneError(true);
       setDeliveryNotice({ message: "Enter an IANA timezone such as America/Los_Angeles, then save again.", tone: "error" });
       return;
@@ -208,7 +209,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
         body: JSON.stringify({
           cadence_days: profile.cadence_days,
           recommendation_count: profile.recommendation_count,
-          timezone: profile.timezone,
+          timezone,
           delivery_hour: profile.delivery_hour,
         }),
       });

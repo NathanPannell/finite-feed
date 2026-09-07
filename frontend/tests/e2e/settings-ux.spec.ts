@@ -61,6 +61,27 @@ test("keeps settings controls and long source names inside a 320px viewport", as
   await testInfo.attach("settings-mobile-320", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });
 
+test("normalizes timezone aliases and rejects numeric offsets before saving", async ({ page }) => {
+  await mockSettings(page);
+  const submitted: string[] = [];
+  await page.route("**/api/personal/profile/delivery", (route) => {
+    const payload = route.request().postDataJSON();
+    submitted.push(payload.timezone);
+    return route.fulfill({ json: { ...payload, preference_statement: "Science", version: 3 } });
+  });
+  await page.goto("/settings");
+  const timezone = page.getByLabel("Timezone");
+  await timezone.fill("us/pacific");
+  await page.getByRole("button", { name: "Save delivery preferences" }).click();
+  await expect(timezone).toHaveValue("America/Los_Angeles");
+  expect(submitted).toEqual(["America/Los_Angeles"]);
+  await timezone.fill("+08:00");
+  await page.getByRole("button", { name: "Save delivery preferences" }).click();
+  await expect(timezone).toHaveAttribute("aria-invalid", "true");
+  await expect(timezone).toHaveValue("+08:00");
+  expect(submitted).toHaveLength(1);
+});
+
 test("requires a named confirmation before removing a source", async ({ page }) => {
   await mockSettings(page);
   await page.goto("/settings");
