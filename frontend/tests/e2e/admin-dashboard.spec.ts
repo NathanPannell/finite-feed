@@ -311,6 +311,16 @@ test("operates the records-first admin dashboard through its server API contract
   expect(mobileDetailsBox?.x).toBeGreaterThanOrEqual(0);
   expect((mobileDetailsBox?.x ?? 0) + (mobileDetailsBox?.width ?? Infinity)).toBeLessThanOrEqual(320);
   expect(mobileDetailsBox?.height).toBeGreaterThanOrEqual(44);
+  const narrowTimeline = await recommendationRow.locator(".admin-timeline").evaluate((timeline) => {
+    const items = Array.from(timeline.querySelectorAll("li"), (item) => item.getBoundingClientRect());
+    return {
+      columns: getComputedStyle(timeline).gridTemplateColumns.split(" ").length,
+      firstRowTop: items[0]?.top ?? 0,
+      secondRowTop: items[2]?.top ?? 0,
+    };
+  });
+  expect(narrowTimeline.columns).toBe(2);
+  expect(narrowTimeline.secondRowTop).toBeGreaterThan(narrowTimeline.firstRowTop);
   await page.screenshot({ path: testInfo.outputPath("admin-mobile-320.png"), fullPage: true });
 });
 

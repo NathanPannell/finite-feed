@@ -33,6 +33,7 @@ Completed:
 - Excluded controls inside closed diagnostic disclosures from the modal focus loop.
 - Added explicit disclosure chevrons plus Pause cancel/success/failure focus restoration.
 - Cleared stale text-search errors when Videos switches to Meaning search.
+- Kept mobile disclosure chevrons beside their headings with descriptions aligned below, and changed recommendation timelines to two readable columns on narrow screens.
 
 Verification:
 - `npm run lint -- --ignore-pattern playwright-report/** --ignore-pattern test-results/**` passed.
@@ -43,6 +44,7 @@ Verification:
 - `git diff --check` passed.
 - Explicit-file Impeccable detector passed with `[]` after replacing the lone standalone Arial declaration with the product body-font stack.
 - Inspected fresh 1280px, 390px, and 320px fixture screenshots: records lead, health is compact, disclosures have clear state indicators, and priority mobile fields/actions remain reachable without document overflow.
+- Re-inspected final 390px and 320px screenshots after the narrow-layout refinement: timeline labels/dates no longer collide and disclosure markers remain attached to their titles.
 
 Remaining risk:
 - Production data density can exceed the fixture set; the responsive layout is covered with representative records but was not mutated or exhaustively exercised against private production data.
