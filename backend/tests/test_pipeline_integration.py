@@ -104,8 +104,7 @@ def test_ingest_retrieve_and_persist_recommendation() -> None:
         assert row["evidence"]["embedding_revision"] == embedder.model_revision
         settings = Settings(DATABASE_URL=database_url)
         assert get_or_create_pending_recommendation(conn, settings, USER_ID) == recommendation_id
-        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
-            get_or_create_pending_recommendation(conn, settings, USER_ID, require_model=True)
+        assert get_or_create_pending_recommendation(conn, settings, USER_ID, require_model=True) == recommendation_id
         assert lock_recommendation_for_delivery(conn, USER_ID, recommendation_id)
         mark_recommendation_delivered(conn, USER_ID, recommendation_id, scheduled=True)
         assert not lock_recommendation_for_delivery(conn, USER_ID, recommendation_id)

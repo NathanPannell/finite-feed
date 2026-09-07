@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 
 from backend.app.budgets import reserve_request
 from backend.app.db import connection
-from backend.app.openrouter import OpenRouterClient, provider_failure
+from backend.app.openrouter import OpenRouterClient
 from backend.app.schemas import DeliveryUpdate
 from backend.app.settings import get_settings
 from backend.app.user_auth import current_user
@@ -52,6 +52,18 @@ QUESTIONS = (
     },
 )
 QUESTION_OPTIONS = {q["id"]: {option["value"] for option in q["options"]} for q in QUESTIONS}
+
+
+def fallback_preference_profile(answers: dict, open_response: str) -> str:
+    """Preserve every onboarding input when model synthesis is unavailable."""
+    labels = []
+    for question in QUESTIONS:
+        answer = answers[str(question["id"])]
+        labels.append(next(
+            option["label"] for option in question["options"]
+            if option["value"] == answer
+        ))
+    return "; ".join(labels) + ".\n\n" + open_response
 
 
 class AnswerUpdate(BaseModel):
@@ -225,24 +237,28 @@ def synthesize(user_id: UUID = Depends(current_user), conn: Connection = Depends
     if not row["open_response"] or not all(str(index) in answers for index in range(1, 4)):
         raise HTTPException(409, "Complete your interest answers first")
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise HTTPException(503, "Profile synthesis is temporarily unavailable. Your answers are saved.")
     snapshot = (answers, row["open_response"], row["updated_at"])
-    try:
-        reserve_request(conn, "openrouter", settings.model_daily_request_limit)
-    except ValueError as exc:
-        raise HTTPException(503, "Profile synthesis has reached its daily allowance. Your answers are saved.") from exc
-    try:
-        client = OpenRouterClient(settings.openrouter_api_key, settings.openrouter_model, settings.openrouter_base_url, settings.public_app_url)
+    result = None
+    fallback_reason = "missing_api_key" if not settings.openrouter_api_key else None
+    if settings.openrouter_api_key:
         try:
-            result = client.synthesize_preferences(answers, row["open_response"], QUESTIONS)
-        finally:
-            client.close()
-    except ValueError as exc:
-        raise HTTPException(502, "The profile provider returned an invalid response. Your answers are saved; please try again.") from exc
-    except (httpx.HTTPError, KeyError, TypeError) as exc:
-        _code, message = provider_failure(exc)
-        raise HTTPException(502, message) from exc
+            reserve_request(conn, "openrouter", settings.model_daily_request_limit)
+        except ValueError:
+            fallback_reason = "request_budget_exhausted"
+        else:
+            try:
+                client = OpenRouterClient(
+                    settings.openrouter_api_key, settings.openrouter_model,
+                    settings.openrouter_base_url, settings.public_app_url,
+                )
+                try:
+                    result = client.synthesize_preferences(answers, row["open_response"], QUESTIONS)
+                finally:
+                    client.close()
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+                fallback_reason = type(exc).__name__
+    profile = result.profile if result else fallback_preference_profile(answers, row["open_response"])
+    model = result.model if result else None
     account = conn.execute("SELECT deleted_at FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
     if not account or account["deleted_at"]:
         conn.rollback()
@@ -256,9 +272,12 @@ def synthesize(user_id: UUID = Depends(current_user), conn: Connection = Depends
         raise HTTPException(409, "Your answers changed while the profile was being built. Try again.")
     conn.execute(
         "UPDATE onboarding_sessions SET draft_profile=%s,draft_model=%s,synthesized_at=NOW(),profile_accepted_at=NULL,updated_at=NOW() WHERE user_id=%s",
-        (result.profile, result.model, user_id),
+        (profile, model, user_id),
     )
-    _audit(conn, user_id, "profile", "synthesized", {"model": result.model, "profile": result.profile})
+    _audit(conn, user_id, "profile", "synthesized", {
+        "model": model, "profile": profile, "fallback": result is None,
+        "fallback_reason": fallback_reason,
+    })
     conn.commit()
     return _state(conn, user_id)
 
@@ -273,7 +292,8 @@ def save_profile(payload: ProfileDecision, user_id: UUID = Depends(current_user)
     if not profile:
         raise HTTPException(409, "Build a preference profile first")
     profile = profile.strip()
-    if not 2 <= len(re.findall(r"[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$", profile)) <= 5:
+    fallback_draft = row["draft_model"] is None and profile == row["draft_profile"]
+    if not fallback_draft and not 2 <= len(re.findall(r"[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$", profile)) <= 5:
         raise HTTPException(422, "The preference profile must be 2 to 5 sentences")
     if row["profile_accepted_at"]:
         if row["draft_profile"] == profile:

@@ -127,7 +127,6 @@ def claim_queued_recommendation(
     ).fetchone()
     if not account:
         return None
-    model_filter = "AND r.evidence->>'reranker_fallback' = 'false'" if require_model else ""
     row = conn.execute(
         f"""
         SELECT r.id
@@ -144,7 +143,6 @@ def claim_queued_recommendation(
           AND p.id = (SELECT id FROM preference_versions WHERE user_id = q.user_id ORDER BY version DESC LIMIT 1)
           AND c.is_active AND v.is_available
           AND COALESCE(v.default_audio_language, v.default_language, 'en') ~* '^en(-|$)'
-          {model_filter}
         ORDER BY q.slot
         FOR UPDATE OF q, r SKIP LOCKED
         LIMIT 1
@@ -186,7 +184,6 @@ def _adopt_orphaned_recommendation(conn: Connection, user_id: UUID) -> bool:
             JOIN tracked_channels c ON c.id = v.tracked_channel_id
             JOIN user_channel_follows f ON f.channel_id = c.id AND f.user_id = slot.user_id
             WHERE r.delivered_at IS NULL
-              AND r.evidence->>'reranker_fallback' = 'false'
               AND r.created_at >= COALESCE((
                   SELECT MAX(created_at) FROM interaction_events
                   WHERE user_id = slot.user_id
