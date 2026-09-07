@@ -79,7 +79,7 @@ jobs:
             -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID")"
           [[ "$(jq -r '.name // empty' <<<"$project_json")" == "$VERCEL_OIDC_PROJECT_NAME" ]] || {
-            echo 'VERCEL_STAGING_PROJECT_NAME does not match the staging project ID.' >&2
+            echo 'VERCEL_PROJECT_NAME does not match the shared Vercel project ID.' >&2
             exit 1
           }
           [[ "$(jq -r '.ssoProtection.deploymentType // empty' <<<"$project_json")" == "all_except_custom_domains" ]] || {
