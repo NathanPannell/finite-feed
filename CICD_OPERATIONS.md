@@ -18,6 +18,7 @@ Apply it after the repository's GitHub plan supports private-repository branch p
 
 ```powershell
 gh api --method PUT repos/NathanPannell/finite-feed/branches/main/protection --input .github/main-protection.json
+gh api --method PUT repos/NathanPannell/finite-feed/branches/staging/protection --input .github/staging-protection.json
 gh api repos/NathanPannell/finite-feed/branches/main --jq .protected
 ```
 

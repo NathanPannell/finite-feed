@@ -1,5 +1,5 @@
 {
-  "required_status_checks": {"strict": true, "contexts": ["backend", "backend-docker-runtime", "frontend", "deployment-contracts", "deploy"]},
+  "required_status_checks": {"strict": true, "contexts": ["backend", "backend-docker-runtime", "frontend", "deployment-contracts", "deploy", "validate-release"]},
   "enforce_admins": true,
   "required_pull_request_reviews": {
     "dismiss_stale_reviews": true,
