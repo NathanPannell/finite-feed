@@ -45,7 +45,7 @@ jobs:
           key: arctic-embed-xs-d8c86521100d3556476a063fc2342036d45c106f
       - run: python -m backend.app.migrate
       - run: python -m pytest backend/tests
-      - run: python -m pytest scripts/test_smoke_preview_native_auth.py
+      - run: python -m pytest scripts/test_smoke_preview_native_auth.py scripts/test_write_vercel_project_link.py
       - run: python -m backend.evals.run_recommendation_eval
 
   backend-docker-runtime:
