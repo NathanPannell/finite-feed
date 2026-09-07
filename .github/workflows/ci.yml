@@ -59,6 +59,12 @@ jobs:
         run: >-
           docker run --rm --entrypoint python finite-feed-api:ci
           -c "from backend.app.main import app; assert '/ready' in app.openapi()['paths']"
+      - name: Build the production worker runtime
+        run: docker build --file backend/Dockerfile.worker --tag finite-feed-worker:ci .
+      - name: Import the worker from the production image
+        run: >-
+          docker run --rm --entrypoint python finite-feed-worker:ci
+          -c "import backend.worker.main"
 
   frontend:
     runs-on: ubuntu-24.04
