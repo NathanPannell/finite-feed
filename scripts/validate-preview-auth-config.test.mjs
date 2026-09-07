@@ -57,9 +57,14 @@ test("rejects non-preview and unsafe URLs", () => {
   }), /Vercel preview/);
 });
 
-test("preview deployment publishes and validates its branch callback without an auth-mode flag", () => {
-  const workflow = readFileSync(new URL("../.github/workflows/preview.yml", import.meta.url), "utf8");
-  assert.doesNotMatch(workflow, /DEVELOPER_PREVIEW_AUTH/);
-  assert.match(workflow, /Google OAuth callback:/);
-  assert.match(workflow, /validate-preview-auth-config\.mjs/);
+test("preview skips Google OAuth while production and native preview authentication remain covered", () => {
+  const previewWorkflow = readFileSync(new URL("../.github/workflows/preview.yml", import.meta.url), "utf8");
+  const productionWorkflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.doesNotMatch(previewWorkflow, /verify-google-oauth-start\.mjs/);
+  assert.doesNotMatch(previewWorkflow, /GOOGLE_OAUTH_CALLBACK/);
+  assert.match(previewWorkflow, /smoke-preview-native-auth\.py --preview-url "\$FRONTEND_URL" --auth-only/);
+  assert.match(previewWorkflow, /Google OAuth is optional for previews and is not a readiness check/);
+  assert.match(productionWorkflow, /Verify Google OAuth accepts the production callback/);
+  assert.match(productionWorkflow, /verify-google-oauth-start\.mjs/);
+  assert.match(previewWorkflow, /validate-preview-auth-config\.mjs/);
 });

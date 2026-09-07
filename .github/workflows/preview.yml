@@ -76,9 +76,9 @@ jobs:
         run: |
           auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
           parent_auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "${{ vars.NEON_PARENT_BRANCH }}" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
-          google_callback="$(NEON_AUTH_BASE_URL="$auth_url" PARENT_NEON_AUTH_BASE_URL="$parent_auth_url" node scripts/validate-preview-auth-config.mjs)"
-          printf 'NEON_AUTH_BASE_URL=%s\nPARENT_NEON_AUTH_BASE_URL=%s\nGOOGLE_OAUTH_CALLBACK=%s\n' \
-            "$auth_url" "$parent_auth_url" "$google_callback" >> "$GITHUB_ENV"
+          NEON_AUTH_BASE_URL="$auth_url" PARENT_NEON_AUTH_BASE_URL="$parent_auth_url" node scripts/validate-preview-auth-config.mjs >/dev/null
+          printf 'NEON_AUTH_BASE_URL=%s\nPARENT_NEON_AUTH_BASE_URL=%s\n' \
+            "$auth_url" "$parent_auth_url" >> "$GITHUB_ENV"
 
       - name: Create or update isolated Railway environment
         env:
@@ -220,24 +220,6 @@ jobs:
           vercel curl /api/match/annotations/stats --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
             --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" | jq -e '.completed >= 1' >/dev/null
 
-      - name: Verify Google OAuth accepts the preview callback
-        env:
-          FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          oauth_start_file="$(mktemp)"
-          trap 'rm -f "$oauth_start_file"' EXIT
-          vercel curl /api/auth/sign-in/social --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
-            --fail --silent --show-error \
-            --request POST \
-            -H 'Content-Type: application/json' \
-            -H "Origin: $FRONTEND_URL" \
-            --data "$(jq -nc --arg callback "$FRONTEND_URL/auth/callback" '{provider:"google",callbackURL:$callback,disableRedirect:true}')" \
-            -o "$oauth_start_file"
-          node scripts/verify-google-oauth-start.mjs \
-            --payload-file "$oauth_start_file" \
-            --expected-callback "$NEON_AUTH_BASE_URL/callback/google"
-
       - name: Verify isolated native account sessions
         timeout-minutes: 5
         env:
@@ -257,7 +239,7 @@ jobs:
         with:
           script: |
             const marker = '<!-- full-stack-preview -->';
-            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth callback: \`${process.env.GOOGLE_OAUTH_CALLBACK}\`\n\nRegister this callback once for this Neon branch. A new Vercel deployment URL does not change it.\n\nAccounts created in this preview, including email/password accounts, are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
+            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth is optional for previews and is not a readiness check. Production OAuth remains required and verified by the production deployment.\n\nAccounts created in this preview, including email/password accounts, are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
               issue_number: context.issue.number,
