@@ -8,12 +8,13 @@ type SiteHeaderProps = {
 };
 
 function PrimaryLinks({ active }: Pick<SiteHeaderProps, "active">) {
-  return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link><Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/app/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
+  return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link><Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
 }
 
 export function SiteHeader({ active, action, context }: SiteHeaderProps) {
   return (
     <>
+      {active !== "home" && <a className="skip-link" href="#main">Skip to content</a>}
       <header className="signal-masthead">
         <Link className="signal-wordmark" href="/" aria-label="Finite Feed home" aria-current={active === "home" ? "page" : undefined}>
           <span aria-hidden="true">F/</span>
@@ -34,7 +35,7 @@ export function SiteFooter() {
       <p>YouTube picks for the time you have.</p>
       <nav aria-label="Footer navigation">
         <Link href="/privacy">Privacy &amp; your data</Link>
-        <a href="https://github.com/NathanPannell/finite-feed/issues/new">Support</a>
+        <Link href="/privacy#help">Support</Link>
       </nav>
       <span>Private beta</span>
     </footer>
