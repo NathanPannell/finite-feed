@@ -194,7 +194,7 @@ test("saves delivery schedule and resolves a URL-only source", async ({ page }) 
   await expect(page.getByRole("status", { name: "1 pick" })).toBeVisible();
   await page.getByRole("button", { name: "Increase picks" }).click();
   await expect(page.getByRole("status", { name: "2 picks" })).toBeVisible();
-  await page.getByRole("button", { name: "Save preferences" }).click();
+  await page.getByRole("button", { name: "Save delivery preferences" }).click();
   expect(captured.profilePayload()).toEqual({ cadence_days: [2, 5], recommendation_count: 2, timezone: "America/Los_Angeles", delivery_hour: 9 });
 
   const sourceUrl = "https://youtu.be/practical";
@@ -227,13 +227,13 @@ test("saves preference memory with an optimistic version and no delivery fields"
 
   await page.getByRole("button", { name: "Edit interests" }).click();
   await page.getByLabel("Your interests and exclusions").fill("Systems thinking with practical evidence.");
-  await page.getByRole("button", { name: "Save memory" }).click();
+  await page.getByRole("button", { name: "Save interests" }).click();
 
   expect(captured.memoryPayload()).toEqual({
     preference_statement: "Systems thinking with practical evidence.",
     expected_version: 4,
   });
-  await expect(page.getByText("Preference memory saved.")).toBeVisible();
+  await expect(page.getByText("Your interests were saved.")).toBeVisible();
 });
 
 test("shows invalid, lookup failure, duplicate, and removable-default source states", async ({ page }) => {
@@ -253,6 +253,7 @@ test("shows invalid, lookup failure, duplicate, and removable-default source sta
   await expect(page.getByRole("button", { name: "Add source" })).toBeDisabled();
 
   await page.getByRole("button", { name: "Remove TED" }).click();
+  await page.getByRole("button", { name: "Remove source", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove TED" })).toHaveCount(0);
 });
 

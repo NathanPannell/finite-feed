@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- YouTube supplies dynamic external image hosts. */
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Account, AccountControls } from "@/components/account-controls";
 import { SignalShell } from "@/components/signal-shell";
@@ -100,6 +100,8 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
   const [memoryNotice, setMemoryNotice] = useState<FormNotice>(null);
   const [accountDelivery, setAccountDelivery] = useState<Account | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<Channel | null>(null);
+  const removalTrigger = useRef<HTMLButtonElement | null>(null);
+  const sourceInput = useRef<HTMLInputElement | null>(null);
   const [timezoneError, setTimezoneError] = useState(false);
   const deliveryDirty = Boolean(profile && deliveryBaseline && (
     profile.timezone !== deliveryBaseline.timezone ||
@@ -191,7 +193,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
 
   async function saveDelivery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!profile) return;
+    if (!profile || busyAction) return;
     if (!validTimezone(profile.timezone)) {
       setTimezoneError(true);
       setDeliveryNotice({ message: "Enter an IANA timezone such as America/Los_Angeles, then save again.", tone: "error" });
@@ -227,7 +229,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
 
   async function saveMemory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!profile) return;
+    if (!profile || busyAction) return;
     setBusyAction("memory");
     setMemoryNotice(null);
     try {
@@ -267,7 +269,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
 
   async function addChannel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!resolvedChannel || sourceState !== "resolved") return;
+    if (busyAction || !resolvedChannel || sourceState !== "resolved") return;
     setBusyAction("source");
     try {
       const response = await fetch(`${apiBaseUrl}/channels`, {
@@ -296,6 +298,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
   }
 
   async function removeChannel(channel: Channel) {
+    if (busyAction) return;
     setBusyAction(`remove-${channel.id}`);
     try {
       const response = await fetch(`${apiBaseUrl}/channels/${channel.id}`, { method: "DELETE" });
@@ -305,7 +308,8 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
       }
       setChannels((current) => current.filter((item) => item.id !== channel.id));
       setPendingRemoval(null);
-      setNotice({ message: `${channel.name} is no longer tracked.`, tone: "success" });
+      setNotice({ message: `${channel.name} is no longer tracked. Add its YouTube URL below to track it again.`, tone: "success" });
+      sourceInput.current?.focus();
     } catch {
       setNotice({ message: `${channel.name} was not removed. Check your connection and try again.`, tone: "error" });
     } finally {
@@ -415,14 +419,14 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
               {accountDelivery && <p className={settingsStyles.formFeedback} role="status">Telegram is {accountDelivery.telegram_connected ? "connected" : "not connected"}.{accountDelivery.delivery_paused ? " Delivery is paused." : ""} Manage the connection below in Account & privacy.</p>}
               {profile ? (
                 <form className="delivery-form" onSubmit={saveDelivery}>
-                  <label htmlFor="delivery-timezone">Timezone</label><input id="delivery-timezone" value={profile.timezone} onChange={(event) => { setTimezoneError(false); setProfile({ ...profile, timezone: event.target.value }); }} placeholder="America/Los_Angeles" aria-invalid={timezoneError || undefined} aria-describedby={timezoneError ? "delivery-timezone-error" : undefined} required />{timezoneError && <p id="delivery-timezone-error" className={settingsStyles.formFeedback} data-tone="error" role="alert">Enter an IANA timezone such as America/Los_Angeles.</p>}<label htmlFor="delivery-hour">Delivery hour (local time)</label><select id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
+                  <label htmlFor="delivery-timezone">Timezone</label><input disabled={!!busyAction} id="delivery-timezone" value={profile.timezone} onChange={(event) => { setTimezoneError(false); setProfile({ ...profile, timezone: event.target.value }); }} placeholder="America/Los_Angeles" aria-invalid={timezoneError || undefined} aria-describedby={timezoneError ? "delivery-timezone-error" : undefined} required />{timezoneError && <p id="delivery-timezone-error" className={settingsStyles.formFeedback} data-tone="error" role="alert">Enter an IANA timezone such as America/Los_Angeles.</p>}<label htmlFor="delivery-hour">Delivery hour (local time)</label><select disabled={!!busyAction} id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
                   <fieldset className="day-fieldset">
                     <legend>Delivery days</legend>
                     <div className="day-picker">{days.map((day, index) => {
                       const selected = profile.cadence_days.includes(index);
-                      return <button type="button" key={day} aria-pressed={selected} onClick={() => {
+                      return <button type="button" disabled={!!busyAction} key={day} aria-pressed={selected} onClick={() => {
                         if (selected && profile.cadence_days.length === 1) {
-                          setNotice({ message: "Keep at least one delivery day selected.", tone: "error" });
+                          setDeliveryNotice({ message: "Keep at least one delivery day selected.", tone: "error" });
                           return;
                         }
                         setProfile({ ...profile, cadence_days: selected ? profile.cadence_days.filter((value) => value !== index) : [...profile.cadence_days, index].sort() });
@@ -432,12 +436,12 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
                   <div className="picks-setting">
                     <span id="picks-label">Picks per delivery</span>
                     <div className="picks-stepper" role="group" aria-labelledby="picks-label">
-                      <button type="button" aria-label="Decrease picks" disabled={profile.recommendation_count <= minimumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.max(minimumPicks, profile.recommendation_count - 1) })}>−</button>
+                      <button type="button" aria-label="Decrease picks" disabled={!!busyAction || profile.recommendation_count <= minimumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.max(minimumPicks, profile.recommendation_count - 1) })}>−</button>
                       <output aria-live="polite" aria-label={`${profile.recommendation_count} ${profile.recommendation_count === 1 ? "pick" : "picks"}`}>{profile.recommendation_count}</output>
-                      <button type="button" aria-label="Increase picks" disabled={profile.recommendation_count >= maximumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.min(maximumPicks, profile.recommendation_count + 1) })}>+</button>
+                      <button type="button" aria-label="Increase picks" disabled={!!busyAction || profile.recommendation_count >= maximumPicks} onClick={() => setProfile({ ...profile, recommendation_count: Math.min(maximumPicks, profile.recommendation_count + 1) })}>+</button>
                     </div>
                   </div>
-                  <button className="save-action" disabled={busyAction === "delivery" || !deliveryDirty}>{busyAction === "delivery" ? "Saving…" : deliveryDirty ? "Save delivery preferences" : "Delivery preferences saved"}</button>
+                  <button className="save-action" disabled={!!busyAction || !deliveryDirty}>{busyAction === "delivery" ? "Saving…" : deliveryDirty ? "Save delivery preferences" : "Delivery preferences saved"}</button>
                   {deliveryNotice && <p className={settingsStyles.formFeedback} data-tone={deliveryNotice.tone} role={deliveryNotice.tone === "error" ? "alert" : "status"}>{deliveryNotice.message}</p>}
                 </form>
               ) : <div className="sheet-skeleton" aria-label="Loading delivery preferences" />}
@@ -448,14 +452,14 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
               {profile ? <>
                 <p className="memory-summary">{profile.preference_statement}</p>
                 {!memoryEditing ? (
-                  <button className="memory-action" onClick={() => { setMemoryNotice(null); setMemoryEditing(true); }}>Edit interests</button>
+                  <button className="memory-action" disabled={!!busyAction} onClick={() => { setMemoryNotice(null); setMemoryEditing(true); }}>Edit interests</button>
                 ) : (
                   <form className="memory-editor" onSubmit={saveMemory}>
                     <label htmlFor="memory-draft">Your interests and exclusions</label><p>Describe what you want to learn and what to avoid. For example: practical psychology and new research; skip motivational speeches.</p>
-                    <textarea id="memory-draft" value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} maxLength={5000} required autoFocus />
+                    <textarea disabled={!!busyAction} id="memory-draft" value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} maxLength={5000} required autoFocus />
                     <div>
-                      <button className="save-action" disabled={busyAction === "memory"}>{busyAction === "memory" ? "Saving…" : "Save interests"}</button>
-                      <button type="button" className="cancel-action" onClick={() => { setMemoryDraft(profile.preference_statement); setMemoryEditing(false); }}>Cancel</button>
+                      <button className="save-action" disabled={!!busyAction}>{busyAction === "memory" ? "Saving…" : "Save interests"}</button>
+                      <button type="button" className="cancel-action" disabled={!!busyAction} onClick={() => { setMemoryDraft(profile.preference_statement); setMemoryEditing(false); }}>Cancel</button>
                     </div>
                   </form>
                 )}
@@ -470,11 +474,11 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
                   <div key={channel.id} className="source-row">
                     {channel.thumbnail_url ? <img src={channel.thumbnail_url} alt="" width="48" height="48" /> : <span className="source-fallback" aria-hidden="true">{channel.name.slice(0, 1)}</span>}
                     <a href={channel.url} target="_blank" rel="noreferrer">{channel.name}</a>
-                    <button aria-label={`Remove ${channel.name}`} disabled={busyAction === `remove-${channel.id}`} onClick={() => settings ? setPendingRemoval(channel) : void removeChannel(channel)}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove"}</button>
+                    <button aria-label={`Remove ${channel.name}`} disabled={!!busyAction} onClick={(event) => { removalTrigger.current = event.currentTarget; if (settings) setPendingRemoval(channel); else void removeChannel(channel); }}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove"}</button>
                     {settings && pendingRemoval?.id === channel.id && <div className={settingsStyles.removeConfirmation} role="group" aria-label={`Confirm removal of ${channel.name}`}>
                       <span>Remove {channel.name}? You can add it again later.</span>
-                      <button className="cancel-action" type="button" disabled={busyAction === `remove-${channel.id}`} onClick={() => void removeChannel(channel)}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove source"}</button>
-                      <button className="cancel-action" type="button" autoFocus disabled={busyAction === `remove-${channel.id}`} onClick={() => setPendingRemoval(null)}>Cancel</button>
+                      <button className="cancel-action" type="button" disabled={!!busyAction} onClick={() => void removeChannel(channel)}>{busyAction === `remove-${channel.id}` ? "Removing…" : "Remove source"}</button>
+                      <button className="cancel-action" type="button" autoFocus disabled={!!busyAction} onClick={() => { setPendingRemoval(null); removalTrigger.current?.focus(); }}>Cancel</button>
                     </div>}
                   </div>
                 ))}
@@ -482,8 +486,8 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
               <form className="source-form" onSubmit={addChannel}>
                 <label htmlFor="source-url">YouTube URL</label>
                 <div className="source-input-row">
-                  <input id="source-url" type="url" inputMode="url" value={channelUrl} onChange={(event) => changeChannelUrl(event.target.value)} placeholder="Channel, handle, or video URL" aria-describedby="source-status" required />
-                  <button disabled={busyAction === "source" || sourceState !== "resolved"}>{busyAction === "source" ? "Adding…" : "Add source"}</button>
+                  <input ref={sourceInput} id="source-url" type="url" inputMode="url" value={channelUrl} onChange={(event) => changeChannelUrl(event.target.value)} placeholder="Channel, handle, or video URL" aria-describedby="source-status" required />
+                  <button disabled={!!busyAction || sourceState !== "resolved"}>{busyAction === "source" ? "Adding…" : "Add source"}</button>
                 </div>
                 <p id="source-status" className={`source-status ${sourceState}`} role={["invalid", "error", "duplicate"].includes(sourceState) ? "alert" : "status"}>{sourceMessage || "Paste any YouTube channel or video URL."}</p>
                 {resolvedChannel && <div className="source-preview">

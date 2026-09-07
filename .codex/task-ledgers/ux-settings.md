@@ -19,8 +19,12 @@ Routine preferences lead the page, account controls follow them, and focused tes
 - Added browser-native IANA timezone validation with local accessible recovery feedback and draft retention.
 - Visual review found narrow three-column density on desktop, so Settings now uses two routine columns with full-width sources and a two-row mobile section navigator.
 
+## Coordinator verification and corrections
+- Root awaited legacy tests: three failures were stale save-button labels and the new source confirmation, rather than server contention. Updated those behavior expectations and stopped remaining verified task-owned servers.
+- Preserved draft isolation and disabled edits while either preference save is pending; added a delayed-response cross-form regression. Source cancel restores trigger focus; removal focuses the add-source field and explains recovery.
+- Lint exposed generated Playwright report bundles; added scoped report/results ignores to ESLint. Lint now passes with artifacts retained; typecheck/build also pass.
+- Final relevant browser run: 13/13 passed at port3127, including existing delivery, Telegram, source, feed, memory and all6 dedicated settings tests. Proxy14 passed in unchanged routing contracts in the companion navigation branch.
+- Fresh desktop/320px fixture screenshots inspected by root; no document overflow. Current screenshots: frontend/playwright-report/data/5135542f29c66dd0194dad46aae32a2a971c9bc7.png and 8931b00f68ef24c03702d238bb719eecf1585deb.png. No production account data in these fixtures. Detector on changed sources returned empty.
+
 ## Next
-- Settings implementation committed as `5c58c4f`.
-- Completed: `npm run lint`, `npm run typecheck`, and `npm run build`; dedicated `settings-ux.spec.ts` passed 5/5 with `CI=1`, `PLAYWRIGHT_PORT=3117`, and one worker.
-- Completed visual inspection: route-mocked Settings desktop and 320px screenshots were reviewed through the Playwright HTML report; the initial desktop three-column layout was corrected to two columns.
-- Incomplete: six selected legacy `signal-surfaces.spec.ts` cases exceeded the tool window and left four owned local Next processes listening on 3117–3120 (PIDs 43652, 32760, 35764, 46440). Do not report those cases as passed.
+- Independent quality review, then root creates the issue-linked PR; no merge.

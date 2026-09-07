@@ -71,4 +71,34 @@ test("requires a named confirmation before removing a source", async ({ page }) 
   await expect(confirmation.getByRole("button", { name: "Cancel" })).toBeFocused();
   await confirmation.getByRole("button", { name: "Cancel" }).click();
   await expect(confirmation).toHaveCount(0);
+  await expect(remove).toBeFocused();
+});
+
+test("saving one section preserves the other draft and serializes pending edits", async ({ page }) => {
+  await mockSettings(page);
+  let finishDelivery: () => void = () => {};
+  const pendingDelivery = new Promise<void>((resolve) => { finishDelivery = resolve; });
+  await page.route("**/api/personal/profile/delivery", async (route) => {
+    await pendingDelivery;
+    await route.fulfill({ json: { ...route.request().postDataJSON(), preference_statement: "Already saved interests", version: 4 } });
+  });
+  await page.goto("/settings");
+  await page.getByLabel("Timezone").fill("Europe/London");
+  await page.getByRole("button", { name: "Edit interests" }).click();
+  const interests = page.getByLabel("Your interests and exclusions");
+  await interests.fill("Practical science without hype.");
+  await page.getByRole("button", { name: "Save interests", exact: true }).click();
+  await expect(page.getByText("Your interests were saved.")).toBeVisible();
+  await expect(page.getByLabel("Timezone")).toHaveValue("Europe/London");
+  await page.getByRole("button", { name: "Edit interests" }).click();
+  await interests.fill("This newer interest draft is not saved yet.");
+  await page.getByRole("button", { name: "Save delivery preferences" }).click();
+  await expect(page.getByLabel("Timezone")).toBeDisabled();
+  await expect(page.getByLabel("Delivery hour (local time)")).toBeDisabled();
+  await expect(interests).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save interests", exact: true })).toBeDisabled();
+  finishDelivery();
+  await expect(interests).toBeEnabled();
+  await expect(interests).toHaveValue("This newer interest draft is not saved yet.");
+  await expect(page.getByLabel("Timezone")).toHaveValue("Europe/London");
 });
