@@ -29,15 +29,20 @@ Completed:
 - Prioritized human-readable detail fields and collapsed remaining diagnostics.
 - Added component-scoped responsive card layouts and larger operational metadata.
 - Added focused Playwright coverage and generated desktop/mobile fixture screenshots.
+- Aborted superseded list requests and guarded state writes by query generation so late tab responses cannot replace active records.
+- Excluded controls inside closed diagnostic disclosures from the modal focus loop.
+- Added explicit disclosure chevrons plus Pause cancel/success/failure focus restoration.
+- Cleared stale text-search errors when Videos switches to Meaning search.
 
 Verification:
 - `npm run lint -- --ignore-pattern playwright-report/** --ignore-pattern test-results/**` passed.
 - `npm run typecheck` passed.
 - `npm run build` passed.
 - `npm run test:proxy` passed (14/14).
-- `PLAYWRIGHT_PORT=3137 npx playwright test tests/e2e/admin-dashboard.spec.ts --workers=2` passed (2/2).
+- `PLAYWRIGHT_PORT=3137 npx playwright test tests/e2e/admin-dashboard.spec.ts --workers=2` passed (3/3), covering the full admin contract, error recovery and text-to-Meaning transition, and superseded request ordering.
 - `git diff --check` passed.
-- Inspected fresh 1280px and 390px fixture screenshots: records lead, health is compact, performance remains disclosed, and priority mobile fields/actions remain readable without document overflow.
+- Explicit-file Impeccable detector passed with `[]` after replacing the lone standalone Arial declaration with the product body-font stack.
+- Inspected fresh 1280px, 390px, and 320px fixture screenshots: records lead, health is compact, disclosures have clear state indicators, and priority mobile fields/actions remain reachable without document overflow.
 
 Remaining risk:
 - Production data density can exceed the fixture set; the responsive layout is covered with representative records but was not mutated or exhaustively exercised against private production data.

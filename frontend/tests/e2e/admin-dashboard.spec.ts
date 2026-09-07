@@ -89,6 +89,7 @@ test("operates the records-first admin dashboard through its server API contract
         sync_status: "complete",
         last_sync_completed_at: "2026-09-03T14:25:00Z",
         canonical_url: "https://youtube.com/@existing",
+        diagnostic_url: "https://example.com/diagnostic",
       }], total: 1, page: 1, page_size: 25 } });
       return;
     }
@@ -160,7 +161,12 @@ test("operates the records-first admin dashboard through its server API contract
   expect(recordsBox?.y).toBeLessThan(720);
   await page.screenshot({ path: testInfo.outputPath("admin-desktop.png"), fullPage: true });
 
-  await page.locator(".admin-performance > details > summary").click();
+  const performanceSummary = page.locator(".admin-performance > details > summary");
+  const collapsedChevron = await performanceSummary.evaluate((summary) => getComputedStyle(summary, "::before").transform);
+  await performanceSummary.click();
+  const expandedChevron = await performanceSummary.evaluate((summary) => getComputedStyle(summary, "::before").transform);
+  expect(collapsedChevron).not.toBe("none");
+  expect(expandedChevron).not.toBe(collapsedChevron);
   await expect(page.getByRole("img", { name: "Useful and not useful feedback over time" })).toBeVisible();
   await expect(page.getByRole("img", { name: "Useful feedback as a share of recommendations sent" })).toBeVisible();
   await expect(page.getByRole("table", { name: "Daily feedback data" })).toContainText("60%");
@@ -180,6 +186,12 @@ test("operates the records-first admin dashboard through its server API contract
   await expect(channelDialog.getByText("user id", { exact: true })).toHaveCount(0);
   await expect(channelDialog.getByText("Technical details", { exact: false })).toBeVisible();
   await expect(channelDialog.getByText("channel-1", { exact: true })).toBeHidden();
+  const diagnostics = channelDialog.locator(".admin-diagnostics > summary");
+  await channelDialog.getByRole("button", { name: "Close details" }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(diagnostics).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(channelDialog.getByRole("button", { name: "Close details" })).toBeFocused();
   await channelDialog.getByRole("button", { name: "Close details" }).click();
 
   const stopButton = channelRow.getByRole("button", { name: "Pause tracking" });
@@ -193,10 +205,16 @@ test("operates the records-first admin dashboard through its server API contract
 
   await stopButton.click();
   await expect(channelRow.getByText("Pause tracking for Existing Channel?", { exact: true })).toBeVisible();
+  await expect(channelRow.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(stopButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(channelRow.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
   await channelRow.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(page.locator(".admin-notice")).toContainText("Tracking paused");
   const restoreButton = channelRow.getByRole("button", { name: "Restore tracking" });
   await expect(restoreButton).toBeVisible();
+  await expect(restoreButton).toBeFocused();
   const restoreColor = await restoreButton.evaluate((element) => getComputedStyle(element).color);
   expect(restoreColor).toBe("rgb(23, 93, 58)");
   await restoreButton.click();
@@ -207,6 +225,7 @@ test("operates the records-first admin dashboard through its server API contract
   await channelRow.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(page.locator(".admin-notice.error")).toContainText("previous tracking state was restored");
   await expect(channelRow.getByRole("button", { name: "Pause tracking" })).toBeVisible();
+  await expect(channelRow.getByRole("button", { name: "Pause tracking" })).toBeFocused();
 
   await page.getByText("Add a tracked channel", { exact: false }).click();
   await page.getByLabel("YouTube channel URL").fill("https://youtube.com/@newchannel");
@@ -281,6 +300,18 @@ test("operates the records-first admin dashboard through its server API contract
   const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.inner);
   await page.screenshot({ path: testInfo.outputPath("admin-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  const mobileDetails = recommendationRow.getByRole("button", { name: "Details" });
+  await mobileDetails.scrollIntoViewIfNeeded();
+  await expect(mobileDetails).toBeVisible();
+  const mobileDetailsBox = await mobileDetails.boundingBox();
+  const narrowWidth = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
+  expect(narrowWidth.scroll).toBeLessThanOrEqual(narrowWidth.inner);
+  expect(mobileDetailsBox?.x).toBeGreaterThanOrEqual(0);
+  expect((mobileDetailsBox?.x ?? 0) + (mobileDetailsBox?.width ?? Infinity)).toBeLessThanOrEqual(320);
+  expect(mobileDetailsBox?.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({ path: testInfo.outputPath("admin-mobile-320.png"), fullPage: true });
 });
 
 test("announces loading and recovers from a list error into an empty state", async ({ page }) => {
@@ -301,6 +332,10 @@ test("announces loading and recovers from a list error into an empty state", asy
       await route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 25 } });
       return;
     }
+    if (path === "videos") {
+      await route.fulfill({ status: 503, json: { detail: "Video records are temporarily unavailable." } });
+      return;
+    }
     if (path === "summary") { await route.fulfill({ json: {} }); return; }
     if (path === "activity" || path === "performance") { await route.fulfill({ json: [] }); return; }
     await route.fulfill({ status: 404, json: { detail: "Unexpected test route" } });
@@ -313,4 +348,43 @@ test("announces loading and recovers from a list error into an empty state", asy
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("heading", { name: "No channels yet" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("0 channels loaded");
+
+  await page.getByRole("tab", { name: "Videos" }).click();
+  await expect(page.locator(".admin-error")).toContainText("Video records are temporarily unavailable");
+  await page.getByLabel("Search mode").selectOption("vector");
+  await expect(page.locator(".admin-error")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Search by meaning" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Search meaning" })).toBeVisible();
+});
+
+test("keeps the active records when an older tab request finishes late", async ({ page }) => {
+  let releaseChannels = () => {};
+  let channelsStarted = false;
+  const heldChannels = new Promise<void>((resolve) => { releaseChannels = resolve; });
+  let channelFinished = false;
+  await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace("/api/admin/", "");
+    if (path === "channels") {
+      channelsStarted = true;
+      await heldChannels;
+      await route.fulfill({ json: { items: [{ id: "old-channel", name: "Stale channel" }], total: 1, page: 1, page_size: 25 } });
+      channelFinished = true;
+      return;
+    }
+    if (path === "videos") {
+      await route.fulfill({ json: { items: [{ id: "current-video", title: "Current video" }], total: 1, page: 1, page_size: 25 } });
+      return;
+    }
+    await route.fulfill({ json: path === "summary" ? {} : [] });
+  });
+  await page.goto("/admin");
+  await expect.poll(() => channelsStarted).toBe(true);
+  await page.getByRole("tab", { name: "Videos" }).click();
+  await expect(page.getByText("Current video", { exact: true })).toBeVisible();
+  releaseChannels();
+  await expect.poll(() => channelFinished).toBe(true);
+  await expect(page.getByRole("tab", { name: "Videos" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Current video", { exact: true })).toBeVisible();
+  await expect(page.getByText("Stale channel", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("1 videos loaded");
 });

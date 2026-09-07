@@ -7,6 +7,7 @@ import {
   RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -179,7 +180,16 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'));
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => {
+          if (!element.getClientRects().length || getComputedStyle(element).visibility === "hidden") return false;
+          let closedDetails = element.parentElement?.closest("details:not([open])");
+          while (closedDetails) {
+            if (!closedDetails.querySelector(":scope > summary")?.contains(element)) return false;
+            closedDetails = closedDetails.parentElement?.closest("details:not([open])");
+          }
+          return true;
+        });
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -382,6 +392,28 @@ export function AdminDashboard() {
   const triggerRef = useRef<HTMLElement | null>(null);
   const modalCloseRef = useRef<HTMLButtonElement>(null);
   const latestResolve = useRef(0);
+  const listGeneration = useRef(0);
+  const listController = useRef<AbortController | null>(null);
+  const pendingTrackingFocus = useRef<string | null>(null);
+  const listKey = JSON.stringify([tab, page, search, channelSort, showInactive, videoSort, videoChannel, videoEmbedding, videoRecommended, videoPublishedAfter, videoIngestedAfter, recommendationSort, deliveryState, rating, videoSearchMode]);
+  const activeListKey = useRef(listKey);
+
+  useLayoutEffect(() => {
+    activeListKey.current = listKey;
+    listGeneration.current += 1;
+    listController.current?.abort();
+    return () => { listGeneration.current += 1; listController.current?.abort(); };
+  }, [listKey]);
+
+  useEffect(() => {
+    if (!pendingTrackingFocus.current) return;
+    if (tab !== "channels") { pendingTrackingFocus.current = null; return; }
+    if (listLoading || mutationId) return;
+    const action = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-tracking-channel]"))
+      .find((button) => button.dataset.trackingChannel === pendingTrackingFocus.current);
+    action?.focus();
+    pendingTrackingFocus.current = null;
+  }, [listLoading, mutationId, tab]);
 
   const announce = useCallback((message: string, error = false) => {
     setNotice(message);
@@ -415,9 +447,15 @@ export function AdminDashboard() {
   }, []);
 
   const loadList = useCallback(async () => {
-    if (tab === "videos" && videoSearchMode === "vector") return;
-    setListLoading(true);
+    // A mutation begun on another tab must not reload its old query afterward.
+    if (activeListKey.current !== listKey) return;
+    const generation = ++listGeneration.current;
+    listController.current?.abort();
     setListError("");
+    if (tab === "videos" && videoSearchMode === "vector") { setListLoading(false); return; }
+    const controller = new AbortController();
+    listController.current = controller;
+    setListLoading(true);
     const params = new URLSearchParams({ page: String(page[tab]), page_size: String(pageSize) });
     if (search[tab]) params.set("search", search[tab]);
     if (tab === "channels") {
@@ -444,14 +482,16 @@ export function AdminDashboard() {
       if (rating) params.set("rating", rating);
     }
     try {
-      const payload = await adminRequest<unknown>(`${tab}?${params}`);
+      const payload = await adminRequest<unknown>(`${tab}?${params}`, undefined, controller.signal);
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setList(pageResult<JsonRecord>(payload, page[tab], pageSize));
     } catch (error) {
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setListError(requestMessage(error, `The ${tab} list is unavailable.`));
     } finally {
-      setListLoading(false);
+      if (generation === listGeneration.current && !controller.signal.aborted) setListLoading(false);
     }
-  }, [channelSort, deliveryState, page, rating, recommendationSort, search, showInactive, tab, videoChannel, videoEmbedding, videoIngestedAfter, videoPublishedAfter, videoRecommended, videoSearchMode, videoSort]);
+  }, [channelSort, deliveryState, listKey, page, rating, recommendationSort, search, showInactive, tab, videoChannel, videoEmbedding, videoIngestedAfter, videoPublishedAfter, videoRecommended, videoSearchMode, videoSort]);
 
   useEffect(() => {
     const task = window.setTimeout(() => void loadOverview(), 0);
@@ -536,15 +576,21 @@ export function AdminDashboard() {
   async function vectorSearch(event: FormEvent) {
     event.preventDefault();
     if (!vectorPhrase.trim()) return;
+    const generation = ++listGeneration.current;
+    listController.current?.abort();
+    const controller = new AbortController();
+    listController.current = controller;
     setListLoading(true);
     setListError("");
     try {
-      const payload = await adminRequest<unknown>("videos/vector-search", { method: "POST", body: JSON.stringify({ phrase: vectorPhrase.trim(), limit: 20 }) });
+      const payload = await adminRequest<unknown>("videos/vector-search", { method: "POST", body: JSON.stringify({ phrase: vectorPhrase.trim(), limit: 20 }) }, controller.signal);
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setList(pageResult<JsonRecord>(payload, 1, 20));
     } catch (error) {
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setListError(requestMessage(error, "Vector search is unavailable."));
     } finally {
-      setListLoading(false);
+      if (generation === listGeneration.current && !controller.signal.aborted) setListLoading(false);
     }
   }
 
@@ -572,6 +618,7 @@ export function AdminDashboard() {
     const restoring = patch.is_active === true;
     setMutationId(id);
     if ("is_active" in patch) {
+      pendingTrackingFocus.current = id;
       setList((current) => ({ ...current, items: current.items.map((row) => text(row, "id") === id ? { ...row, ...patch } : row) }));
     }
     try {
@@ -734,13 +781,23 @@ function RecordTable({ tab, data, loading, mutationId, open, patchChannel, hidde
 function RecordRow({ tab, item, busy, open, patchChannel }: { tab: Tab; item: JsonRecord; busy: boolean; open: (kind: Tab, item: JsonRecord, trigger: HTMLElement) => void; patchChannel: (item: JsonRecord, patch: JsonRecord) => void }) {
   const active = value(item, "is_active", "active") !== false;
   const [confirmingPause, setConfirmingPause] = useState(false);
+  const cancelPauseRef = useRef<HTMLButtonElement>(null);
+  const trackingRef = useRef<HTMLButtonElement>(null);
+  const cancelledPause = useRef(false);
+  useEffect(() => {
+    if (confirmingPause) cancelPauseRef.current?.focus();
+    else if (cancelledPause.current) {
+      trackingRef.current?.focus();
+      cancelledPause.current = false;
+    }
+  }, [confirmingPause]);
   const channelName = text(item, "name") || "this channel";
   if (tab === "channels") return <tr className={!active ? "inactive-row" : ""}>
     <td className="channel-primary"><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span>{text(item, "name").slice(0, 1)}</span>}<div><strong>{text(item, "name")}</strong><a href={text(item, "url", "canonical_url")} target="_blank" rel="noreferrer">Open YouTube</a></div></div></td>
     <td className="channel-status"><Status>{active ? "Active" : "Paused"}</Status></td>
     <td className="channel-window"><ChannelAgeControl key={`${text(item, "id")}:${numberValue(item, "max_video_age_days")}`} item={item} save={patchChannel} /></td>
     <td className="channel-videos optional-column col-channel-videos">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td className="channel-sync admin-last-sync"><time title={text(item, "last_sync_completed_at", "last_ingestion_at")}>{compactDateTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "Not recorded")}</time>{text(item, "sync_error", "last_sync_error") && <small className="error-text">Sync issue</small>}</td>
-    <td className="channel-actions admin-row-actions">{confirmingPause && active ? <div className="admin-pause-confirmation" role="group" aria-label={`Pause tracking for ${channelName}`}><span>Pause tracking for <strong>{channelName}</strong>?</span><button className="admin-text-button stop" disabled={busy} onClick={() => { setConfirmingPause(false); void patchChannel(item, { is_active: false }); }}>Pause</button><button className="admin-text-button" disabled={busy} onClick={() => setConfirmingPause(false)}>Cancel</button></div> : <button className={`admin-text-button ${active ? "stop" : "restore"}`} disabled={busy} onClick={() => active ? setConfirmingPause(true) : void patchChannel(item, { is_active: true })}>{busy ? "Saving…" : active ? "Pause tracking" : "Restore tracking"}</button>}<button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
+    <td className="channel-actions admin-row-actions">{confirmingPause && active ? <div className="admin-pause-confirmation" role="group" aria-label={`Pause tracking for ${channelName}`}><span>Pause tracking for <strong>{channelName}</strong>?</span><button className="admin-text-button stop" disabled={busy} onClick={() => { setConfirmingPause(false); void patchChannel(item, { is_active: false }); }}>Pause</button><button ref={cancelPauseRef} className="admin-text-button" disabled={busy} onClick={() => { cancelledPause.current = true; setConfirmingPause(false); }}>Cancel</button></div> : <button ref={trackingRef} data-tracking-channel={text(item, "id")} className={`admin-text-button ${active ? "stop" : "restore"}`} disabled={busy} onClick={() => active ? setConfirmingPause(true) : void patchChannel(item, { is_active: true })}>{busy ? "Saving…" : active ? "Pause tracking" : "Restore tracking"}</button>}<button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   if (tab === "videos") return <tr>
     <td className="video-primary"><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span /> }<div><strong>{text(item, "title")}</strong><a href={text(item, "youtube_url", "url")} target="_blank" rel="noreferrer">Watch video</a></div></div></td><td className="video-channel">{text(item, "channel_name")}</td><td className="video-published"><time title={text(item, "published_at")}>{localTime(value(item, "published_at"), "—")}</time></td><td className="video-ingested optional-column col-video-ingested"><time title={text(item, "created_at", "ingested_at")}>{localTime(value(item, "ingested_at", "created_at"), "—")}</time></td><td className="video-duration optional-column col-video-duration">{duration(value(item, "duration_seconds"))}</td><td className="video-views optional-column col-video-views">{compactNumber(value(item, "view_count", "views"))}</td><td className="video-index">{value(item, "similarity") !== null && <strong>{numberValue(item, "similarity").toFixed(3) + " semantic similarity"}</strong>}<Status>{booleanValue(item, "has_embedding") || Boolean(value(item, "embedding_model")) ? text(item, "embedding_model") || "Embedded" : "Missing"}</Status><small>{numberValue(item, "recommendation_count")} recommendations</small></td><td className="video-actions"><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>

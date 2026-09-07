@@ -124,7 +124,7 @@
 .adminMain :global(.admin-add-channel > summary span),
 .adminMain :global(.admin-performance > details > summary span) {
   color: var(--graphite);
-  font-family: Arial, sans-serif;
+  font-family: var(--font-body), Manrope, Arial, sans-serif;
   font-size: 12px;
   font-weight: 400;
   text-transform: none;
@@ -133,6 +133,22 @@
 .adminMain :global(.admin-add-channel[open] > summary),
 .adminMain :global(.admin-performance > details[open] > summary) {
   color: var(--signal-blue);
+}
+
+.adminMain :global(.admin-add-channel > summary)::before,
+.adminMain :global(.admin-performance > details > summary)::before {
+  border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  content: "";
+  flex: 0 0 8px;
+  height: 8px;
+  margin-right: 12px;
+  transform: rotate(-45deg);
+}
+
+.adminMain :global(.admin-add-channel[open] > summary)::before,
+.adminMain :global(.admin-performance > details[open] > summary)::before {
+  transform: rotate(45deg);
 }
 
 .adminMain :global(.admin-add-channel .admin-resolver) {
