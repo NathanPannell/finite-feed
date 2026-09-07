@@ -49,7 +49,7 @@ jobs:
             echo "- Version: \`$RELEASE_VERSION\`"
             echo "- Candidate: \`$RELEASE_CANDIDATE_SHA\`"
             echo "- Preparation run: \`$GITHUB_RUN_ID\`"
-            echo 'After this run succeeds, use `scripts/prepare-release.mjs` with these values and the authenticated repository token so the PR starts its normal checks.'
+            echo 'After this run succeeds, use the scripts/prepare-release.mjs helper with these values and the authenticated repository token so the PR starts its normal checks.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   validate-release:
