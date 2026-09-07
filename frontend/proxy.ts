@@ -13,6 +13,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
   const decision = adminRouteDecision({
+    appEnvironment: process.env.NEXT_PUBLIC_APP_ENV,
     nodeEnv: process.env.NODE_ENV,
     vercelEnv: process.env.VERCEL_ENV,
     vercelUrl: process.env.VERCEL_URL,
