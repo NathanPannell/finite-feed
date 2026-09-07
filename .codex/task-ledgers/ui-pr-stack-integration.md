@@ -9,6 +9,9 @@ Integrate PR 52 into 56, then 56 into 58 and 58 into 61 while preserving each br
 - Read repository and frontend instructions plus the Impeccable hardening workflow.
 - Merged `origin/codex/homepage-beta` into `codex/match-lab-feature-flag`.
 - Resolved homepage and site chrome conflicts by retaining the polished homepage and applying the runtime Match Lab visibility flag to every homepage Match Lab link.
+- Renamed PR 58's duplicate preview-retry ledger without changing its content.
+- Merged corrected PR 56 into PR 58.
+- Resolved the admin conflicts by retaining the records-first layout, resilient list behavior, and expanded interaction coverage while adding feature visibility state, refresh behavior, controls, and assertions.
 
 ## Active decisions and evidence
 
@@ -18,4 +21,4 @@ Integrate PR 52 into 56, then 56 into 58 and 58 into 61 while preserving each br
 
 ## Next action
 
-Run PR 56 frontend and feature-flag verification, commit it, then integrate it into PR 58.
+Run PR 58 frontend, admin, and feature-flag verification, commit it, then integrate it into PR 61.

@@ -106,26 +106,7 @@ jobs:
             MATCH_LAB_COOKIE_SECRET="$(openssl rand -hex 32)"
             echo "Using an ephemeral Match Lab signing secret for this preview deployment."
           fi
-          railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_BASE_ENVIRONMENT_ID"
-          if railway environment list --json | jq -e --arg name "$PREVIEW_ENVIRONMENT" '.. | objects | select(.name? == $name)' >/dev/null; then
-            echo "Railway environment already exists; updating it in place."
-          else
-            railway environment new "$PREVIEW_ENVIRONMENT" \
-              --copy "$RAILWAY_BASE_ENVIRONMENT_ID" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.DATABASE_URL_UNPOOLED.value "$PREVIEW_DATABASE_URL_UNPOOLED" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.PREVIEW_DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.PREVIEW_DATABASE_URL_UNPOOLED.value "$PREVIEW_DATABASE_URL_UNPOOLED" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.DELIVERY_ENABLED.value false \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value disabled-in-preview \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.TELEGRAM_PRODUCTION_CHAT_ID.value disabled-in-preview \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.DATABASE_URL_UNPOOLED.value "$PREVIEW_DATABASE_URL_UNPOOLED" \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.PREVIEW_DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.DELIVERY_ENABLED.value false \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value disabled-in-preview \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.TELEGRAM_PRODUCTION_CHAT_ID.value disabled-in-preview
-          fi
+          node scripts/create-railway-preview-environment.mjs
 
           node scripts/set-railway-variables.mjs preview
 
