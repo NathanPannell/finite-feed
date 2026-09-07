@@ -38,6 +38,7 @@ type Recommendation = {
 };
 type Notice = { message: string; tone: "error" | "success" } | null;
 type FormNotice = Notice;
+type DeliveryNotice = (Exclude<Notice, null> & { reason?: "timezone" }) | null;
 type SourceState = "idle" | "loading" | "resolved" | "invalid" | "error" | "duplicate";
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -96,7 +97,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [deliveryBaseline, setDeliveryBaseline] = useState<Pick<Profile, "timezone" | "cadence_days" | "delivery_hour" | "recommendation_count"> | null>(null);
-  const [deliveryNotice, setDeliveryNotice] = useState<FormNotice>(null);
+  const [deliveryNotice, setDeliveryNotice] = useState<DeliveryNotice>(null);
   const [memoryNotice, setMemoryNotice] = useState<FormNotice>(null);
   const [accountDelivery, setAccountDelivery] = useState<Account | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<Channel | null>(null);
@@ -197,7 +198,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
     const timezone = canonicalTimezone(profile.timezone);
     if (!timezone) {
       setTimezoneError(true);
-      setDeliveryNotice({ message: "Enter an IANA timezone such as America/Los_Angeles, then save again.", tone: "error" });
+      setDeliveryNotice({ message: "Enter an IANA timezone such as America/Los_Angeles, then save again.", tone: "error", reason: "timezone" });
       return;
     }
     setBusyAction("delivery");
@@ -420,7 +421,7 @@ export function FiniteFeedDashboard({ apiBaseUrl, settings = false }: { apiBaseU
               {accountDelivery && <p className={settingsStyles.formFeedback} role="status">Telegram is {accountDelivery.telegram_connected ? "connected" : "not connected"}.{accountDelivery.delivery_paused ? " Delivery is paused." : ""} Manage the connection below in Account & privacy.</p>}
               {profile ? (
                 <form className="delivery-form" onSubmit={saveDelivery}>
-                  <label htmlFor="delivery-timezone">Timezone</label><input disabled={!!busyAction} id="delivery-timezone" value={profile.timezone} onChange={(event) => { setTimezoneError(false); setProfile({ ...profile, timezone: event.target.value }); }} placeholder="America/Los_Angeles" aria-invalid={timezoneError || undefined} aria-describedby={timezoneError ? "delivery-timezone-error" : undefined} required />{timezoneError && <p id="delivery-timezone-error" className={settingsStyles.formFeedback} data-tone="error" role="alert">Enter an IANA timezone such as America/Los_Angeles.</p>}<label htmlFor="delivery-hour">Delivery hour (local time)</label><select disabled={!!busyAction} id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
+                  <label htmlFor="delivery-timezone">Timezone</label><input disabled={!!busyAction} id="delivery-timezone" value={profile.timezone} onChange={(event) => { const timezone = event.target.value; if (canonicalTimezone(timezone)) { setTimezoneError(false); setDeliveryNotice((current) => current?.reason === "timezone" ? null : current); } setProfile({ ...profile, timezone }); }} placeholder="America/Los_Angeles" aria-invalid={timezoneError || undefined} aria-describedby={timezoneError ? "delivery-timezone-error" : undefined} required />{timezoneError && <p id="delivery-timezone-error" className={settingsStyles.formFeedback} data-tone="error" role="alert">Enter an IANA timezone such as America/Los_Angeles.</p>}<label htmlFor="delivery-hour">Delivery hour (local time)</label><select disabled={!!busyAction} id="delivery-hour" value={profile.delivery_hour} onChange={(event) => setProfile({ ...profile, delivery_hour: Number(event.target.value) })}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select>
                   <fieldset className="day-fieldset">
                     <legend>Delivery days</legend>
                     <div className="day-picker">{days.map((day, index) => {

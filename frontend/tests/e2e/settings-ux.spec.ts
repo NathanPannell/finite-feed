@@ -49,6 +49,11 @@ test("keeps an invalid timezone in place and explains how to correct it", async 
   await expect(timezone).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByText("Enter an IANA timezone such as America/Los_Angeles.", { exact: true })).toBeVisible();
   await expect(timezone).toHaveValue("Pacific time");
+  await timezone.fill("America/Los_Angeles");
+  await expect(timezone).not.toHaveAttribute("aria-invalid");
+  await expect(page.getByText("Enter an IANA timezone such as America/Los_Angeles.", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Enter an IANA timezone such as America/Los_Angeles, then save again.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delivery preferences saved" })).toBeDisabled();
 });
 
 test("keeps settings controls and long source names inside a 320px viewport", async ({ page }, testInfo) => {
