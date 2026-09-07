@@ -90,6 +90,17 @@ for (const viewport of [{ width: 320, height: 800 }, { width: 390, height: 844 }
   });
 }
 
+test("stacks the homepage showcase before the headline can overlap it", async ({ page }) => {
+  await page.setViewportSize({ width: 985, height: 1000 });
+  await page.goto("/");
+  const geometry = await page.locator(".landing-hero").evaluate((hero) => {
+    const headline = hero.querySelector("h1")?.getBoundingClientRect();
+    const showcase = hero.querySelector(".showcase")?.getBoundingClientRect();
+    return { headlineBottom: headline?.bottom ?? 0, showcaseTop: showcase?.top ?? 0 };
+  });
+  expect(geometry.showcaseTop).toBeGreaterThanOrEqual(geometry.headlineBottom);
+});
+
 test("publishes canonical social metadata and a 1200 by 630 PNG", async ({ request }) => {
   const response = await request.get("/", { headers: { "user-agent": "LinkedInBot/1.0" } });
   const html = await response.text();
