@@ -11,6 +11,9 @@ test("staging deploy is serialized and restricted to the staging branch", () => 
   assert.match(workflow, /deploy-staging:/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/staging'/);
   assert.ok((workflow.match(/node scripts\/assert-staging-source\.mjs/g) || []).length >= 3);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /Require successful CI for the exact staging commit/);
+  assert.match(workflow, /node scripts\/wait-for-staging-ci\.mjs\n          node scripts\/assert-staging-source\.mjs/);
 });
 
 test("staging resources are permanent, deterministic, and isolated", () => {
@@ -26,6 +29,9 @@ test("staging resources are permanent, deterministic, and isolated", () => {
   assert.match(workflow, /vercel deploy --target preview/);
   assert.match(workflow, /vercel alias set "\$deployment_url" "\$staging_host"/);
   assert.match(workflow, /Stable staging URL did not resolve to this deployment/);
+  assert.match(workflow, /for admin_path in \/admin \/api\/admin\/summary/);
+  assert.match(workflow, /"\$STAGING_FRONTEND_URL\$admin_path"/);
+  assert.match(workflow, /"\$stable_admin_location" == "\$deployment_url\$admin_path"/);
   assert.match(workflow, /reconcile-neon-staging-domains\.mjs/);
 });
 

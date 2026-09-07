@@ -15,12 +15,15 @@ Success condition: the `deploy-staging` check reuses permanent resources, reject
 ## Completed
 
 - Added a serialized `deploy-staging` workflow restricted to the current `staging` branch head.
+- Added a bounded gate that requires the latest exact-SHA staging push CI run and all four required jobs to succeed before provider mutations, then rechecks the live branch head.
 - Added permanent Neon branch reuse with no expiration and branch-local Auth resolution.
 - Added atomic, retry-safe creation and reuse of an isolated Railway `staging` environment.
+- The initial Railway clone transaction now overrides the worker direct database URL and API Auth/CORS/OIDC values before copied services can start; later reconciliation removes worker-only extras.
 - Added staging variable reconciliation with delivery disabled and production Telegram credentials removed.
 - Added a protected preview-target deployment in the shared Vercel project, explicit stable staging-alias promotion, version/build metadata, exact CORS allowlist, and required Google OAuth smoke.
+- Added live checks that both stable staging admin routes redirect to the exact generated deployment protected by Vercel.
 - Added exact Neon Auth trusted-domain reconciliation so inherited production and obsolete preview origins are removed only from `staging`.
-- Verified all 84 runnable JavaScript contract tests pass (one unrelated test skipped), the new workflow passes pinned actionlint 1.7.7, and YAML parsing succeeds.
+- Verified all 93 runnable JavaScript contract tests pass (one unrelated test skipped), the new workflow passes pinned actionlint 1.7.7, and YAML parsing succeeds.
 
 ## Provider state
 

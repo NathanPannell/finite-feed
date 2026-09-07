@@ -27,15 +27,21 @@ export function stagingEnvironmentCreateArgs(environment) {
   const worker = required(environment, "RAILWAY_WORKER_SERVICE_ID");
   const pooled = required(environment, "STAGING_DATABASE_URL");
   const direct = required(environment, "STAGING_DATABASE_URL_UNPOOLED");
+  const auth = required(environment, "NEON_AUTH_BASE_URL");
+  const frontend = required(environment, "STAGING_FRONTEND_URL");
   return [
     "environment", "new", "staging", "--copy", base,
     "--service-config", api, "variables.DATABASE_URL.value", pooled,
     "--service-config", api, "variables.DATABASE_URL_UNPOOLED.value", direct,
+    "--service-config", api, "variables.NEON_AUTH_BASE_URL.value", auth,
+    "--service-config", api, "variables.FRONTEND_ORIGINS.value", frontend,
+    "--service-config", api, "variables.VERCEL_OIDC_ENVIRONMENT.value", "preview",
     "--service-config", api, "variables.DELIVERY_ENABLED.value", "false",
     "--service-config", api, "variables.PUBLIC_APP_URL.value", "https://staging.invalid",
     "--service-config", api, "variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value", "disabled-in-staging",
     "--service-config", api, "variables.TELEGRAM_PRODUCTION_CHAT_ID.value", "disabled-in-staging",
     "--service-config", worker, "variables.DATABASE_URL.value", pooled,
+    "--service-config", worker, "variables.DATABASE_URL_UNPOOLED.value", direct,
     "--service-config", worker, "variables.DELIVERY_ENABLED.value", "false",
     "--service-config", worker, "variables.PUBLIC_APP_URL.value", "https://staging.invalid",
     "--service-config", worker, "variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value", "disabled-in-staging",

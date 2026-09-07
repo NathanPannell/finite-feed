@@ -6,6 +6,8 @@ const environment = {
   RAILWAY_ENVIRONMENT: "staging", RAILWAY_PROJECT_ID: "project", RAILWAY_BASE_ENVIRONMENT_ID: "production-id",
   RAILWAY_API_SERVICE_ID: "api", RAILWAY_WORKER_SERVICE_ID: "worker",
   STAGING_DATABASE_URL: "pooled", STAGING_DATABASE_URL_UNPOOLED: "direct",
+  NEON_AUTH_BASE_URL: "https://staging-auth.example/app/auth",
+  STAGING_FRONTEND_URL: "https://staging.example",
 };
 
 test("new staging copy receives isolated database and delivery values atomically", () => {
@@ -13,10 +15,19 @@ test("new staging copy receives isolated database and delivery values atomically
   for (const contract of [
     ["api", "variables.DATABASE_URL.value", "pooled"],
     ["api", "variables.DATABASE_URL_UNPOOLED.value", "direct"],
+    ["api", "variables.NEON_AUTH_BASE_URL.value", "https://staging-auth.example/app/auth"],
+    ["api", "variables.FRONTEND_ORIGINS.value", "https://staging.example"],
+    ["api", "variables.VERCEL_OIDC_ENVIRONMENT.value", "preview"],
     ["worker", "variables.DATABASE_URL.value", "pooled"],
+    ["worker", "variables.DATABASE_URL_UNPOOLED.value", "direct"],
     ["worker", "variables.DELIVERY_ENABLED.value", "false"],
     ["api", "variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value", "disabled-in-staging"],
   ]) assert.ok(args.some((value, index) => value === contract[0] && args[index + 1] === contract[1] && args[index + 2] === contract[2]));
+});
+
+test("creation refuses to copy production before staging Auth and CORS are known", () => {
+  assert.throws(() => stagingEnvironmentCreateArgs({ ...environment, NEON_AUTH_BASE_URL: "" }), /NEON_AUTH_BASE_URL/);
+  assert.throws(() => stagingEnvironmentCreateArgs({ ...environment, STAGING_FRONTEND_URL: "" }), /STAGING_FRONTEND_URL/);
 });
 
 test("existing staging environment is reused without creation", async () => {

@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -32,7 +33,7 @@ jobs:
   deploy-staging:
     if: vars.BOOTSTRAP_COMPLETE == 'true' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +53,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/assert-staging-source.mjs
+
+      - name: Require successful CI for the exact staging commit
+        timeout-minutes: 35
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/wait-for-staging-ci.mjs
+          node scripts/assert-staging-source.mjs
 
       - name: Require protected staging branch domain in the shared Vercel project
         env:
@@ -224,6 +233,19 @@ jobs:
                 ;;
               *) echo "Generated staging deployment $admin_path did not require authentication (HTTP $admin_status)." >&2; exit 1 ;;
             esac
+          done
+          for admin_path in /admin /api/admin/summary; do
+            headers_file="$(mktemp)"
+            stable_admin_status="$(curl --silent --show-error --dump-header "$headers_file" --output /dev/null --write-out '%{http_code}' "$STAGING_FRONTEND_URL$admin_path")"
+            [[ "$stable_admin_status" == "307" ]] || {
+              echo "Stable staging $admin_path did not redirect to its protected deployment (HTTP $stable_admin_status)." >&2
+              exit 1
+            }
+            stable_admin_location="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }' "$headers_file")"
+            [[ "$stable_admin_location" == "$deployment_url$admin_path" ]] || {
+              echo "Stable staging $admin_path redirected somewhere other than its exact protected deployment." >&2
+              exit 1
+            }
           done
           [[ "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$STAGING_FRONTEND_URL/match")" == "200" ]] || {
             echo 'Stable staging /match did not return HTTP 200.' >&2
