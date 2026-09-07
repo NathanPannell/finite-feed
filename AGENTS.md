@@ -7,7 +7,7 @@ Read `README.md`, `ARCHITECTURE.md`, `CICD_OPERATIONS.md`, and `INSTALLATION_ISS
 - `staging` and `main` are long-lived. Branch feature work from current `staging` and target feature PRs there; `main` is released production.
 - A different agent must review the final PR head, record its identity and verification evidence, and merge only after required checks pass. Builders must not approve their own work; a shared GitHub account is not evidence of a second reviewer.
 - Once the combined staging deployment passes tests and browser verification, prepare a versioned release PR from `staging` to `main`. Keep the tested candidate fixed during release review; additional commits require renewed verification. Opening a release PR does not authorize merging it.
-- Merge through PRs with merge commits; never force-copy branches or push directly to either long-lived branch. Bring production hotfixes back into staging.
+- Merge through PRs with merge commits; never force-copy branches or push directly to either long-lived branch. Fix released problems through staging and a patch release.
 - Staging has a permanent isolated Neon database/Auth branch and Railway API/worker environment. Never expire or delete these through PR cleanup.
 - Google sign-in must work on staging and production. Missing Google callbacks on disposable PR previews are not failures; use isolated email/password session checks there.
 - Production: `https://finite-feed-rho.vercel.app` and `https://api-production-4f7bb.up.railway.app`. Trust deployed commit/version evidence rather than historical handoff snapshots.

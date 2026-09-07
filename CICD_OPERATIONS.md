@@ -6,9 +6,36 @@ Feature branches target `staging`; a separate reviewing agent checks the final h
 
 Builders implement and test a feature in an isolated branch based on current staging. An independent agent reviews the final diff and verification evidence, records its identity and the reviewed SHA, and merges only after current checks pass and findings are resolved. Changes after review invalidate that evidence. Agents sharing one GitHub identity cannot submit formal self-approvals; record genuine independent-agent review without pretending the account supplies a second reviewer.
 
-After the combined staging deployment settles, verify its exact API/worker commit, browser journeys, Google sign-in, migrations, and frontend version. Prepare a release PR from staging to main with the version, tested SHA, changes, and verification evidence. Keep staging fixed during final release review, or refresh all candidate evidence after another merge. The release PR is a separate decision from merging feature work; do not merge it merely because it was opened. Merge with a merge commit and retain both long-lived branches. Production hotfixes must be brought back into staging before the next release.
+After the combined staging deployment settles, verify its exact API/worker commit, browser journeys, Google sign-in, migrations, and frontend version. Prepare a release PR from staging to main with the version, tested SHA, changes, and verification evidence. Keep staging fixed during final release review, or refresh all candidate evidence after another merge. The release PR is a separate decision from merging feature work; do not merge it merely because it was opened. Merge with a merge commit and retain both long-lived branches. Fix released problems through staging and a patch release; emergency changes must not bypass release validation.
 
 Staging uses a permanent Neon database/Auth branch and permanent Railway API/worker environment. PR closure and expiry cleanup must never delete or reset them. Its credentials, accounts, and data remain separate from production, and its worker must not send production Telegram messages. Register the persistent staging Google callback once; disposable PR Google callbacks remain optional.
+
+Staging deploys as a preview in the existing `finite-feed` Vercel project, with `finite-feed-staging.vercel.app` assigned to Git branch `staging`. Production retains `finite-feed-rho.vercel.app`. The public staging domain redirects administrator routes to the protected generated deployment. Frontend `/api/version` and the footer identify the version, environment, and commit.
+
+## Preparing a numbered release
+
+Update `VERSION` through an ordinary PR into staging before preparing the next release. After that exact staging commit passes CI, its persistent deployment, and independent browser review, attest it:
+
+```powershell
+$candidate = gh api repos/NathanPannell/finite-feed/git/ref/heads/staging --jq .object.sha
+$version = (Get-Content VERSION -Raw).Trim()
+gh workflow run release.yml --ref staging -f "version=$version" -f "candidate_sha=$candidate"
+```
+
+Wait for the matching manual **Release policy** run to succeed, then use its run ID below from a checkout of the candidate. The local authenticated helper creates or refreshes the PR so GitHub runs its normal PR checks; it does not merge production.
+
+```powershell
+$env:GITHUB_TOKEN = gh auth token
+$env:GITHUB_REPOSITORY = 'NathanPannell/finite-feed'
+$env:GITHUB_REF = 'refs/heads/staging'
+$env:GITHUB_SHA = $candidate
+$env:RELEASE_CANDIDATE_SHA = $candidate
+$env:RELEASE_VERSION = $version
+$env:RELEASE_PREPARATION_RUN = '<successful-run-id>'
+try { node scripts/prepare-release.mjs } finally { Remove-Item Env:GITHUB_TOKEN }
+```
+
+Add the release changes and verification evidence to the PR while preserving its release marker. Any newer staging commit requires fresh verification and preparation. After explicit release approval, merge staging into main with a merge commit. Successful production verification publishes `v<VERSION>` at the deployed commit; a failed deployment does not publish the tag.
 
 ## GitHub protection
 
