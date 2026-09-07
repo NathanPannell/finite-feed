@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanupPreviews, cleanupVercel, previewTargets } from "./cleanup-previews.mjs";
+import { cleanupPreviews, cleanupVercel, previewTargets, railwayCommand } from "./cleanup-previews.mjs";
 
 const environment = {
   PREVIEW_PULL_REQUEST: "21",
@@ -38,6 +38,7 @@ test("Vercel pagination removes every exactly tagged deployment and nothing else
   ];
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url: String(url), options });
+    assert.ok(options.signal instanceof AbortSignal);
     if (options.method === "DELETE") return json({}, 204);
     return json(pages.shift());
   };
@@ -101,4 +102,37 @@ test("all providers and matching resources are attempted before failures are rep
   assert.equal(deletes.length, 3);
   assert.ok(deletes.some((url) => url.includes("br-preview-21")));
   assert.ok(deletes.some((url) => url.includes("dpl_success")));
+});
+
+test("a timed-out Railway command cannot prevent Neon and Vercel cleanup", async () => {
+  const providerDeletes = [];
+  const events = [];
+  const run = (_command, _args, options, callback) => {
+    assert.equal(options.timeout, 30_000);
+    assert.equal(options.killSignal, "SIGKILL");
+    setImmediate(() => {
+      events.push("railway timeout");
+      callback(Object.assign(new Error("timed out with sensitive details"), { code: "ETIMEDOUT" }), "", "sensitive stderr");
+    });
+  };
+  const execute = (args) => railwayCommand(args, run);
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url);
+    assert.ok(options.signal instanceof AbortSignal);
+    if (options.method === "DELETE") {
+      providerDeletes.push(value);
+      events.push(value.includes("api.vercel.com") ? "vercel delete" : "neon delete");
+      return json({}, 204);
+    }
+    if (value.includes("api.vercel.com")) return json({ deployments: [
+      { uid: "dpl_timeoutCase", projectId: "vercel-project", target: "preview", meta: { previewRepository: "owner/repository", previewPullRequest: "21" } },
+    ], pagination: {} });
+    return json({ branches: [{ id: "br-timeout-case", name: "preview/pr-21" }], pagination: {} });
+  };
+  await assert.rejects(() => cleanupPreviews({ environment, execute, fetchImpl }), /Railway link --project failed/);
+  assert.equal(providerDeletes.length, 2);
+  assert.ok(events.indexOf("neon delete") < events.indexOf("railway timeout"));
+  assert.ok(events.indexOf("vercel delete") < events.indexOf("railway timeout"));
+  assert.ok(providerDeletes.some((url) => url.includes("br-timeout-case")));
+  assert.ok(providerDeletes.some((url) => url.includes("dpl_timeoutCase")));
 });

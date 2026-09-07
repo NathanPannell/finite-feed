@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 function required(environment, key) {
@@ -28,8 +28,17 @@ function findNames(value, names = new Set()) {
   return names;
 }
 
+async function timedFetch(fetchImpl, url, options = {}, timeoutMs = 20_000) {
+  return fetchImpl(url, { ...options, signal: options.signal || AbortSignal.timeout(timeoutMs) });
+}
+
 async function responseJson(fetchImpl, url, options, operation) {
-  const response = await fetchImpl(url, options);
+  let response;
+  try {
+    response = await timedFetch(fetchImpl, url, options);
+  } catch {
+    throw new Error(`${operation} timed out or failed`);
+  }
   if (!response.ok) throw new Error(`${operation} failed with HTTP ${response.status}`);
   try {
     return await response.json();
@@ -39,10 +48,10 @@ async function responseJson(fetchImpl, url, options, operation) {
 }
 
 export async function cleanupRailway({ environment, targets, execute }) {
-  execute(["link", "--project", required(environment, "RAILWAY_PROJECT_ID"), "--environment", required(environment, "RAILWAY_BASE_ENVIRONMENT_ID")]);
+  await execute(["link", "--project", required(environment, "RAILWAY_PROJECT_ID"), "--environment", required(environment, "RAILWAY_BASE_ENVIRONMENT_ID")]);
   let listing;
   try {
-    listing = JSON.parse(execute(["environment", "list", "--json"]));
+    listing = JSON.parse(await execute(["environment", "list", "--json"]));
   } catch {
     throw new Error("Could not list Railway preview environments");
   }
@@ -53,7 +62,7 @@ export async function cleanupRailway({ environment, targets, execute }) {
     const name = `pr-${pr}`;
     if (!names.has(name)) continue;
     try {
-      execute(["environment", "delete", name, "--yes"]);
+      await execute(["environment", "delete", name, "--yes"]);
       removed += 1;
     } catch {
       failures.push(`Railway ${name}`);
@@ -81,7 +90,7 @@ export async function cleanupNeon({ environment, targets, fetchImpl }) {
       if (!match || !targets.has(match[1]) || typeof branch.id !== "string" || !/^br-[a-z0-9-]+$/.test(branch.id)) continue;
       const deleteUrl = new URL(`https://console.neon.tech/api/v2/projects/${encodeURIComponent(project)}/branches/${encodeURIComponent(branch.id)}`);
       try {
-        const response = await fetchImpl(deleteUrl, { method: "DELETE", headers });
+        const response = await timedFetch(fetchImpl, deleteUrl, { method: "DELETE", headers });
         if (!response.ok && response.status !== 404) throw new Error();
         removed += 1;
       } catch {
@@ -142,7 +151,7 @@ export async function cleanupVercel({ environment, targets, fetchImpl }) {
     try {
       const deleteUrl = new URL(`https://api.vercel.com/v13/deployments/${encodeURIComponent(id)}`);
       deleteUrl.searchParams.set("teamId", team);
-      const response = await fetchImpl(deleteUrl, { method: "DELETE", headers });
+      const response = await timedFetch(fetchImpl, deleteUrl, { method: "DELETE", headers });
       if (!response.ok && ![404, 410].includes(response.status)) throw new Error();
       removed += 1;
     } catch {
@@ -165,15 +174,18 @@ export async function cleanupPreviews({ environment, execute, fetchImpl }) {
   return { railway: results[0].value, neon: results[1].value, vercel: results[2].value };
 }
 
-function railway(args) {
-  const result = spawnSync("railway", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  if (result.error || result.status !== 0) throw new Error(`Railway ${args.slice(0, 2).join(" ")} failed`);
-  return result.stdout;
+export function railwayCommand(args, run = execFile, timeoutMs = 30_000) {
+  return new Promise((resolve, reject) => {
+    run("railway", args, { encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", windowsHide: true }, (error, stdout) => {
+      if (error) reject(new Error(`Railway ${args.slice(0, 2).join(" ")} failed`));
+      else resolve(stdout);
+    });
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const counts = await cleanupPreviews({ environment: process.env, execute: railway, fetchImpl: fetch });
+    const counts = await cleanupPreviews({ environment: process.env, execute: railwayCommand, fetchImpl: fetch });
     console.log(`Preview cleanup completed (Railway ${counts.railway}, Neon ${counts.neon}, Vercel ${counts.vercel}).`);
   } catch (error) {
     console.error(error.message);
