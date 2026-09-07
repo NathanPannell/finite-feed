@@ -259,6 +259,8 @@ def smoke(preview_url: str, *, auth_only: bool = False) -> None:
         client = PreviewClient(executable, preview_url, frontend, Path(temp), credential_arguments)
         client.require_preview_deployment()
         account_created = False
+        account_id: str | None = None
+        authenticated = False
         primary_failure: BaseException | None = None
         try:
             client.request("Native sign-up", "/api/auth/sign-up/email", "POST", {
@@ -269,6 +271,9 @@ def smoke(preview_url: str, *, auth_only: bool = False) -> None:
             if not isinstance(first, dict) or first.get("email") != email or not first.get("id"):
                 raise SmokeFailure("Authenticated account read returned the wrong identity")
             first_id = first["id"]
+            account_id = first_id
+            authenticated = True
+            authenticated = False
             client.request("Native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})
             client.request("Signed-out session check", "/api/personal/account", expected={401})
             client.request("Native sign-in", "/api/auth/sign-in/email", "POST", {
@@ -277,6 +282,7 @@ def smoke(preview_url: str, *, auth_only: bool = False) -> None:
             second = client.request("Restored account read", "/api/personal/account")
             if not isinstance(second, dict) or second.get("id") != first_id or second.get("email") != email:
                 raise SmokeFailure("Native sign-in did not restore the same identity")
+            authenticated = True
             if not auth_only:
                 complete_synthetic_onboarding(client)
         except BaseException as exc:
@@ -285,11 +291,32 @@ def smoke(preview_url: str, *, auth_only: bool = False) -> None:
         finally:
             if account_created:
                 cleanup_failed = False
-                try:
-                    client.request("Synthetic app-account cleanup", "/api/personal/account", "DELETE", {
-                        "confirmation": "DELETE",
-                    }, {204})
-                except Exception:
+                cleanup_authenticated = authenticated
+                if not cleanup_authenticated:
+                    try:
+                        client.request("Cleanup native sign-in", "/api/auth/sign-in/email", "POST", {
+                            "email": email, "password": password,
+                        }, {200, 201})
+                        cleanup_account = client.request("Cleanup authenticated account read", "/api/personal/account")
+                        if (
+                            not isinstance(cleanup_account, dict)
+                            or not cleanup_account.get("id")
+                            or cleanup_account.get("email") != email
+                            or (account_id is not None and cleanup_account["id"] != account_id)
+                        ):
+                            raise SmokeFailure("Cleanup native sign-in did not restore the same identity")
+                        account_id = cleanup_account["id"]
+                        cleanup_authenticated = True
+                    except Exception:
+                        cleanup_failed = True
+                if cleanup_authenticated:
+                    try:
+                        client.request("Synthetic app-account cleanup", "/api/personal/account", "DELETE", {
+                            "confirmation": "DELETE",
+                        }, {204})
+                    except Exception:
+                        cleanup_failed = True
+                else:
                     cleanup_failed = True
                 try:
                     client.request("Final native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})

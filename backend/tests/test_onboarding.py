@@ -82,7 +82,7 @@ def test_fallback_profile_concatenates_every_input_without_rewriting():
     assert profile == "Technology & AI; Practical skills; Detailed & rigorous.\n\n" + own_words
 
 
-@pytest.mark.parametrize("failure", ["no_key", "http", "timeout", "malformed"])
+@pytest.mark.parametrize("failure", ["no_key", "quota", "http", "timeout", "malformed"])
 def test_synthesis_failures_persist_and_accept_exact_input_fallback(monkeypatch, failure):
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -104,9 +104,11 @@ def test_synthesis_failures_persist_and_accept_exact_input_fallback(monkeypatch,
             monkeypatch.setattr(onboarding, "get_settings", lambda: SimpleNamespace(
                 openrouter_api_key="" if failure == "no_key" else "test",
                 openrouter_model="test/model", openrouter_base_url="https://example.test",
-                public_app_url="https://app.example.test", model_daily_request_limit=10,
+                public_app_url="https://app.example.test",
+                model_daily_request_limit=0 if failure == "quota" else 10,
             ))
-            monkeypatch.setattr(onboarding, "reserve_request", lambda *args: conn.commit())
+            if failure != "quota":
+                monkeypatch.setattr(onboarding, "reserve_request", lambda *args: conn.commit())
 
             def fail(*args):
                 if failure == "http":
@@ -117,9 +119,11 @@ def test_synthesis_failures_persist_and_accept_exact_input_fallback(monkeypatch,
                     raise httpx.ReadTimeout("timed out")
                 raise ValueError("malformed response")
 
-            monkeypatch.setattr(onboarding, "OpenRouterClient", lambda *args: SimpleNamespace(
-                synthesize_preferences=fail, close=lambda: None,
-            ))
+            provider_calls = []
+            def client(*args):
+                provider_calls.append(args)
+                return SimpleNamespace(synthesize_preferences=fail, close=lambda: None)
+            monkeypatch.setattr(onboarding, "OpenRouterClient", client)
             state = synthesize(user_id, conn)
             expected = fallback_preference_profile(answers, own_words)
             assert state["draft_profile"] == expected
@@ -136,6 +140,11 @@ def test_synthesis_failures_persist_and_accept_exact_input_fallback(monkeypatch,
             assert audit["action"] == "synthesized"
             assert audit["payload"]["fallback"] is True
             assert audit["payload"]["profile"] == expected
+            assert audit["payload"]["fallback_reason"] == {
+                "no_key": "missing_api_key", "quota": "request_budget_exhausted",
+                "http": "HTTPStatusError", "timeout": "ReadTimeout", "malformed": "ValueError",
+            }[failure]
+            assert bool(provider_calls) is (failure not in {"no_key", "quota"})
         finally:
             conn.rollback()
             conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))

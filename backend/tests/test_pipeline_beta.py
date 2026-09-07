@@ -46,7 +46,7 @@ def test_model_rationale_is_trimmed_to_one_sentence():
         client.close()
 
 
-@pytest.mark.parametrize("failure", ["no_key", "http", "timeout", "malformed"])
+@pytest.mark.parametrize("failure", ["no_key", "quota", "http", "timeout", "malformed"])
 def test_recommendation_provider_failures_persist_nearest_cosine_match(monkeypatch, failure):
     import os
     import psycopg
@@ -82,7 +82,8 @@ def test_recommendation_provider_failures_persist_nearest_cosine_match(monkeypat
                 recs.ScoredVideo({"id": nearest_id, "youtube_video_id": str(nearest_id), "title": "Nearest", "speaker": None, "channel_name": "test", "description": "Nearest", "published_at": None}, 0.91, 0.0, 0.65),
             ]
             monkeypatch.setattr(recs, "retrieve_shortlist", lambda *args, **kwargs: shortlist)
-            monkeypatch.setattr(recs, "reserve_request", lambda connection, *args: connection.commit())
+            if failure != "quota":
+                monkeypatch.setattr(recs, "reserve_request", lambda connection, *args: connection.commit())
 
             def fail(*args):
                 if failure == "http":
@@ -92,10 +93,16 @@ def test_recommendation_provider_failures_persist_nearest_cosine_match(monkeypat
                     raise httpx.ReadTimeout("timed out")
                 raise ValueError("malformed")
 
-            if failure != "no_key":
-                monkeypatch.setattr(recs, "OpenRouterClient", lambda *args: SimpleNamespace(choose=fail, close=lambda: None))
+            provider_calls = []
+            def client(*args):
+                provider_calls.append(args)
+                return SimpleNamespace(choose=fail, close=lambda: None)
+            monkeypatch.setattr(recs, "OpenRouterClient", client)
             encoder = SimpleNamespace(model_name="test", model_revision="test", dimensions=384)
-            settings = Settings(_env_file=None, OPENROUTER_API_KEY="" if failure == "no_key" else "test")
+            settings = Settings(
+                _env_file=None, OPENROUTER_API_KEY="" if failure == "no_key" else "test",
+                MODEL_DAILY_REQUEST_LIMIT=0 if failure == "quota" else 40,
+            )
             recommendation_id = recs.generate_recommendation(conn, settings, user_id, True, encoder)
             row = conn.execute(
                 "SELECT video_id,rationale,evidence FROM recommendations WHERE id=%s", (recommendation_id,),
@@ -104,8 +111,10 @@ def test_recommendation_provider_failures_persist_nearest_cosine_match(monkeypat
             assert "cosine similarity" in row["rationale"]
             assert row["evidence"]["reranker_fallback"] is True
             assert row["evidence"]["reranker_error"] == ("missing_api_key" if failure == "no_key" else {
-                "http": "HTTPStatusError", "timeout": "ReadTimeout", "malformed": "ValueError",
+                "quota": "request_budget_exhausted", "http": "HTTPStatusError",
+                "timeout": "ReadTimeout", "malformed": "ValueError",
             }[failure])
+            assert bool(provider_calls) is (failure not in {"no_key", "quota"})
         finally:
             conn.rollback()
             conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))

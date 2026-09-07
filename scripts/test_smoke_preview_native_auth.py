@@ -11,6 +11,14 @@ assert SPEC.loader
 SPEC.loader.exec_module(smoke)
 
 
+def isolated_smoke_workspace(tmp_path, monkeypatch):
+    project_file = tmp_path / "frontend" / ".vercel" / "project.json"
+    project_file.parent.mkdir(parents=True)
+    project_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(smoke, "__file__", str(tmp_path / "scripts" / "smoke-preview-native-auth.py"))
+    monkeypatch.setattr(smoke.shutil, "which", lambda name: "vercel")
+
+
 def test_target_validation_accepts_generated_preview_and_rejects_production_or_lookalikes():
     assert smoke.validate_preview_url(
         "https://finite-feed-git-preview-nathan-projects.vercel.app/"
@@ -218,10 +226,7 @@ def test_full_onboarding_accepts_audited_fallback_and_preserves_verbatim_respons
 
 def test_smoke_cleans_up_and_signs_out_after_synthesis_failure(monkeypatch, tmp_path):
     clients = []
-    project_file = tmp_path / "frontend" / ".vercel" / "project.json"
-    project_file.parent.mkdir(parents=True)
-    project_file.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(smoke, "__file__", str(tmp_path / "scripts" / "smoke-preview-native-auth.py"))
+    isolated_smoke_workspace(tmp_path, monkeypatch)
 
     class FakeClient:
         def __init__(self, *args):
@@ -250,12 +255,146 @@ def test_smoke_cleans_up_and_signs_out_after_synthesis_failure(monkeypatch, tmp_
                 return {"current_step": "profile_review"}
             raise AssertionError((operation, path, method, payload))
     monkeypatch.setattr(smoke, "PreviewClient", FakeClient)
-    monkeypatch.setattr(smoke.shutil, "which", lambda name: "vercel")
 
     with pytest.raises(smoke.SmokeFailure, match="synthesis failed"):
         smoke.smoke("https://finite-feed-test.vercel.app")
 
     assert clients[0].calls[-2:] == ["Synthetic app-account cleanup", "Final native sign-out"]
+
+
+def test_smoke_reauthenticates_before_cleanup_when_primary_sign_in_fails(monkeypatch, tmp_path):
+    isolated_smoke_workspace(tmp_path, monkeypatch)
+    clients = []
+
+    class FakeClient:
+        def __init__(self, *args):
+            self.calls = []
+            self.sign_in_attempts = 0
+            clients.append(self)
+
+        def require_preview_deployment(self):
+            pass
+
+        def request(self, operation, path, method="GET", payload=None, expected=None):
+            self.calls.append(operation)
+            if operation == "Native sign-up":
+                self.email = payload["email"]
+                return {}
+            if operation in {"Authenticated account read", "Cleanup authenticated account read"}:
+                return {"id": "account-id", "email": self.email}
+            if operation in {"Native sign-in", "Cleanup native sign-in"}:
+                self.sign_in_attempts += 1
+                if self.sign_in_attempts == 1:
+                    raise smoke.SmokeFailure("primary sign-in unavailable")
+                return {}
+            if operation in {"Native sign-out", "Signed-out session check", "Final native sign-out", "Synthetic app-account cleanup"}:
+                return None
+            raise AssertionError((operation, path, method, payload))
+
+    monkeypatch.setattr(smoke, "PreviewClient", FakeClient)
+    with pytest.raises(smoke.SmokeFailure, match="primary sign-in unavailable"):
+        smoke.smoke("https://finite-feed-test.vercel.app")
+    assert clients[0].calls[-4:] == [
+        "Cleanup native sign-in", "Cleanup authenticated account read", "Synthetic app-account cleanup", "Final native sign-out",
+    ]
+
+
+def test_smoke_reports_cleanup_auth_failure_without_deleting(monkeypatch, tmp_path, capsys):
+    isolated_smoke_workspace(tmp_path, monkeypatch)
+    clients = []
+
+    class FakeClient:
+        def __init__(self, *args):
+            self.calls = []
+            clients.append(self)
+
+        def require_preview_deployment(self):
+            pass
+
+        def request(self, operation, path, method="GET", payload=None, expected=None):
+            self.calls.append(operation)
+            if operation == "Native sign-up":
+                self.email = payload["email"]
+                return {}
+            if operation == "Authenticated account read":
+                return {"id": "account-id", "email": self.email}
+            if operation in {"Native sign-in", "Cleanup native sign-in"}:
+                raise smoke.SmokeFailure("sign-in unavailable")
+            if operation in {"Native sign-out", "Signed-out session check", "Final native sign-out"}:
+                return None
+            raise AssertionError((operation, path, method, payload))
+
+    monkeypatch.setattr(smoke, "PreviewClient", FakeClient)
+    with pytest.raises(smoke.SmokeFailure, match="sign-in unavailable"):
+        smoke.smoke("https://finite-feed-test.vercel.app")
+    assert "Synthetic app-account cleanup" not in clients[0].calls
+    assert "cleanup failed after a primary failure" in capsys.readouterr().err
+
+
+def test_smoke_reauthenticates_when_signout_clears_auth_before_failing(monkeypatch, tmp_path):
+    isolated_smoke_workspace(tmp_path, monkeypatch)
+    clients = []
+
+    class FakeClient:
+        def __init__(self, *args):
+            self.calls = []
+            clients.append(self)
+
+        def require_preview_deployment(self):
+            pass
+
+        def request(self, operation, path, method="GET", payload=None, expected=None):
+            self.calls.append(operation)
+            if operation == "Native sign-up":
+                self.email = payload["email"]
+                return {}
+            if operation in {"Authenticated account read", "Cleanup authenticated account read"}:
+                return {"id": "account-id", "email": self.email}
+            if operation == "Native sign-out":
+                raise smoke.SmokeFailure("sign-out response lost")
+            if operation in {"Cleanup native sign-in", "Synthetic app-account cleanup", "Final native sign-out"}:
+                return None
+            raise AssertionError((operation, path, method, payload))
+
+    monkeypatch.setattr(smoke, "PreviewClient", FakeClient)
+    with pytest.raises(smoke.SmokeFailure, match="sign-out response lost"):
+        smoke.smoke("https://finite-feed-test.vercel.app")
+    assert clients[0].calls[-4:] == [
+        "Cleanup native sign-in", "Cleanup authenticated account read", "Synthetic app-account cleanup", "Final native sign-out",
+    ]
+
+
+def test_smoke_recovers_cleanup_identity_after_initial_account_read_failure(monkeypatch, tmp_path):
+    isolated_smoke_workspace(tmp_path, monkeypatch)
+    clients = []
+
+    class FakeClient:
+        def __init__(self, *args):
+            self.calls = []
+            clients.append(self)
+
+        def require_preview_deployment(self):
+            pass
+
+        def request(self, operation, path, method="GET", payload=None, expected=None):
+            self.calls.append(operation)
+            if operation == "Native sign-up":
+                self.email = payload["email"]
+                return {}
+            if operation == "Authenticated account read":
+                raise smoke.SmokeFailure("initial account read unavailable")
+            if operation == "Cleanup authenticated account read":
+                return {"id": "recovered-account-id", "email": self.email}
+            if operation in {"Cleanup native sign-in", "Synthetic app-account cleanup", "Final native sign-out"}:
+                return None
+            raise AssertionError((operation, path, method, payload))
+
+    monkeypatch.setattr(smoke, "PreviewClient", FakeClient)
+    with pytest.raises(smoke.SmokeFailure, match="initial account read unavailable"):
+        smoke.smoke("https://finite-feed-test.vercel.app")
+    assert clients[0].calls[-4:] == [
+        "Cleanup native sign-in", "Cleanup authenticated account read", "Synthetic app-account cleanup", "Final native sign-out",
+    ]
 
 
 def test_auth_only_is_an_explicit_opt_in():
