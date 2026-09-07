@@ -834,7 +834,7 @@ test("keeps the same navigation and footer across public routes", async ({ page 
     const primary = page.getByRole("navigation", {name: "Primary navigation"});
     await expect(primary.getByRole("link", {name: "My feed", exact: true})).toHaveAttribute("href", "/app");
     await expect(primary.getByRole("link", {name: "Match Lab", exact: true})).toHaveAttribute("href", "/match");
-    await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/app/settings");
+    await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/settings");
     const footer = page.getByRole("contentinfo");
     await expect(footer.getByRole("link", {name: "Privacy & your data"})).toHaveAttribute("href", "/privacy");
     await expect(footer.getByText("Private beta", {exact: true})).toBeVisible();
