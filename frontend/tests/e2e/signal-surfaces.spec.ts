@@ -327,13 +327,12 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
     }
     await expect(page.getByText("Synthetic viewer profile.")).toBeVisible();
     await expect(page.getByText("Assistant-curated video.")).toBeVisible();
-    await expect(page.getByText("Yes means a clear fit.")).toBeVisible();
-    await expect(page.getByText("No means a clear mismatch.")).toBeVisible();
-    await expect(page.getByText(/Unsure means the evidence is mixed/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your judgment" })).toBeVisible();
+    await expect(page.getByText("Choose Unsure when the evidence is incomplete.")).toBeVisible();
 
     const geometry = await page.locator(".match-choices").evaluate((choices) => ({
       documentTop: choices.getBoundingClientRect().top + window.scrollY,
-      firstChoiceBottom: choices.querySelector("button")?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
+      firstChoiceBottom: choices.querySelector("label")?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
       navigationTop: document.querySelector(".signal-mobile-nav")?.getBoundingClientRect().top ?? 0,
       scrollWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -341,7 +340,7 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
     expect(geometry.documentTop).toBeLessThanOrEqual(viewport.height);
     expect(geometry.firstChoiceBottom).toBeLessThanOrEqual(geometry.navigationTop);
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);
-    await expect(page.getByRole("button", { name: "Yes", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Yes", exact: true })).toBeVisible();
 
     const toggle = page.getByRole("button", { name: "Show full description" });
     await expect(toggle).toBeVisible();
@@ -360,7 +359,7 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
     await expect(page.getByRole("button", { name: "Show full description" })).toBeFocused();
 
     for (let index = 0; index < cards.length; index += 1) {
-      await page.getByRole("button", { name: index === 1 ? "Unsure" : "Yes", exact: true }).click();
+      await page.getByRole("radio", { name: index === 1 ? "Unsure" : "Yes", exact: true }).click();
       const reason = page.getByLabel("Reason Optional. It is useful for close calls.");
       await reason.fill(`Reason for pair ${index + 1}`);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -369,13 +368,13 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
         const viewer = page.getByRole("heading", { name: "Viewer" });
         await expect(viewer).toBeFocused();
         await expect(viewer).toBeInViewport();
-        const nextPairControls = await page.getByRole("button", { name: "Yes", exact: true }).evaluate((firstChoice) => ({
-          firstChoiceBottom: firstChoice.getBoundingClientRect().bottom,
+        const nextPairControls = await page.getByRole("radio", { name: "Yes", exact: true }).evaluate((firstChoice) => ({
+          firstChoiceBottom: firstChoice.closest("label")?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
           navigationTop: document.querySelector(".signal-mobile-nav")?.getBoundingClientRect().top ?? 0,
         }));
         expect(nextPairControls.firstChoiceBottom).toBeLessThanOrEqual(nextPairControls.navigationTop);
-        await expect(page.getByRole("button", { name: "Yes", exact: true })).toHaveAttribute("aria-pressed", "false");
-        await expect(page.getByRole("button", { name: "Unsure", exact: true })).toHaveAttribute("aria-pressed", "false");
+        await expect(page.getByRole("radio", { name: "Yes", exact: true })).not.toBeChecked();
+        await expect(page.getByRole("radio", { name: "Unsure", exact: true })).not.toBeChecked();
         await expect(page.getByLabel("Reason Optional. It is useful for close calls.")).toHaveValue("");
         await expect(page.getByRole("button", { name: "Show full description" })).toHaveAttribute("aria-expanded", "false");
       }
@@ -405,8 +404,9 @@ test("preserves the desktop review columns", async ({ page }) => {
     videoTop: video.getBoundingClientRect().top,
     actionTop: action.getBoundingClientRect().top,
   }));
-  expect(geometry.evidenceShare).toBeGreaterThan(.74);
-  expect(geometry.actionShare).toBeLessThan(.26);
+  expect(geometry.evidenceShare).toBeGreaterThan(.68);
+  expect(geometry.actionShare).toBeGreaterThan(.26);
+  expect(geometry.actionShare).toBeLessThan(.32);
   expect(Math.max(geometry.viewerTop, geometry.videoTop, geometry.actionTop) - Math.min(geometry.viewerTop, geometry.videoTop, geometry.actionTop)).toBeLessThanOrEqual(1);
 });
 
@@ -441,7 +441,7 @@ test("uses plain loading and retry states and announces saving", async ({ page }
   await page.getByRole("button", { name: "Try again" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "A recovered pair" })).toBeVisible();
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByRole("button", { name: "Save judgment" }).click({ noWaitAfter: true });
   await expect(page.locator(".sr-only[role='status']")).toHaveText("Saving judgment.");
 });
@@ -472,7 +472,7 @@ test("keeps a saved answer when loading the following pair fails", async ({ page
   });
 
   await page.goto("/match/review");
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByLabel("Reason Optional. It is useful for close calls.").fill("This answer should be saved once.");
   await page.getByRole("button", { name: "Save judgment" }).click();
   await expect(page.locator(".signal-notice.match-notice")).toHaveText("Answer saved.");
@@ -483,7 +483,7 @@ test("keeps a saved answer when loading the following pair fails", async ({ page
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "The pair after retry" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Viewer" })).toBeFocused();
-  await expect(page.getByRole("button", { name: "Yes", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("radio", { name: "Yes", exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Reason Optional. It is useful for close calls.")).toHaveValue("");
   expect(postRequests).toBe(1);
 });
@@ -521,7 +521,7 @@ test("keeps a debug assessment until explicit keyboard advancement", async ({ pa
 
   await page.goto("/match/review");
   await expect(page.getByText("Model assessment · debug")).toHaveCount(0);
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByRole("button", { name: "Save judgment" }).click();
   await expect(page.getByRole("heading", { name: "Predicted fit: yes" })).toBeVisible();
   await expect(page.getByText(/Close call.*Direct evidence/)).toBeVisible();
@@ -565,7 +565,7 @@ test("replaces an unavailable pair after a 409 and clears its unsaved judgment",
 
   await page.goto("/match/review");
   await expect(page.getByRole("heading", { name: "The stale pair" })).toBeVisible();
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByLabel("Reason Optional. It is useful for close calls.").fill("This rationale belongs only to the stale pair.");
   await page.getByRole("button", { name: "Save judgment" }).click();
 
@@ -574,7 +574,7 @@ test("replaces an unavailable pair after a 409 and clears its unsaved judgment",
   await expect(page.getByRole("heading", { name: "A fresh pair to review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Viewer" })).toBeFocused();
   await expect(page.getByRole("heading", { name: "Viewer" })).toBeInViewport();
-  await expect(page.getByRole("button", { name: "Yes", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("radio", { name: "Yes", exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Reason Optional. It is useful for close calls.")).toHaveValue("");
   expect(annotationBody).toEqual({
     profile_id: "profile-1",
@@ -612,13 +612,13 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
   });
 
   await page.goto("/match/review");
-  await page.getByRole("button", { name: "No", exact: true }).click();
+  await page.getByRole("radio", { name: "No", exact: true }).click();
   const reason = page.getByLabel("Reason Optional. It is useful for close calls.");
   await reason.fill("The evidence does not support this viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();
 
   await expect(page.locator(".match-notice[role='alert']")).toHaveText("Your answer was not saved. Try again.");
-  await expect(page.getByRole("button", { name: "No", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("radio", { name: "No", exact: true })).toBeChecked();
   await expect(reason).toHaveValue("The evidence does not support this viewer's stated interest.");
   await page.getByRole("button", { name: "Save judgment" }).click();
 

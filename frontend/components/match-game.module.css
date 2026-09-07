@@ -1,0 +1,290 @@
+.workspace {
+  grid-template-columns: minmax(250px, 1.05fr) minmax(330px, 1.45fr) minmax(290px, .95fr);
+}
+
+.profile,
+.video,
+.response {
+  min-width: 0;
+}
+
+.judgmentTitle {
+  margin-bottom: 18px;
+}
+
+.response .judgmentGroup {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.response .judgmentGroup > legend {
+  color: var(--paper-high);
+  font-family: var(--font-display), "Barlow Condensed", Arial, sans-serif;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.05;
+  margin: 0;
+  max-width: 13ch;
+  text-transform: none;
+}
+
+.judgmentHelp {
+  color: #c9c8c1;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 10px 0 18px;
+}
+
+.choiceGrid {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+.response .choice {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--paper-high);
+  color: var(--paper-high);
+  cursor: pointer;
+  display: grid;
+  gap: 3px 10px;
+  grid-template-columns: 72px minmax(0, 1fr);
+  min-height: 58px;
+  padding: 10px 12px;
+  position: relative;
+  text-transform: none;
+}
+
+.response .choice + .choice {
+  border-top: 0;
+}
+
+.choice:hover {
+  background: #ffffff12;
+}
+
+.choice:has(.radio:checked) {
+  background: var(--paper-high);
+  box-shadow: inset 0 0 0 3px var(--signal-yellow);
+  color: var(--carbon);
+}
+
+.choice:has(.radio:focus-visible) {
+  outline: 3px solid var(--signal-yellow);
+  outline-offset: 3px;
+  z-index: 1;
+}
+
+.choice:has(.radio:disabled) {
+  cursor: default;
+  opacity: .6;
+}
+
+.radio {
+  cursor: inherit;
+  height: 100%;
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+  width: 100%;
+  z-index: 1;
+}
+
+.choiceName {
+  font-size: 13px;
+  font-weight: 800;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.choiceDefinition {
+  font-size: 11px;
+  font-weight: 600;
+  grid-column: 2;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.response .choice .choiceState {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  grid-column: 2;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.response .reasonLabel {
+  margin-top: 24px;
+}
+
+.reason {
+  font-size: 16px;
+}
+
+.save {
+  min-height: 54px;
+}
+
+.disclosure {
+  background: transparent;
+  border: 0;
+  color: var(--signal-blue);
+  font-size: 11px;
+  font-weight: 800;
+  min-height: 44px;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-transform: uppercase;
+}
+
+.profile > .disclosure {
+  display: none;
+}
+
+.emptyAction {
+  margin-top: 22px;
+}
+
+@media (max-width: 1000px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .response {
+    grid-column: 1 / -1;
+  }
+
+  .response .judgmentGroup > legend {
+    max-width: none;
+  }
+
+  .choiceGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .response .choice {
+    grid-template-columns: 1fr;
+    min-height: 72px;
+  }
+
+  .response .choice + .choice {
+    border-left: 0;
+    border-top: 1px solid var(--paper-high);
+  }
+
+  .choiceName,
+  .choiceDefinition,
+  .choiceState {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .profile,
+  .video {
+    padding-bottom: 12px;
+    padding-top: 12px;
+  }
+
+  .columnHeading {
+    margin-bottom: 0;
+  }
+
+  .topicList {
+    margin-top: 2px;
+  }
+
+  .profileSummary {
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    overflow: hidden;
+  }
+
+  .profileSummary.expanded,
+  .description.expanded {
+    -webkit-line-clamp: unset;
+    display: block;
+    overflow: visible;
+  }
+
+  .profile > .disclosure {
+    display: block;
+  }
+
+  .video {
+    gap: 7px 12px;
+  }
+
+  .videoTitle {
+    font-size: 21px;
+    line-height: 1.02;
+  }
+
+  .description {
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    font-size: 14px;
+    line-height: 1.4;
+    overflow: hidden;
+  }
+
+  .response {
+    padding: 18px 14px 20px;
+  }
+
+  .judgmentTitle {
+    margin-bottom: 12px;
+  }
+
+  .response .judgmentGroup > legend {
+    font-size: 23px;
+  }
+
+  .judgmentHelp {
+    margin: 7px 0 12px;
+  }
+
+  .response .choice {
+    gap: 3px;
+    min-height: 78px;
+    padding: 9px 7px;
+  }
+
+  .choiceDefinition {
+    font-size: 10px;
+  }
+
+  .choiceState {
+    font-size: 8px;
+  }
+
+  .response .reasonLabel {
+    margin-top: 18px;
+  }
+
+  .reason {
+    min-height: 88px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    transition: none;
+  }
+}
