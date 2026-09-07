@@ -26,19 +26,19 @@ Transcript ingestion, developer-bot preview routing, and a repeatable human-scor
 
 ## Recommendation pipeline
 
-The worker checks TED and TEDx on a configurable interval, stores normalized video metadata, and only rebuilds a vector when a title or description changes. It retrieves up to five strong recent candidates and ten unsent evergreen candidates, then asks the configured OpenRouter model to choose one. The exact shortlist, scores, model, fallback state, and rationale are stored with every recommendation.
+The worker checks TED and TEDx on a configurable interval, stores normalized video metadata, and only rebuilds a vector when a title or description changes. It retrieves up to five strong recent candidates and ten unsent evergreen candidates, then asks the configured OpenRouter model to choose one. If the provider fails or is not configured, it uses the candidate with the highest raw cosine similarity. The exact shortlist, scores, model, fallback state, and rationale are stored with every recommendation.
 
 The initial integration pins `google/gemma-4-31b-it:free` instead of using OpenRouter's changing free-model router. Revisit the pin deliberately when model quality, availability, or evaluation results justify it.
 
-Scheduled model failures use a persisted one-hour retry backoff, and undelivered model-backed recommendations are reused rather than regenerated. Delivery is serialized per recommendation and DB events are idempotent; the Telegram send itself remains at-least-once in the rare case that Telegram accepts a message but the following database commit fails.
+Undelivered recommendations are reused rather than regenerated. Delivery is serialized per recommendation and DB events are idempotent; the Telegram send itself remains at-least-once in the rare case that Telegram accepts a message but the following database commit fails.
 
-Telegram keeps two model-backed recommendations ready for each linked account. A request consumes one without waiting on the model, and an independent worker loop refills the durable slot with leased, retryable work. A newly linked account, a preference change, or a burst beyond the two ready items can briefly return an empty-queue message while the worker prepares fresh matches.
+Telegram keeps two recommendations ready for each linked account. A request consumes one without waiting on the model, and an independent worker loop refills the durable slot with leased, retryable work. A newly linked account, a preference change, or a burst beyond the two ready items can briefly return an empty-queue message while the worker prepares fresh matches.
 
 ## Telegram setup
 
 In `/app/settings`, choose **Connect manually** to display a copyable six-digit code without opening Telegram. Search for the bot shown on that screen, start its private chat, and send the six-digit code. The code expires after ten minutes and can be used once. The separate Open Telegram option keeps the existing direct-link flow.
 
-`/recommend` sends a prepared pick immediately and requests an asynchronous refill toward two ready picks. Changes to preferences discard stale picks and rebuild the queue. Cold starts, rapid requests, unavailable matches, or provider limits can temporarily empty it; the bot replies with a preparation message instead of waiting for model generation. Ordinary text asks for confirmation before adding it to existing preferences.
+`/recommend` sends a prepared pick immediately and requests an asynchronous refill toward two ready picks. Changes to preferences discard stale picks and rebuild the queue. Cold starts, rapid requests, or unavailable matches can temporarily empty it; the bot replies with a preparation message instead of waiting for model generation. Ordinary text asks for confirmation before adding it to existing preferences.
 
 ## Run locally
 

@@ -158,9 +158,10 @@ def complete_synthetic_onboarding(client: PreviewClient) -> None:
             {"question": question, "answer": answer},
         )
         require_state(state, next_step)
+    open_response = "I build dependable software and want practical, rigorous ideas without hype."
     state = client.request(
         "Onboarding open response", "/api/personal/onboarding/open-response", "PUT",
-        {"response": "I build dependable software and want practical, rigorous ideas without hype."},
+        {"response": open_response},
     )
     require_state(state, "profile_review")
 
@@ -170,6 +171,7 @@ def complete_synthetic_onboarding(client: PreviewClient) -> None:
     profile_state = require_state(state, "profile_review")
     if not isinstance(profile_state.get("draft_profile"), str) or not profile_state["draft_profile"].strip():
         raise SmokeFailure("Onboarding synthesis did not return a preference profile")
+    fallback_profile = "Technology & AI; Practical skills; Detailed & rigorous.\n\n" + open_response
     state = client.request(
         "Onboarding profile acceptance", "/api/personal/onboarding/profile", "PUT", {"action": "accept"},
     )
@@ -200,7 +202,8 @@ def complete_synthetic_onboarding(client: PreviewClient) -> None:
     audits = exported.get("onboarding_audit_logs")
     expected_audits = [
         ("question_1", "answered"), ("question_2", "answered"), ("question_3", "answered"),
-        ("open_response", "answered"), ("profile", "synthesized"), ("profile", "accepted"),
+        ("open_response", "answered"),
+        ("profile", "accepted"),
         ("delivery", "saved"), ("telegram", "skipped"), ("onboarding", "completed"),
     ]
     try:
@@ -208,6 +211,30 @@ def complete_synthetic_onboarding(client: PreviewClient) -> None:
     except (KeyError, TypeError, ValueError) as exc:
         raise SmokeFailure("Onboarding audit export contained invalid sequence data") from exc
     observed = [(entry.get("step"), entry.get("action")) for entry in ordered_audits]
+    profile_events = [entry for entry in ordered_audits if entry.get("step") == "profile"]
+    if len(profile_events) != 2 or profile_events[1].get("action") != "accepted":
+        raise SmokeFailure("Onboarding audit export did not contain a complete profile decision")
+    synthesis = profile_events[0]
+    if synthesis.get("action") != "synthesized":
+        raise SmokeFailure("Onboarding audit export did not contain a valid synthesis event")
+    payload = synthesis.get("payload")
+    if not isinstance(payload, dict) or payload.get("profile") != profile_state["draft_profile"]:
+        raise SmokeFailure("Onboarding synthesis audit was missing profile metadata")
+    if payload.get("fallback") is True:
+        if profile_state["draft_profile"] != fallback_profile:
+            raise SmokeFailure("Fallback synthesis did not preserve the complete onboarding response")
+        if (
+            payload.get("model") is not None
+            or not isinstance(payload.get("fallback_reason"), str)
+            or not payload["fallback_reason"]
+        ):
+            raise SmokeFailure("Fallback synthesis audit was missing fallback metadata")
+    elif payload.get("fallback") is False:
+        if not isinstance(payload.get("model"), str) or not payload["model"] or payload.get("fallback_reason") is not None:
+            raise SmokeFailure("Model synthesis audit was missing model metadata")
+    else:
+        raise SmokeFailure("Onboarding synthesis audit did not identify its fallback state")
+    expected_audits.insert(4, ("profile", "synthesized"))
     if observed != expected_audits:
         raise SmokeFailure("Onboarding audit export did not contain the complete ordered journey")
     sessions = exported.get("onboarding_sessions")
@@ -231,27 +258,75 @@ def smoke(preview_url: str, *, auth_only: bool = False) -> None:
         os.chmod(temp, 0o700)
         client = PreviewClient(executable, preview_url, frontend, Path(temp), credential_arguments)
         client.require_preview_deployment()
-        client.request("Native sign-up", "/api/auth/sign-up/email", "POST", {
-            "email": email, "password": password, "name": "Preview auth smoke",
-        }, {200, 201})
-        first = client.request("Authenticated account read", "/api/personal/account")
-        if not isinstance(first, dict) or first.get("email") != email or not first.get("id"):
-            raise SmokeFailure("Authenticated account read returned the wrong identity")
-        first_id = first["id"]
-        client.request("Native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})
-        client.request("Signed-out session check", "/api/personal/account", expected={401})
-        client.request("Native sign-in", "/api/auth/sign-in/email", "POST", {
-            "email": email, "password": password,
-        }, {200, 201})
-        second = client.request("Restored account read", "/api/personal/account")
-        if not isinstance(second, dict) or second.get("id") != first_id or second.get("email") != email:
-            raise SmokeFailure("Native sign-in did not restore the same identity")
-        if not auth_only:
-            complete_synthetic_onboarding(client)
-        client.request("Synthetic app-account cleanup", "/api/personal/account", "DELETE", {
-            "confirmation": "DELETE",
-        }, {204})
-        client.request("Final native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})
+        account_created = False
+        account_id: str | None = None
+        authenticated = False
+        primary_failure: BaseException | None = None
+        try:
+            client.request("Native sign-up", "/api/auth/sign-up/email", "POST", {
+                "email": email, "password": password, "name": "Preview auth smoke",
+            }, {200, 201})
+            account_created = True
+            first = client.request("Authenticated account read", "/api/personal/account")
+            if not isinstance(first, dict) or first.get("email") != email or not first.get("id"):
+                raise SmokeFailure("Authenticated account read returned the wrong identity")
+            first_id = first["id"]
+            account_id = first_id
+            authenticated = True
+            authenticated = False
+            client.request("Native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})
+            client.request("Signed-out session check", "/api/personal/account", expected={401})
+            client.request("Native sign-in", "/api/auth/sign-in/email", "POST", {
+                "email": email, "password": password,
+            }, {200, 201})
+            second = client.request("Restored account read", "/api/personal/account")
+            if not isinstance(second, dict) or second.get("id") != first_id or second.get("email") != email:
+                raise SmokeFailure("Native sign-in did not restore the same identity")
+            authenticated = True
+            if not auth_only:
+                complete_synthetic_onboarding(client)
+        except BaseException as exc:
+            primary_failure = exc
+            raise
+        finally:
+            if account_created:
+                cleanup_failed = False
+                cleanup_authenticated = authenticated
+                if not cleanup_authenticated:
+                    try:
+                        client.request("Cleanup native sign-in", "/api/auth/sign-in/email", "POST", {
+                            "email": email, "password": password,
+                        }, {200, 201})
+                        cleanup_account = client.request("Cleanup authenticated account read", "/api/personal/account")
+                        if (
+                            not isinstance(cleanup_account, dict)
+                            or not cleanup_account.get("id")
+                            or cleanup_account.get("email") != email
+                            or (account_id is not None and cleanup_account["id"] != account_id)
+                        ):
+                            raise SmokeFailure("Cleanup native sign-in did not restore the same identity")
+                        account_id = cleanup_account["id"]
+                        cleanup_authenticated = True
+                    except Exception:
+                        cleanup_failed = True
+                if cleanup_authenticated:
+                    try:
+                        client.request("Synthetic app-account cleanup", "/api/personal/account", "DELETE", {
+                            "confirmation": "DELETE",
+                        }, {204})
+                    except Exception:
+                        cleanup_failed = True
+                else:
+                    cleanup_failed = True
+                try:
+                    client.request("Final native sign-out", "/api/auth/sign-out", "POST", {}, {200, 204})
+                except Exception:
+                    cleanup_failed = True
+                if cleanup_failed:
+                    if primary_failure is not None:
+                        print("Preview native-auth smoke cleanup failed after a primary failure", file=sys.stderr)
+                    else:
+                        raise SmokeFailure("Synthetic app-account cleanup failed")
 
 
 def argument_parser() -> argparse.ArgumentParser:

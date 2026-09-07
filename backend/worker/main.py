@@ -139,9 +139,6 @@ def run_recommendation_queue_pass(pool: ConnectionPool) -> None:
     with pool.connection() as conn:
         cleanup_telegram_ephemera(conn)
         conn.commit()
-    if not settings.openrouter_api_key:
-        logger.info("Recommendation queue paused until OPENROUTER_API_KEY is configured")
-        return
     with pool.connection() as conn:
         users = conn.execute(
             """SELECT id FROM app_users
@@ -175,7 +172,6 @@ def run_delivery_pass(pool: ConnectionPool) -> None:
         logger.info("Preview environment: scheduled Telegram delivery is disabled")
         return
     missing = [name for name, value in (
-        ("OPENROUTER_API_KEY", settings.openrouter_api_key),
         ("TELEGRAM_PRODUCTION_BOT_TOKEN", settings.telegram_production_bot_token),
     ) if not value]
     if missing:

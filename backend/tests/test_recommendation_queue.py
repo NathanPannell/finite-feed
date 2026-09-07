@@ -131,6 +131,10 @@ def test_refill_releases_account_lock_during_model_work_and_persists_retry(monke
             (user_id,),
         )
         conn.commit()
+        monkeypatch.setattr(
+            "backend.app.recommendation_queue._adopt_orphaned_recommendation",
+            lambda *args: False,
+        )
         generated = iter(recommendation_ids)
         calls = []
 
@@ -161,6 +165,28 @@ def test_refill_releases_account_lock_during_model_work_and_persists_retry(monke
         finally:
             conn.rollback()
             conn.execute("DELETE FROM app_users WHERE id = %s", (user_id,))
+            conn.commit()
+
+
+def test_queue_delivers_a_ready_cosine_fallback():
+    database_url = _database_url()
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        user_id, _, recommendation_ids = _seed_user(conn, recommendation_count=1)
+        try:
+            ensure_recommendation_queue(conn, user_id)
+            conn.execute(
+                "UPDATE recommendations SET evidence = '{\"reranker_fallback\": true}' WHERE id=%s",
+                (recommendation_ids[0],),
+            )
+            conn.execute(
+                "UPDATE telegram_recommendation_queue SET recommendation_id=%s,status='ready' WHERE user_id=%s AND slot=1",
+                (recommendation_ids[0], user_id),
+            )
+            conn.commit()
+            assert claim_queued_recommendation(conn, user_id, require_model=True) == recommendation_ids[0]
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
             conn.commit()
 
 
