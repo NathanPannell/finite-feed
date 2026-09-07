@@ -105,10 +105,21 @@ def _nearest_rows(
 def _score_rows(rows: list[dict], now: datetime, pool: str, take: int) -> list[ScoredVideo]:
     scored = []
     for row in rows:
-        relevance = max(float(row["semantic_similarity"]), 0.0)
+        relevance = float(row["semantic_similarity"])
         momentum = _momentum(row["view_count"], row["channel_baseline_views"], row["published_at"], now)
         scored.append(ScoredVideo(row, relevance, momentum, relevance * 0.72 + momentum * 0.28, pool))
-    return sorted(scored, key=lambda item: item.score, reverse=True)[:take]
+    ranked = sorted(scored, key=lambda item: item.score, reverse=True)
+    selected = ranked[:take]
+    if scored and take > 0:
+        semantic_best = max(scored, key=lambda item: item.relevance)
+        if semantic_best not in selected:
+            selected[-1] = semantic_best
+    return selected
+
+
+def cosine_fallback(shortlist: list[ScoredVideo]) -> ScoredVideo:
+    """Return the nearest semantic result without momentum or feedback influence."""
+    return max(shortlist, key=lambda item: item.relevance)
 
 
 def retrieve_shortlist(
@@ -162,8 +173,6 @@ def generate_recommendation(
     embedder: Embedder | None = None,
     expected_preference_version_id: UUID | None = None,
 ) -> UUID:
-    if require_model and not settings.openrouter_api_key:
-        raise ValueError("OPENROUTER_API_KEY is required")
     profile = conn.execute(
         "SELECT id, preference_statement FROM preference_versions WHERE user_id = %s ORDER BY version DESC LIMIT 1",
         (user_id,),
@@ -208,30 +217,33 @@ def generate_recommendation(
     choice = None
     model_error = None
     if settings.openrouter_api_key:
-        reserve_request(conn, "openrouter", settings.model_daily_request_limit)
-        client = OpenRouterClient(
-            settings.openrouter_api_key, settings.openrouter_model,
-            settings.openrouter_base_url, settings.public_app_url,
-        )
         try:
-            choice = client.choose(judge_profile, model_candidates)
-        except Exception as exc:
-            model_error = type(exc).__name__
-            if require_model:
-                raise
-        finally:
-            client.close()
-    elif require_model:
-        raise ValueError("OPENROUTER_API_KEY is required")
+            reserve_request(conn, "openrouter", settings.model_daily_request_limit)
+        except ValueError:
+            model_error = "request_budget_exhausted"
+        else:
+            try:
+                client = OpenRouterClient(
+                    settings.openrouter_api_key, settings.openrouter_model,
+                    settings.openrouter_base_url, settings.public_app_url,
+                )
+                try:
+                    choice = client.choose(judge_profile, model_candidates)
+                finally:
+                    client.close()
+            except Exception as exc:
+                model_error = type(exc).__name__
+    else:
+        model_error = "missing_api_key"
     if choice and choice.video_id is None:
         raise ValueError("No strong match this time. Your preferences are saved; we will try again later.")
     selected = next(
         (item for item in shortlist if choice and item.row["youtube_video_id"] == choice.video_id),
-        max(shortlist, key=lambda item: item.score),
+        cosine_fallback(shortlist),
     )
     rationale = choice.rationale if choice else (
-        f"This one looks like your best match right now, with {selected.relevance:.0%} semantic relevance "
-        "plus strong age-adjusted momentum."
+        f"This one is the nearest available match to your preferences by cosine similarity "
+        f"({selected.relevance:.0%})."
     )
     evidence = {
         "feedback_count": len(feedback),
@@ -295,10 +307,9 @@ def get_or_create_pending_recommendation(
           AND COALESCE(v.default_audio_language, v.default_language, 'en') ~* '^en(-|$)'
           AND r.created_at >= COALESCE((SELECT MAX(created_at) FROM preference_versions WHERE user_id = r.user_id), r.created_at)
           AND r.created_at >= COALESCE((SELECT MAX(created_at) FROM interaction_events WHERE user_id = r.user_id AND event_type IN ('feedback_up', 'feedback_down')), r.created_at)
-          AND (NOT %s OR evidence->>'reranker_fallback' = 'false')
         ORDER BY r.created_at LIMIT 1
         """,
-        (user_id, require_model),
+        (user_id,),
     ).fetchone()
     if pending:
         return pending["id"]

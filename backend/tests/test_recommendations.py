@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from backend.app.recommendations import _score_rows, retrieve_shortlist
+from backend.app.recommendations import ScoredVideo, _score_rows, cosine_fallback, retrieve_shortlist
 from backend.app.settings import Settings
 
 
@@ -30,6 +30,23 @@ def test_scoring_blends_sql_similarity_with_momentum() -> None:
     assert results[0].row["title"] == "Football psychology"
     assert results[0].relevance == 0.82
     assert all(result.pool == "recent" for result in results)
+
+
+def test_shortlist_truncation_keeps_nearest_raw_cosine_result() -> None:
+    now = datetime(2026, 9, 2, tzinfo=UTC)
+    nearest = video("Nearest but old", 0.91, now - timedelta(days=100), views=1)
+    popular = [video(f"Popular {index}", 0.8 - index / 100, now, views=1_000_000) for index in range(5)]
+
+    results = _score_rows([nearest, *popular], now, "evergreen", 5)
+
+    assert any(result.row["title"] == "Nearest but old" for result in results)
+
+
+def test_provider_fallback_uses_raw_cosine_and_preserves_negative_order() -> None:
+    nearest = ScoredVideo({"youtube_video_id": "nearest"}, -0.1, 0.0, -0.5)
+    composite_winner = ScoredVideo({"youtube_video_id": "other"}, -0.2, 1.0, 0.9)
+
+    assert cosine_fallback([composite_winner, nearest]).row["youtube_video_id"] == "nearest"
 
 
 class FakeEmbedder:

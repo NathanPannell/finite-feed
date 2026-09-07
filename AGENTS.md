@@ -15,7 +15,7 @@ Read `README.md`, `ARCHITECTURE.md`, and `INSTALLATION_ISSUES.md` before changin
 
 - Runtime credentials live in GitHub Actions secrets and are forwarded by the workflows. Never print, commit, or copy their values into documentation.
 - `OPENROUTER_MODEL` is a non-secret repository variable pinned to a general-purpose free model. The current key is limited to free models and roughly 50 requests/day; prefer offline evals and make live calls deliberately.
-- Scheduled failures have a persisted one-hour retry gate. Only model-backed pending recommendations may be delivered, delivery is serialized, and delivery events are DB-idempotent.
+- Provider failures fall back to the nearest cosine match so delivery can continue; delivery is serialized and delivery events are DB-idempotent.
 - Telegram remains at-least-once across the irreducible case where Telegram accepts a send but the following database commit fails.
 - Preview workers ingest data but must never send production Telegram messages or retain production-only credentials.
 - Trust a deployment only when `/ready` reports the intended Git SHA. Do not treat a Railway restart as proof that new source deployed.

@@ -145,7 +145,11 @@ def test_full_onboarding_uses_one_synthesis_and_verifies_export():
             if path == "/api/personal/account/export":
                 return {
                     "onboarding_audit_logs": [
-                        {"sequence": index, "step": step, "action": action}
+                        {"sequence": index, "step": step, "action": action,
+                         "payload": {
+                             "model": "test/model", "profile": "I want practical ideas. I prefer rigor.",
+                             "fallback": False, "fallback_reason": None,
+                         } if action == "synthesized" else {}}
                         for index, (step, action) in reversed(list(enumerate(expected_audits, start=1)))
                     ],
                     "onboarding_sessions": [{"completed_at": "2026-09-06T00:00:00Z"}],
@@ -158,6 +162,96 @@ def test_full_onboarding_uses_one_synthesis_and_verifies_export():
     assert len(synthesis_calls) == 1
     assert next(call for call in client.calls if call[0].endswith("/complete"))[2] == {"telegram": "skipped"}
     assert any(call[0] == "/api/personal/account/export" for call in client.calls)
+
+
+def test_full_onboarding_accepts_audited_fallback_and_preserves_verbatim_response():
+    delivery = {"timezone": "UTC", "cadence_days": [1, 4], "delivery_hour": 9, "recommendation_count": 1}
+    response = "I build dependable software and want practical, rigorous ideas without hype."
+    fallback = "Technology & AI; Practical skills; Detailed & rigorous.\n\n" + response
+    expected_audits = [
+        ("question_1", "answered"), ("question_2", "answered"), ("question_3", "answered"),
+        ("open_response", "answered"), ("profile", "synthesized"), ("profile", "accepted"),
+        ("delivery", "saved"), ("telegram", "skipped"), ("onboarding", "completed"),
+    ]
+
+    class FakeClient:
+        def __init__(self, audit_profile=fallback):
+            self.audit_profile = audit_profile
+
+        def request(self, operation, path, method="GET", payload=None, expected=None):
+            if path == "/api/personal/onboarding" and method == "GET":
+                return {"current_step": "question_1"}
+            if path.endswith("/answers"):
+                return {"current_step": {1: "question_2", 2: "question_3", 3: "open_response"}[payload["question"]]}
+            if path.endswith("/open-response"):
+                assert payload == {"response": response}
+                return {"current_step": "profile_review"}
+            if path.endswith("/synthesize"):
+                return {"current_step": "profile_review", "draft_profile": fallback}
+            if path.endswith("/profile"):
+                assert payload == {"action": "accept"}
+                return {"current_step": "delivery"}
+            if path.endswith("/delivery"):
+                return {"current_step": "telegram", "delivery": delivery}
+            if path.endswith("/complete"):
+                return {"current_step": "completed", "status": "completed", "delivery": delivery}
+            if path == "/api/personal/account":
+                return {"onboarding_completed": True, "delivery_paused": True}
+            if path == "/api/personal/account/export":
+                return {
+                    "onboarding_audit_logs": [
+                        {"sequence": index, "step": step, "action": action,
+                         "payload": {
+                             "model": None, "profile": self.audit_profile, "fallback": True,
+                             "fallback_reason": "missing_api_key",
+                         } if action == "synthesized" else {}}
+                        for index, (step, action) in enumerate(expected_audits, start=1)
+                    ],
+                    "onboarding_sessions": [{"completed_at": "2026-09-06T00:00:00Z"}],
+                }
+            raise AssertionError((path, method, payload))
+
+    smoke.complete_synthetic_onboarding(FakeClient())
+    with pytest.raises(smoke.SmokeFailure, match="missing profile metadata"):
+        smoke.complete_synthetic_onboarding(FakeClient("tampered fallback profile"))
+
+
+def test_smoke_cleans_up_and_signs_out_after_synthesis_failure(monkeypatch):
+    clients = []
+
+    class FakeClient:
+        def __init__(self, *args):
+            self.calls = []
+            clients.append(self)
+
+        def require_preview_deployment(self):
+            pass
+
+        def request(self, operation, path, method="GET", payload=None, expected=None):
+            self.calls.append(operation)
+            if operation == "Native sign-up":
+                self.email = payload["email"]
+                return {}
+            if operation in {"Authenticated account read", "Restored account read"}:
+                return {"id": "account-id", "email": self.email}
+            if operation == "Onboarding profile synthesis":
+                raise smoke.SmokeFailure("synthesis failed")
+            if operation in {"Native sign-out", "Signed-out session check", "Native sign-in", "Final native sign-out", "Synthetic app-account cleanup"}:
+                return None
+            if path == "/api/personal/onboarding":
+                return {"current_step": "question_1"}
+            if path.endswith("/answers"):
+                return {"current_step": {1: "question_2", 2: "question_3", 3: "open_response"}[payload["question"]]}
+            if path.endswith("/open-response"):
+                return {"current_step": "profile_review"}
+            raise AssertionError((operation, path, method, payload))
+    monkeypatch.setattr(smoke, "PreviewClient", FakeClient)
+    monkeypatch.setattr(smoke.shutil, "which", lambda name: "vercel")
+
+    with pytest.raises(smoke.SmokeFailure, match="synthesis failed"):
+        smoke.smoke("https://finite-feed-test.vercel.app")
+
+    assert clients[0].calls[-2:] == ["Synthetic app-account cleanup", "Final native sign-out"]
 
 
 def test_auth_only_is_an_explicit_opt_in():

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+import httpx
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
@@ -22,6 +23,7 @@ from backend.app.onboarding import (
     save_open_response,
     save_profile,
     synthesize,
+    fallback_preference_profile,
 )
 from backend.app.openrouter import OpenRouterClient
 from backend.worker.main import scheduled_delivery_users
@@ -63,6 +65,81 @@ def test_preference_synthesis_uses_labels_and_requires_two_to_five_sentences(mon
             {"1": "technology_ai", "2": "practical_skills", "3": "detailed_rigorous"},
             "Enough detail here.", onboarding.QUESTIONS,
         )
+    monkeypatch.setattr(client.client, "post", lambda *args, **kwargs: Reply('{"profile":null}'))
+    with pytest.raises(ValueError, match="2 to 5 sentence"):
+        client.synthesize_preferences(
+            {"1": "technology_ai", "2": "practical_skills", "3": "detailed_rigorous"},
+            "Enough detail here.", onboarding.QUESTIONS,
+        )
+
+
+def test_fallback_profile_concatenates_every_input_without_rewriting():
+    own_words = "Keep this wording exactly—even punctuation. Sentence two? Sentence three!"
+    profile = fallback_preference_profile(
+        {"1": "technology_ai", "2": "practical_skills", "3": "detailed_rigorous"},
+        own_words,
+    )
+    assert profile == "Technology & AI; Practical skills; Detailed & rigorous.\n\n" + own_words
+
+
+@pytest.mark.parametrize("failure", ["no_key", "http", "timeout", "malformed"])
+def test_synthesis_failures_persist_and_accept_exact_input_fallback(monkeypatch, failure):
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        pytest.skip("DATABASE_URL is required for onboarding fallback integration")
+    user_id = uuid4()
+    answers = {"1": "technology_ai", "2": "practical_skills", "3": "detailed_rigorous"}
+    own_words = "One. Two. Three. Four. Five. Six sentences remain intact."
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        try:
+            conn.execute(
+                "INSERT INTO app_users(id,display_name,auth_subject) VALUES (%s,'Fallback test',%s)",
+                (user_id, f"fallback-{user_id}"),
+            )
+            conn.execute(
+                "INSERT INTO onboarding_sessions(user_id,answers,open_response) VALUES (%s,%s,%s)",
+                (user_id, psycopg.types.json.Jsonb(answers), own_words),
+            )
+            conn.commit()
+            monkeypatch.setattr(onboarding, "get_settings", lambda: SimpleNamespace(
+                openrouter_api_key="" if failure == "no_key" else "test",
+                openrouter_model="test/model", openrouter_base_url="https://example.test",
+                public_app_url="https://app.example.test", model_daily_request_limit=10,
+            ))
+            monkeypatch.setattr(onboarding, "reserve_request", lambda *args: conn.commit())
+
+            def fail(*args):
+                if failure == "http":
+                    request = httpx.Request("POST", "https://example.test/chat/completions")
+                    response = httpx.Response(503, request=request)
+                    raise httpx.HTTPStatusError("failed", request=request, response=response)
+                if failure == "timeout":
+                    raise httpx.ReadTimeout("timed out")
+                raise ValueError("malformed response")
+
+            monkeypatch.setattr(onboarding, "OpenRouterClient", lambda *args: SimpleNamespace(
+                synthesize_preferences=fail, close=lambda: None,
+            ))
+            state = synthesize(user_id, conn)
+            expected = fallback_preference_profile(answers, own_words)
+            assert state["draft_profile"] == expected
+            assert save_profile(ProfileDecision(action="accept"), user_id, conn)["current_step"] == "delivery"
+            stored = conn.execute(
+                "SELECT draft_model FROM onboarding_sessions WHERE user_id=%s", (user_id,),
+            ).fetchone()
+            audit = conn.execute(
+                "SELECT action,payload FROM onboarding_audit_logs WHERE user_id=%s AND action='synthesized' "
+                "ORDER BY sequence DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            assert stored["draft_model"] is None
+            assert audit["action"] == "synthesized"
+            assert audit["payload"]["fallback"] is True
+            assert audit["payload"]["profile"] == expected
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            conn.commit()
 
 
 def test_onboarding_is_persisted_ordered_audited_and_completes(monkeypatch):

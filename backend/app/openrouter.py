@@ -67,12 +67,17 @@ class OpenRouterClient:
         if not match:
             raise ValueError("OpenRouter response did not contain a JSON object")
         parsed = json.loads(match.group(0))
+        if not isinstance(parsed, dict):
+            raise ValueError("OpenRouter response did not contain a JSON object")
+        if "video_id" not in parsed:
+            raise ValueError("OpenRouter response omitted its video selection")
         allowed_ids = {candidate["video_id"] for candidate in candidates}
         if parsed.get("video_id") is not None and parsed.get("video_id") not in allowed_ids:
             raise ValueError("OpenRouter selected a video outside the supplied shortlist")
-        rationale = str(parsed.get("rationale", "")).strip()
-        if not rationale:
+        raw_rationale = parsed.get("rationale")
+        if not isinstance(raw_rationale, str) or not raw_rationale.strip():
             raise ValueError("OpenRouter response omitted its rationale")
+        rationale = raw_rationale.strip()
         # Retain one complete sentence if a provider ignores the requested shape.
         rationale = re.split(r"(?<=[.!?])\s+", rationale, maxsplit=1)[0]
         if rationale[-1] not in ".!?":
@@ -115,7 +120,11 @@ class OpenRouterClient:
         match = JSON_BLOCK.search(payload["choices"][0]["message"]["content"])
         if not match:
             raise ValueError("OpenRouter response did not contain a JSON object")
-        profile = str(json.loads(match.group(0)).get("profile", "")).strip()
+        parsed = json.loads(match.group(0))
+        raw_profile = parsed.get("profile") if isinstance(parsed, dict) else None
+        if not isinstance(raw_profile, str):
+            raise ValueError("OpenRouter response must contain a 2 to 5 sentence profile")
+        profile = raw_profile.strip()
         sentences = re.findall(r"[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$", profile)
         if not profile or not 2 <= len(sentences) <= 5 or len(profile) > 5000:
             raise ValueError("OpenRouter response must contain a 2 to 5 sentence profile")
