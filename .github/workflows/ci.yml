@@ -12,6 +12,7 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: pgvector/pgvector:0.8.6-pg16
@@ -31,14 +32,14 @@ jobs:
       DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@localhost:5432/app
       HF_HUB_DISABLE_TELEMETRY: "1"
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: python -m pip install -r backend/requirements-dev.txt
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.cache/huggingface/hub
           key: arctic-embed-xs-d8c86521100d3556476a063fc2342036d45c106f
@@ -49,9 +50,10 @@ jobs:
 
   frontend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
@@ -69,17 +71,48 @@ jobs:
           RAILWAY_API_BASE_URL: http://localhost:8000
       - run: npm run test:proxy
         working-directory: frontend
-      - run: node --test scripts/validate-vercel-auth-location.test.mjs scripts/validate-preview-auth-config.test.mjs scripts/set-railway-variables.test.mjs scripts/verify-google-oauth-start.test.mjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run test:e2e
         working-directory: frontend
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-failures-${{ github.sha }}
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deployment-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Install pinned actionlint
+        run: |
+          curl --fail --silent --show-error --location \
+            --output /tmp/actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          echo '023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  /tmp/actionlint.tar.gz' | sha256sum --check
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+      - run: /tmp/actionlint .github/workflows/*.yml
+      - run: node --test scripts/*.test.mjs
+      - run: bash -n scripts/deploy-railway-service.sh scripts/wait-for-railway-api.sh
 
   deploy-production:
-    if: vars.BOOTSTRAP_COMPLETE == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [backend, frontend]
+    if: vars.BOOTSTRAP_COMPLETE == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    needs: [backend, frontend, deployment-contracts]
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
+    concurrency:
+      group: finite-feed-production
+      cancel-in-progress: false
     env:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
@@ -96,12 +129,18 @@ jobs:
       VERCEL_OIDC_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
       VERCEL_OIDC_PROJECT_NAME: ${{ vars.VERCEL_PROJECT_NAME }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Keep sanitized deployment evidence outside the source upload
+        run: echo "DEPLOYMENT_ARTIFACT_DIR=$RUNNER_TEMP/deployment-artifacts" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
+      - name: Refuse a stale or non-main production source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-production-source.mjs
       - name: Verify route-scoped admin protection contract
         # Full SDK tests run in the frontend job; this deploy gate has no node_modules.
         run: node --test frontend/tests/admin-route-proxy.test.mjs frontend/tests/admin-navigation.test.mjs
@@ -117,7 +156,7 @@ jobs:
             echo 'Vercel Standard Protection (all_except_custom_domains) is required.' >&2
             exit 1
           }
-      - name: Stamp and deploy Railway services
+      - name: Configure Railway services
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -142,13 +181,33 @@ jobs:
           : "${TELEGRAM_PRODUCTION_BOT_TOKEN:?TELEGRAM_PRODUCTION_BOT_TOKEN is required}"
           : "${MATCH_LAB_COOKIE_SECRET:?MATCH_LAB_COOKIE_SECRET is required}"
           node scripts/set-railway-variables.mjs production
-          railway redeploy --from-source --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
-          railway redeploy --from-source --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+      - name: Deploy the checked-out API source
+        timeout-minutes: 15
+        run: bash scripts/deploy-railway-service.sh "$RAILWAY_API_SERVICE_ID" api
       - name: Wait for the exact migrated API commit
         id: railway
+        timeout-minutes: 12
+        env:
+          READINESS_ARTIFACT_NAME: api-readiness
+        run: bash scripts/wait-for-railway-api.sh
+      - name: Configure public URL and deploy the checked-out worker source
+        timeout-minutes: 15
+        env:
+          API_URL: ${{ steps.railway.outputs.api_url }}
+        run: |
+          for service in "$RAILWAY_API_SERVICE_ID" "$RAILWAY_WORKER_SERVICE_ID"; do
+            printf '%s' "$API_URL" | railway variable set PUBLIC_APP_URL --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
+          done
+          bash scripts/deploy-railway-service.sh "$RAILWAY_WORKER_SERVICE_ID" worker
+      - name: Wait for the exact healthy worker commit
+        timeout-minutes: 12
+        env:
+          REQUIRE_WORKER_READY: "true"
+          READINESS_ARTIFACT_NAME: worker-readiness
         run: bash scripts/wait-for-railway-api.sh
       - name: Deploy frontend once and resolve its production origin
         id: vercel
+        timeout-minutes: 15
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           NEON_AUTH_COOKIE_SECRET: ${{ secrets.NEON_AUTH_COOKIE_SECRET }}
@@ -160,15 +219,21 @@ jobs:
             --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
             --env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
             --build-env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
-            --build-env NEON_AUTH_COOKIE_SECRET="$NEON_AUTH_COOKIE_SECRET" \
+            --meta githubCommitSha="$EXPECTED_COMMIT_SHA" \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")"
+          deployment_id="$(vercel inspect "$deployment_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -er '.id')"
           production_url=""
+          production_deployment_id=""
           for _ in $(seq 1 12); do
             production_url="$(vercel project list --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r --arg id "$VERCEL_PROJECT_ID" '.projects[] | select(.id == $id) | .latestProductionUrl // empty')"
-            [[ -n "$production_url" ]] && break
+            if [[ -n "$production_url" ]]; then
+              production_deployment_id="$(vercel inspect "$production_url" --json --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" | jq -r '.id // empty')"
+              [[ "$production_deployment_id" == "$deployment_id" ]] && break
+            fi
             sleep 5
           done
           [[ -n "$production_url" ]] || { echo 'Vercel production URL was not available.' >&2; exit 1; }
+          [[ "$production_deployment_id" == "$deployment_id" ]] || { echo 'Vercel production URL did not resolve to the deployment from this workflow.' >&2; exit 1; }
           [[ "$production_url" == https://* ]] || { echo 'Vercel production URL must use HTTPS.' >&2; exit 1; }
           production_host="${production_url#https://}"
           production_host="${production_host%%/*}"
@@ -197,17 +262,16 @@ jobs:
           match_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$production_url/match")"
           [[ "$match_status" == "200" ]] || { echo "Public custom-domain /match returned HTTP $match_status instead of 200." >&2; exit 1; }
           origins="$(jq -nr --arg deployment "$deployment_url" --arg production "$production_url" '[$deployment, $production] | unique | join(",")')"
-          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo "production_url=$production_url" >> "$GITHUB_OUTPUT"
-          echo "origins=$origins" >> "$GITHUB_OUTPUT"
-      - name: Give the API and worker their public URL
-        env:
-          API_URL: ${{ steps.railway.outputs.api_url }}
-        run: |
-          for service in "$RAILWAY_API_SERVICE_ID" "$RAILWAY_WORKER_SERVICE_ID"; do
-            printf '%s' "$API_URL" | railway variable set PUBLIC_APP_URL --stdin --skip-deploys --service "$service" --environment production --project "$RAILWAY_PROJECT_ID"
-          done
-          railway redeploy --yes --service "$RAILWAY_WORKER_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
+          mkdir -p "$DEPLOYMENT_ARTIFACT_DIR"
+          jq -n \
+            --arg commit "$EXPECTED_COMMIT_SHA" \
+            --arg deployment_id "$deployment_id" \
+            --arg deployment_url "$deployment_url" \
+            --arg production_url "$production_url" \
+            '{commit:$commit,deployment_id:$deployment_id,deployment_url:$deployment_url,production_url:$production_url}' \
+            > "$DEPLOYMENT_ARTIFACT_DIR/vercel-production-deployment.json"
+          printf 'deployment_url=%s\nproduction_url=%s\norigins=%s\n' \
+            "$deployment_url" "$production_url" "$origins" >> "$GITHUB_OUTPUT"
       - name: Trust the exact frontend origins
         env:
           DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}
@@ -222,6 +286,34 @@ jobs:
           done
           railway redeploy --yes --service "$RAILWAY_API_SERVICE_ID" --environment production --project "$RAILWAY_PROJECT_ID"
       - name: Verify final production API readiness
+        timeout-minutes: 12
         env:
           EXPECTED_FRONTEND_ORIGIN: ${{ steps.vercel.outputs.production_url }}
+          REQUIRE_WORKER_READY: "true"
+          READINESS_ARTIFACT_NAME: final-readiness
         run: bash scripts/wait-for-railway-api.sh
+      - name: Verify Google OAuth accepts the production callback
+        timeout-minutes: 2
+        env:
+          FRONTEND_URL: ${{ steps.vercel.outputs.production_url }}
+        run: |
+          oauth_start_file="$(mktemp)"
+          trap 'rm -f "$oauth_start_file"' EXIT
+          curl --fail --silent --show-error --max-time 20 \
+            --request POST \
+            -H 'Content-Type: application/json' \
+            -H "Origin: $FRONTEND_URL" \
+            --data "$(jq -nc --arg callback "$FRONTEND_URL/auth/callback" '{provider:"google",callbackURL:$callback,disableRedirect:true}')" \
+            "$FRONTEND_URL/api/auth/sign-in/social" \
+            -o "$oauth_start_file"
+          node scripts/verify-google-oauth-start.mjs \
+            --payload-file "$oauth_start_file" \
+            --expected-callback "$NEON_AUTH_BASE_URL/callback/google"
+      - name: Upload sanitized production deployment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-deployment-${{ github.sha }}
+          path: ${{ runner.temp }}/deployment-artifacts
+          if-no-files-found: ignore
+          retention-days: 7

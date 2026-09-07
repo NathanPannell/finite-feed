@@ -9,6 +9,7 @@ from psycopg_pool import ConnectionPool
 
 from backend.app.budgets import reserve_request
 from backend.app.embedding_backfill import backfill_embeddings
+from backend.app.deployment import deployed_source_commit
 from backend.app.embeddings import configured_embedder
 from backend.app.ingestion import ingest_tracked_channels
 from backend.app.recommendations import (
@@ -304,9 +305,15 @@ def main() -> None:
             try:
                 with pool.connection() as conn:
                     conn.execute(
-                        """INSERT INTO worker_heartbeat (worker, status, error) VALUES ('pipeline', %s, %s)
-                        ON CONFLICT (worker) DO UPDATE SET last_seen_at = NOW(), status = EXCLUDED.status, error = EXCLUDED.error""",
-                        ("degraded" if errors else "healthy", "; ".join(errors) or None),
+                        """INSERT INTO worker_heartbeat (worker, status, error, commit_sha)
+                        VALUES ('pipeline', %s, %s, %s)
+                        ON CONFLICT (worker) DO UPDATE SET last_seen_at = NOW(), status = EXCLUDED.status,
+                            error = EXCLUDED.error, commit_sha = EXCLUDED.commit_sha""",
+                        (
+                            "degraded" if errors else "healthy",
+                            "; ".join(errors) or None,
+                            deployed_source_commit(settings.app_commit_sha),
+                        ),
                     )
                     conn.commit()
             except Exception as exc:

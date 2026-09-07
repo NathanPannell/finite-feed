@@ -30,6 +30,13 @@ export function variablePlans(mode, environment) {
     MODEL_DAILY_REQUEST_LIMIT: environment.MODEL_DAILY_REQUEST_LIMIT || "40",
     YOUTUBE_DAILY_REQUEST_LIMIT: environment.YOUTUBE_DAILY_REQUEST_LIMIT || "1000",
   };
+  if (mode === "preview") {
+    common.PREVIEW_OWNER_REPOSITORY = required(environment, "GITHUB_REPOSITORY");
+    common.PREVIEW_PULL_REQUEST = required(environment, "PREVIEW_PULL_REQUEST");
+    if (!/^[1-9][0-9]*$/.test(common.PREVIEW_PULL_REQUEST) || target !== `pr-${common.PREVIEW_PULL_REQUEST}`) {
+      throw new Error("Preview PR tag must match the Railway environment");
+    }
+  }
   const optional = ["OPENROUTER_API_KEY", "TELEGRAM_WEBHOOK_SECRET", "DEVELOPER_TELEGRAM_USER_IDS"];
   const remove = [];
   if (mode === "production") {
@@ -54,28 +61,79 @@ export function variablePlans(mode, environment) {
     MATCH_LAB_TARGET_ENVIRONMENT: target,
   };
   if (mode === "preview") apiOnly.PREVIEW_DATABASE_URL_UNPOOLED = required(environment, "PREVIEW_DATABASE_URL_UNPOOLED");
+  const apiRemove = [...remove];
+  const workerRemove = [...remove];
+  if (mode === "preview") {
+    apiRemove.push("DATABASE_URL", "DATABASE_URL_UNPOOLED");
+    workerRemove.push(
+      "DATABASE_URL",
+      "DATABASE_URL_UNPOOLED",
+      "PREVIEW_DATABASE_URL_UNPOOLED",
+      "MATCH_LAB_COOKIE_SECRET",
+    );
+  }
   return [
-    { role: "API", service: api, project, target, values: { ...common, ...apiOnly }, remove },
-    { role: "worker", service: worker, project, target, values: { ...common }, remove },
+    { role: "API", service: api, project, target, values: { ...common, ...apiOnly }, remove: apiRemove },
+    { role: "worker", service: worker, project, target, values: { ...common }, remove: workerRemove },
   ];
 }
 
-export function configureVariables(plans, execute) {
+function wait(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function variableNames(plan, scope, execute, operation) {
+  let parsed;
+  try {
+    parsed = JSON.parse(execute(["variable", "list", "--json", ...scope]));
+  } catch {
+    throw new Error(`Could not ${operation} ${plan.role} variable names`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid Railway variable listing");
+  return new Set(Object.keys(parsed));
+}
+
+export function configureVariables(plans, execute, { sleep = wait, delayMs = 2000, maxAttempts = 10 } = {}) {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 3) throw new Error("Variable verification requires at least three attempts");
+  const inventories = [];
   for (const plan of plans) {
     const scope = ["--service", plan.service, "--environment", plan.target, "--project", plan.project];
-    // Keep the raw response in memory: lists can include secret values and sealed keys.
-    let current;
-    try {
-      current = JSON.parse(execute(["variable", "list", "--json", ...scope]));
-    } catch {
-      throw new Error(`Could not read ${plan.role} variable names; no variables changed for this service`);
-    }
-    if (!current || typeof current !== "object" || Array.isArray(current)) throw new Error("Invalid Railway variable listing");
+    // Preflight every service before mutating either one. Raw listings remain in
+    // memory because Railway JSON can include secret values and sealed keys.
+    variableNames(plan, scope, execute, "read");
+    inventories.push({ plan, scope });
+  }
+  // Apply all safe preview values before any delete can trigger a deployment.
+  for (const { plan, scope } of inventories) {
     execute(["variable", "set", ...Object.entries(plan.values).map(([key, value]) => `${key}=${value}`), "--skip-deploys", ...scope]);
-    for (const key of plan.remove) {
-      if (Object.hasOwn(current, key)) execute(["variable", "delete", key, ...scope]);
+  }
+  const failures = [];
+  for (const { plan, scope } of inventories) {
+    try {
+      const requiredCleanReads = plan.target === "production" ? 1 : 3;
+      let cleanReads = 0;
+      let forbidden = [];
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const names = variableNames(plan, scope, execute, "verify");
+        forbidden = plan.remove.filter((key) => names.has(key));
+        if (forbidden.length) {
+          cleanReads = 0;
+          for (const key of forbidden) execute(["variable", "delete", key, ...scope]);
+        } else {
+          cleanReads += 1;
+          if (cleanReads === requiredCleanReads) break;
+        }
+        if (attempt + 1 < maxAttempts) sleep(delayMs);
+      }
+      if (forbidden.length || cleanReads < requiredCleanReads) {
+        const detail = forbidden.length ? ` for: ${forbidden.join(", ")}` : " before the verification timeout";
+        failures.push(`${plan.role} variable isolation failed${detail}`);
+      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : `${plan.role} variable isolation failed`);
     }
   }
+  if (failures.length) throw new Error(failures.join("; "));
 }
 
 function railway(args) {

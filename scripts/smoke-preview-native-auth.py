@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -56,6 +57,14 @@ def deployment_is_preview(payload: object) -> bool:
     )
 
 
+def vercel_credential_arguments(environment: Mapping[str, str] = os.environ) -> list[str]:
+    token = environment.get("VERCEL_TOKEN", "").strip()
+    scope = environment.get("VERCEL_ORG_ID", "").strip()
+    if bool(token) != bool(scope):
+        raise SmokeFailure("VERCEL_TOKEN and VERCEL_ORG_ID must be set together")
+    return ["--token", token, "--scope", scope] if token else []
+
+
 def curl_arguments(
     preview_url: str,
     path: str,
@@ -63,9 +72,11 @@ def curl_arguments(
     cookie_jar: Path,
     body_file: Path,
     has_json: bool,
+    credential_arguments: list[str] | None = None,
 ) -> list[str]:
     arguments = [
-        "curl", path, "--deployment", preview_url, "--",
+        "curl", path, "--deployment", preview_url,
+        *(credential_arguments or []), "--",
         "--silent", "--show-error", "--request", method,
         "--output", str(body_file), "--write-out", "%{http_code}",
         "--cookie", str(cookie_jar), "--cookie-jar", str(cookie_jar),
@@ -77,12 +88,14 @@ def curl_arguments(
 
 
 class PreviewClient:
-    def __init__(self, executable: str, preview_url: str, workdir: Path, temporary_dir: Path):
+    def __init__(self, executable: str, preview_url: str, workdir: Path, temporary_dir: Path,
+                 credential_arguments: list[str] | None = None):
         self.executable = executable
         self.preview_url = preview_url
         self.workdir = workdir
         self.cookie_jar = temporary_dir / "cookies"
         self.body_file = temporary_dir / "response"
+        self.credential_arguments = credential_arguments or []
 
     def _run(self, arguments: list[str], input_text: str | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -95,7 +108,9 @@ class PreviewClient:
         )
 
     def require_preview_deployment(self) -> None:
-        result = self._run(["inspect", self.preview_url, "--json"])
+        result = self._run([
+            "inspect", self.preview_url, "--json", *self.credential_arguments,
+        ])
         if result.returncode != 0:
             raise SmokeFailure("Vercel preview inspection failed")
         try:
@@ -110,6 +125,7 @@ class PreviewClient:
         input_text = json.dumps(payload, separators=(",", ":")) if payload is not None else None
         result = self._run(curl_arguments(
             self.preview_url, path, method, self.cookie_jar, self.body_file, payload is not None,
+            self.credential_arguments,
         ), input_text=input_text)
         match = re.search(r"([1-5][0-9]{2})\s*$", result.stdout or "")
         status = int(match.group(1)) if match else None
@@ -210,9 +226,10 @@ def smoke(preview_url: str, *, auth_only: bool = False) -> None:
 
     email = f"preview-auth-smoke-{uuid4().hex}@example.invalid"
     password = f"{secrets.token_urlsafe(36)}aA7!"
+    credential_arguments = vercel_credential_arguments()
     with tempfile.TemporaryDirectory(prefix="finite-feed-preview-auth-") as temp:
         os.chmod(temp, 0o700)
-        client = PreviewClient(executable, preview_url, frontend, Path(temp))
+        client = PreviewClient(executable, preview_url, frontend, Path(temp), credential_arguments)
         client.require_preview_deployment()
         client.request("Native sign-up", "/api/auth/sign-up/email", "POST", {
             "email": email, "password": password, "name": "Preview auth smoke",

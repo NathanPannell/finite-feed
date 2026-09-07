@@ -48,6 +48,55 @@ def test_request_arguments_never_contain_json_credentials(tmp_path):
     assert "Origin: https://finite-feed-test.vercel.app" in arguments
 
 
+def test_vercel_credentials_precede_curl_passthrough_and_apply_to_inspect(tmp_path):
+    token = "test-vercel-token-that-must-stay-private"
+    scope = "team_test"
+    credentials = smoke.vercel_credential_arguments({
+        "VERCEL_TOKEN": token,
+        "VERCEL_ORG_ID": scope,
+    })
+    arguments = smoke.curl_arguments(
+        "https://finite-feed-test.vercel.app", "/api/personal/account", "GET",
+        tmp_path / "cookies", tmp_path / "body", False, credentials,
+    )
+    separator = arguments.index("--")
+    assert arguments[separator - 4:separator] == ["--token", token, "--scope", scope]
+
+    class FakeClient(smoke.PreviewClient):
+        def _run(self, arguments, input_text=None):
+            self.observed = arguments
+            return smoke.subprocess.CompletedProcess(arguments, 0, '{"target":"preview"}', "")
+
+    client = FakeClient("vercel", "https://finite-feed-test.vercel.app", tmp_path, tmp_path, credentials)
+    client.require_preview_deployment()
+    assert client.observed[-4:] == ["--token", token, "--scope", scope]
+
+
+def test_vercel_credentials_allow_local_login_fallback_and_reject_partial_configuration():
+    assert smoke.vercel_credential_arguments({}) == []
+    for partial in (
+        {"VERCEL_TOKEN": "token"},
+        {"VERCEL_ORG_ID": "team"},
+    ):
+        with pytest.raises(smoke.SmokeFailure, match="must be set together"):
+            smoke.vercel_credential_arguments(partial)
+
+
+def test_vercel_cli_failure_does_not_report_credentials(tmp_path):
+    token = "test-vercel-token-that-must-stay-private"
+    credentials = ["--token", token, "--scope", "team_test"]
+
+    class FakeClient(smoke.PreviewClient):
+        def _run(self, arguments, input_text=None):
+            return smoke.subprocess.CompletedProcess(arguments, 1, "", f"failure involving {token}")
+
+    client = FakeClient("vercel", "https://finite-feed-test.vercel.app", tmp_path, tmp_path, credentials)
+    with pytest.raises(smoke.SmokeFailure) as raised:
+        client.require_preview_deployment()
+    assert str(raised.value) == "Vercel preview inspection failed"
+    assert token not in str(raised.value)
+
+
 def test_failures_report_only_operation_and_status(tmp_path):
     class FakeClient(smoke.PreviewClient):
         def _run(self, arguments, input_text=None):
