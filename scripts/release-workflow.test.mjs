@@ -9,8 +9,12 @@ const release = readFileSync(new URL("../.github/workflows/release.yml", import.
 test("CI covers both long-lived branches and gates production publication after verification", () => {
   assert.match(ci, /branches: \[main, staging\]/);
   assert.match(ci, /node scripts\/assert-production-source\.mjs/);
+  assert.equal(ci.match(/node scripts\/assert-production-source\.mjs/g)?.length, 3);
+  assert.ok(ci.indexOf("Revalidate main immediately before frontend promotion") < ci.indexOf("Deploy frontend once and resolve its production origin"));
+  assert.ok(ci.lastIndexOf("node scripts/assert-production-source.mjs") < ci.indexOf("node scripts/publish-release.mjs"));
   assert.ok(ci.indexOf("Verify deployed frontend release metadata") < ci.indexOf("node scripts/publish-release.mjs"));
   assert.match(ci, /NEXT_PUBLIC_APP_ENV="production"/);
+  assert.match(ci, /api\/version\?commit=\$EXPECTED_COMMIT_SHA/);
 });
 
 test("release preparation and validation use exact staging metadata", () => {

@@ -24,7 +24,7 @@ function dependencies(runConclusion = "success") {
     fetch: async (url, options) => {
       if (url.endsWith("/git/ref/heads/staging")) return response({ object: { sha: candidate } });
       if (url.endsWith("/git/ref/tags/v0.1.0")) return response({}, 404);
-      if (url.includes("/check-runs")) return response({ check_runs: [{ name: "backend", conclusion: "success" }] });
+      if (url.includes("/check-runs")) return response({ check_runs: [{ name: "backend", id: 1, status: "completed", conclusion: "success", app: { slug: "github-actions" } }] });
       if (url.endsWith("/actions/runs/77")) return response({ event: "workflow_dispatch", head_branch: "staging", head_sha: candidate, path: ".github/workflows/release.yml", status: "completed", conclusion: runConclusion });
       if (url.includes("/pulls?")) return response([]);
       writes.push({ url, options, body: JSON.parse(options.body) });

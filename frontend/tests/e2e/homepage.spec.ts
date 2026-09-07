@@ -71,6 +71,7 @@ test("shows the same build metadata published by the version artifact", async ({
   await page.goto("/");
   const response = await request.get("/api/version");
   expect(response.ok()).toBe(true);
+  expect(response.headers()["cache-control"]).toBe("no-store");
   const metadata = await response.json() as { version: string; environment: string; commit: string };
   await expect(page.locator(".site-footer-build")).toHaveAttribute("aria-label", `Build ${metadata.environment} ${metadata.version} commit ${metadata.commit}`);
 });

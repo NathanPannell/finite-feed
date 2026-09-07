@@ -19,9 +19,10 @@ Completed:
 - Added build metadata artifact/footer and protected stable-staging admin routing.
 
 Evidence:
-- All 86 repository JavaScript contract tests passed (one existing skipped test).
+- 94 repository JavaScript contract tests passed (one existing skipped test).
 - Frontend lint, typecheck, 22 focused Node tests, production build, and five responsive/version browser tests passed.
 - Actionlint passed every workflow; the Impeccable detector reported no findings.
 - Built staging `/api/version` and footer both reported version 0.1.0 and the expected staging commit.
+- Independent review found and the builder fixed stale-main promotion races, stale metadata caching, and older-success check masking; source is revalidated before frontend promotion and release publication, metadata is uncached, and only the latest trusted check result counts.
 
 Next action: independent combined review, then merge this implementation to staging and verify the live stable staging deployment before attesting the first release candidate.

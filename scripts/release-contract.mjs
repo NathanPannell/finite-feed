@@ -59,9 +59,16 @@ export function releasePullRequestBody(metadata) {
 }
 
 export function assertRequiredChecks(checkRuns, required = REQUIRED_RELEASE_CHECKS) {
-  const successful = new Set(checkRuns.filter((check) => check.conclusion === "success").map((check) => check.name));
-  const missing = required.filter((name) => !successful.has(name));
-  if (missing.length) throw new Error(`Release candidate is missing successful checks: ${missing.join(", ")}.`);
+  const failures = [];
+  for (const name of required) {
+    const latest = checkRuns
+      .filter((check) => check.name === name && check.app?.slug === "github-actions")
+      .sort((left, right) => Number(right.id ?? 0) - Number(left.id ?? 0))[0];
+    if (!latest || latest.status !== "completed" || latest.conclusion !== "success") {
+      failures.push(`${name} (${latest?.status === "completed" ? latest.conclusion ?? "unknown" : latest?.status ?? "missing"})`);
+    }
+  }
+  if (failures.length) throw new Error(`Release candidate does not have current successful GitHub Actions checks: ${failures.join(", ")}.`);
 }
 
 export function assertReleasePullRequest(event, repositoryVersion) {
@@ -98,17 +105,28 @@ export function assertPreparationRun(run, marker, { allowInProgress = false } = 
   throw new Error("Release preparation run has not completed successfully.");
 }
 
-export async function githubJson(path, { token, repository, method = "GET", body, fetchImpl = fetch, allowMissing = false } = {}) {
-  const response = await fetchImpl(`https://api.github.com/repos/${repository}${path}`, {
-    method,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+export async function githubJson(path, { token, repository, method = "GET", body, fetchImpl = fetch, allowMissing = false, timeoutMs = 15000 } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetchImpl(`https://api.github.com/repos/${repository}${path}`, {
+      method,
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`GitHub API request timed out (${method} ${path}).`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (allowMissing && response.status === 404) return undefined;
   if (!response.ok) throw new Error(`GitHub API request failed (${method} ${path}, HTTP ${response.status}).`);
   return response.status === 204 ? undefined : response.json();

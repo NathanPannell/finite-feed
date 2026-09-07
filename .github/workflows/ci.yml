@@ -236,6 +236,10 @@ jobs:
           REQUIRE_WORKER_READY: "true"
           READINESS_ARTIFACT_NAME: worker-readiness
         run: bash scripts/wait-for-railway-api.sh
+      - name: Revalidate main immediately before frontend promotion
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-production-source.mjs
       - name: Deploy frontend once and resolve its production origin
         id: vercel
         timeout-minutes: 15
@@ -347,13 +351,15 @@ jobs:
         env:
           FRONTEND_URL: ${{ steps.vercel.outputs.production_url }}
         run: |
-          curl --fail --silent --show-error "$FRONTEND_URL/api/version" \
+          curl --fail --silent --show-error --header 'Cache-Control: no-cache' "$FRONTEND_URL/api/version?commit=$EXPECTED_COMMIT_SHA" \
             | jq -e --arg version "$APP_VERSION" --arg commit "$EXPECTED_COMMIT_SHA" \
               '.version == $version and .environment == "production" and .commit == $commit' >/dev/null
       - name: Publish the verified production release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-release.mjs
+        run: |
+          node scripts/assert-production-source.mjs
+          node scripts/publish-release.mjs
       - name: Upload sanitized production deployment evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

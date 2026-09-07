@@ -6,6 +6,7 @@ import {
   assertProductionMerge,
   assertReleasePullRequest,
   assertRequiredChecks,
+  githubJson,
   parseReleaseMarker,
   releaseMarker,
 } from "./release-contract.mjs";
@@ -28,8 +29,11 @@ test("release marker rejects malformed or incomplete metadata", () => {
 });
 
 test("candidate requires every named successful check", () => {
-  assertRequiredChecks([{ name: "ci", conclusion: "success" }, { name: "staging", conclusion: "success" }], ["ci", "staging"]);
-  assert.throws(() => assertRequiredChecks([{ name: "ci", conclusion: "failure" }], ["ci", "staging"]), /ci, staging/);
+  const check = (name, id, status, conclusion) => ({ name, id, status, conclusion, app: { slug: "github-actions" } });
+  assertRequiredChecks([check("ci", 1, "completed", "success"), check("staging", 2, "completed", "success")], ["ci", "staging"]);
+  assert.throws(() => assertRequiredChecks([check("ci", 1, "completed", "success"), check("ci", 2, "queued", null)], ["ci"]), /ci \(queued\)/);
+  assert.throws(() => assertRequiredChecks([check("ci", 1, "completed", "success"), check("ci", 3, "completed", "failure")], ["ci"]), /ci \(failure\)/);
+  assert.throws(() => assertRequiredChecks([{ ...check("ci", 4, "completed", "success"), app: { slug: "untrusted" } }], ["ci"]), /ci \(missing\)/);
 });
 
 test("production requires the exact two-parent release merge", () => {
@@ -44,4 +48,14 @@ test("preparation run is bound to the workflow, branch, and candidate", () => {
   assert.doesNotThrow(() => assertPreparationRun(run, marker));
   assert.throws(() => assertPreparationRun({ ...run, head_sha: "f".repeat(40) }, marker), /does not identify/);
   assert.throws(() => assertPreparationRun({ ...run, conclusion: "failure" }, marker), /not completed successfully/);
+});
+
+test("GitHub requests time out with a sanitized diagnostic", async () => {
+  const fetchImpl = async (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+  });
+  await assert.rejects(
+    githubJson("/git/ref/heads/staging", { token: "secret", repository: "owner/repository", fetchImpl, timeoutMs: 1 }),
+    (error) => /timed out \(GET \/git\/ref\/heads\/staging\)/.test(error.message) && !error.message.includes("secret"),
+  );
 });
