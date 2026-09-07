@@ -18,5 +18,9 @@ Evidence:
 - `node --test scripts/create-railway-preview-environment.test.mjs scripts/preview-workflow.test.mjs` passed 10/10.
 - `node --test scripts/*.test.mjs` passed 56 tests with 1 expected Windows-only skip and 0 failures.
 - `git diff --check` passed.
+- Ported the verified deterministic Vercel project-link helper from `12b2b92`: immediately before native-session smoke, the preview workflow atomically writes the configured `team_…` and `prj_…` IDs to runner-local `frontend/.vercel/project.json` without invoking interactive linking or printing identifiers.
+- The native-auth `--auth-only` smoke and all preceding callback/provider gates remain unchanged.
+- Python 3.13 focused tests passed 13/13 using a worktree-local pytest base directory because the host's shared pytest temp root is permission-locked.
+- Deployment contracts still pass 56 tests with 1 expected Windows-only skip and 0 failures after the port.
 
 Next action: Commit for independent review and cherry-pick onto the affected PR branches.
