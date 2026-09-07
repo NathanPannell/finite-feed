@@ -1,0 +1,508 @@
+.adminMain {
+  --admin-tight: 8px;
+  --admin-group: 16px;
+  --admin-section: 32px;
+  padding-bottom: 64px;
+  padding-top: 16px;
+}
+
+.adminMain :global(.admin-header) {
+  border-bottom: 0;
+  justify-content: flex-end;
+  padding-bottom: 10px;
+}
+
+.adminMain :global(.admin-notice.error) {
+  background: #f8e6e1;
+  border-color: var(--danger);
+  color: #651d15;
+}
+
+.adminMain :global(.admin-records) {
+  padding-top: 0;
+}
+
+.adminMain :global(.admin-tab-panel) {
+  padding-top: var(--admin-group);
+}
+
+.adminMain :global(.admin-records-heading) {
+  min-height: 36px;
+}
+
+.adminMain :global(.admin-records-heading span),
+.adminMain :global(.admin-worker-status),
+.adminMain :global(.admin-table),
+.adminMain :global(.admin-table strong),
+.adminMain :global(.admin-table small),
+.adminMain :global(.admin-status),
+.adminMain :global(.admin-latest-activity > strong),
+.adminMain :global(.admin-latest-activity > p) {
+  font-size: 12px;
+}
+
+.adminMain :global(.admin-record-title a),
+.adminMain :global(.admin-details-button),
+.adminMain :global(.admin-text-button),
+.adminMain :global(.admin-pagination),
+.adminMain :global(.admin-resolver-help),
+.adminMain :global(.chart-axis),
+.adminMain :global(.admin-performance-grid figcaption),
+.adminMain :global(.admin-performance-grid figcaption > span),
+.adminMain :global(.admin-search button),
+.adminMain :global(.admin-check),
+.adminMain :global(.admin-filter-drawer summary),
+.adminMain :global(.admin-column-chooser summary),
+.adminMain :global(.admin-age-form > button),
+.adminMain :global(.admin-timeline span),
+.adminMain :global(.admin-timeline time),
+.adminMain :global(.admin-add-channel > summary span),
+.adminMain :global(.admin-performance > details > summary span) {
+  font-size: 12px;
+}
+
+.adminMain :global(.admin-table) {
+  line-height: 1.45;
+}
+
+.adminMain :global(.admin-table th),
+.adminMain :global(.admin-resolver label > span:first-child),
+.adminMain :global(.admin-control > span),
+.adminMain :global(.admin-summary-strip > div > span),
+.adminMain :global(.admin-latest-activity > span),
+.adminMain :global(.admin-detail-list dt) {
+  font-size: 12px;
+}
+
+.adminMain :global(.admin-table td) {
+  font-size: 13px;
+}
+
+.adminMain :global(.admin-controls) {
+  margin: var(--admin-group) 0;
+}
+
+.adminMain :global(.admin-clear-filters) {
+  align-items: center;
+  align-self: stretch;
+  background: transparent;
+  border: 1px solid var(--carbon);
+  color: var(--signal-blue);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+  text-transform: uppercase;
+}
+
+.adminMain :global(.admin-clear-filters:hover) {
+  background: var(--carbon);
+  color: var(--paper-high);
+}
+
+.adminMain :global(.admin-add-channel) {
+  border-bottom: 1px solid var(--quiet-rule);
+  border-top: 1px solid var(--quiet-rule);
+  margin: 0 0 var(--admin-group);
+}
+
+.adminMain :global(.admin-add-channel > summary),
+.adminMain :global(.admin-performance > details > summary) {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-family: var(--font-display), "Barlow Condensed", Arial, sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  justify-content: space-between;
+  min-height: 48px;
+  text-transform: uppercase;
+}
+
+.adminMain :global(.admin-add-channel > summary span),
+.adminMain :global(.admin-performance > details > summary span) {
+  color: var(--graphite);
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.adminMain :global(.admin-add-channel[open] > summary),
+.adminMain :global(.admin-performance > details[open] > summary) {
+  color: var(--signal-blue);
+}
+
+.adminMain :global(.admin-add-channel .admin-resolver) {
+  border-bottom: 0;
+  margin: 0;
+  padding: var(--admin-group) 0;
+}
+
+.adminMain :global(.admin-overview) {
+  padding-top: var(--admin-section);
+}
+
+.adminMain :global(.admin-section-heading) {
+  min-height: 32px;
+}
+
+.adminMain :global(.admin-section-heading h2) {
+  font-size: 24px;
+  margin-bottom: var(--admin-tight);
+}
+
+.adminMain :global(.admin-summary-strip > *) {
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
+.adminMain :global(.admin-summary-strip > div > strong) {
+  font-size: 26px;
+  margin-top: var(--admin-tight);
+}
+
+.adminMain :global(.admin-latest-activity > strong) {
+  margin-top: 5px;
+}
+
+.adminMain :global(.admin-worker-status) {
+  color: var(--graphite);
+  line-height: 1.55;
+  margin: 10px 0 0;
+}
+
+.adminMain :global(.admin-performance) {
+  padding-top: var(--admin-group);
+}
+
+.adminMain :global(.admin-performance > details) {
+  border-bottom: 1px solid var(--carbon);
+  border-top: 1px solid var(--carbon);
+}
+
+.adminMain :global(.admin-performance-grid) {
+  border-bottom: 0;
+  border-top: 1px solid var(--quiet-rule);
+}
+
+.adminMain :global(.admin-performance-table-wrap) {
+  border-top: 1px solid var(--quiet-rule);
+  grid-column: 1 / -1;
+  overflow-x: auto;
+  padding: var(--admin-group) 18px 20px;
+}
+
+.adminMain :global(.admin-performance-table) {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.adminMain :global(.admin-performance-table caption) {
+  font-size: 13px;
+  font-weight: 800;
+  padding-bottom: 10px;
+  text-align: left;
+}
+
+.adminMain :global(.admin-performance-table th),
+.adminMain :global(.admin-performance-table td) {
+  border-top: 1px solid var(--quiet-rule);
+  padding: 9px 10px;
+  text-align: right;
+}
+
+.adminMain :global(.admin-performance-table th:first-child),
+.adminMain :global(.admin-performance-table td:first-child) {
+  text-align: left;
+}
+
+.adminMain :global(.admin-modal h2) {
+  text-wrap: balance;
+}
+
+.adminMain :global(.admin-detail-list dd) {
+  font-size: 13px;
+}
+
+.adminMain :global(.admin-diagnostics) {
+  border-top: 1px solid var(--carbon);
+  margin-top: 6px;
+}
+
+.adminMain :global(.admin-diagnostics > summary) {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  min-height: 52px;
+}
+
+.adminMain :global(.admin-diagnostics > summary span) {
+  background: var(--quiet-rule);
+  color: var(--carbon);
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.adminMain :global(.admin-diagnostics dl) {
+  margin: 0;
+}
+
+.adminMain :global(.admin-diagnostics dl > div) {
+  border-top: 1px solid var(--quiet-rule);
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(120px, .35fr) 1fr;
+  padding: 13px 0;
+}
+
+.adminMain :global(.admin-pause-confirmation) {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  justify-content: flex-end;
+  max-width: 320px;
+  white-space: normal;
+}
+
+.adminMain :global(.admin-pause-confirmation > span) {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+@media (max-width: 1000px) {
+  .adminMain :global(.admin-summary-strip) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .adminMain :global(.admin-summary-strip > *) {
+    border-top: 0 !important;
+    min-height: 60px;
+  }
+
+  .adminMain :global(.admin-summary-strip > * + *) {
+    border-left: 1px solid var(--quiet-rule) !important;
+  }
+
+  .adminMain :global(.admin-latest-activity) {
+    display: block;
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 800px) {
+  .adminMain {
+    padding-top: 12px;
+  }
+
+  .adminMain :global(.admin-tabs button) {
+    font-size: 17px;
+    min-width: max-content;
+  }
+
+  .adminMain :global(.admin-records-heading) {
+    align-items: baseline;
+    flex-direction: row;
+  }
+
+  .adminMain :global(.admin-controls) {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .adminMain :global(.admin-search),
+  .adminMain :global(.admin-filter-drawer),
+  .adminMain :global(.admin-column-chooser) {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .adminMain :global(.admin-clear-filters) {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .adminMain :global(.admin-add-channel > summary),
+  .adminMain :global(.admin-performance > details > summary) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  .adminMain :global(.admin-table-wrap) {
+    overflow: visible;
+  }
+
+  .adminMain :global(.admin-table) {
+    display: block;
+    min-width: 0;
+  }
+
+  .adminMain :global(.admin-table thead) {
+    display: none;
+  }
+
+  .adminMain :global(.admin-table tbody) {
+    display: block;
+  }
+
+  .adminMain :global(.admin-table tr) {
+    display: grid;
+    gap: 6px 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--admin-group) 0;
+  }
+
+  .adminMain :global(.admin-table tr + tr) {
+    border-top: 1px solid var(--quiet-rule);
+  }
+
+  .adminMain :global(.admin-table td) {
+    border: 0;
+    min-width: 0;
+    padding: 4px 8px;
+  }
+
+  .adminMain :global(.admin-loading-row td) {
+    display: none;
+  }
+
+  .adminMain :global(.admin-loading-row td:first-child) {
+    display: block;
+    grid-column: 1 / -1;
+  }
+
+  .adminMain :global(.channel-primary),
+  .adminMain :global(.channel-window),
+  .adminMain :global(.channel-sync),
+  .adminMain :global(.channel-actions),
+  .adminMain :global(.video-primary),
+  .adminMain :global(.video-index),
+  .adminMain :global(.video-actions) {
+    grid-column: 1 / -1;
+  }
+
+  .adminMain :global(.channel-videos),
+  .adminMain :global(.video-ingested),
+  .adminMain :global(.video-duration),
+  .adminMain :global(.video-views) {
+    display: none;
+  }
+
+  .adminMain :global(.channel-sync::before),
+  .adminMain :global(.video-channel::before),
+  .adminMain :global(.video-published::before),
+  .adminMain :global(.video-index::before) {
+    color: var(--graphite);
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+  }
+
+  .adminMain :global(.channel-sync::before) { content: "Last sync"; }
+  .adminMain :global(.video-channel::before) { content: "Channel"; }
+  .adminMain :global(.video-published::before) { content: "Published"; }
+  .adminMain :global(.video-index::before) { content: "Search index"; }
+
+  .adminMain :global(.channel-actions),
+  .adminMain :global(.video-actions) {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    text-align: left;
+  }
+
+  .adminMain :global(.admin-pause-confirmation) {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
+    max-width: none;
+    width: 100%;
+  }
+
+  .adminMain :global(.admin-pause-confirmation > span) {
+    grid-column: 1 / -1;
+  }
+
+  .adminMain :global(.admin-summary-strip) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminMain :global(.admin-summary-strip > *) {
+    border-left: 0 !important;
+    border-top: 1px solid var(--quiet-rule) !important;
+  }
+
+  .adminMain :global(.admin-summary-strip > *:nth-child(even)) {
+    border-left: 1px solid var(--quiet-rule) !important;
+  }
+
+  .adminMain :global(.admin-latest-activity) {
+    grid-column: 1 / -1;
+  }
+
+  .adminMain :global(.admin-performance-grid) {
+    grid-template-columns: 1fr;
+  }
+
+  .adminMain :global(.admin-performance-grid figure + figure) {
+    border-left: 0;
+    border-top: 1px solid var(--quiet-rule);
+  }
+
+  .adminMain :global(.admin-diagnostics dl > div) {
+    gap: 5px;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .adminMain :global(.admin-sort-control) {
+    grid-column: 1 / -1;
+  }
+
+  .adminMain :global(.admin-record-title) {
+    max-width: none;
+  }
+
+  .adminMain :global(.admin-record-title > img),
+  .adminMain :global(.admin-record-title > span),
+  .adminMain :global(.admin-table.channels .admin-record-title > img),
+  .adminMain :global(.admin-table.channels .admin-record-title > span) {
+    flex-basis: 48px;
+    height: 48px;
+    width: 48px;
+  }
+
+  .adminMain :global(.admin-age-form) {
+    grid-template-columns: minmax(0, 1fr) 52px;
+    width: 100%;
+  }
+
+  .adminMain :global(.admin-number-stepper.compact) {
+    width: 100%;
+  }
+}
+
+@media (max-width: 340px) {
+  .adminMain :global(.admin-controls) {
+    grid-template-columns: 1fr;
+  }
+
+  .adminMain :global(.admin-control),
+  .adminMain :global(.admin-clear-filters) {
+    grid-column: 1;
+  }
+}
