@@ -39,9 +39,10 @@ test("failed account data retains a working skip destination", async ({ page }) 
   await expect(page.getByRole("main")).toBeFocused();
 });
 
-test("homepage retains one skip link and settings uses its canonical route", async ({ page }) => {
+test("homepage retains one skip link and shared navigation uses canonical utility routes", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Skip to content" })).toHaveCount(1);
+  await page.goto("/privacy");
   await expect(page.getByRole("navigation", { name: "Primary navigation", exact: true }).getByRole("link", { name: "Settings", exact: true })).toHaveAttribute("href", "/settings");
   await page.getByRole("link", { name: "Support", exact: true }).click();
   await expect(page).toHaveURL(/\/privacy#help$/);
