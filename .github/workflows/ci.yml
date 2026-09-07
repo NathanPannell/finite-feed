@@ -119,7 +119,7 @@ jobs:
 
   deploy-production:
     if: vars.BOOTSTRAP_COMPLETE == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    needs: [backend, frontend, deployment-contracts]
+    needs: [backend, backend-docker-runtime, frontend, deployment-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     concurrency:
