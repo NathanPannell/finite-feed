@@ -6,24 +6,25 @@ type SiteHeaderProps = {
   action?: ReactNode;
   context?: ReactNode;
   showMatchLab?: boolean;
+  marketing?: boolean;
 };
 
 function PrimaryLinks({ active, showMatchLab = true }: Pick<SiteHeaderProps, "active" | "showMatchLab">) {
   return <><Link href="/app" aria-current={active === "feed" ? "page" : undefined}>My feed</Link>{showMatchLab && <Link href="/match" aria-current={active === "match" ? "page" : undefined}>Match Lab</Link>}{active === "admin" ? <a href="/admin" aria-current="page">Control room</a> : <Link href="/app/settings" aria-current={active === "settings" ? "page" : undefined}>Settings</Link>}</>;
 }
 
-export function SiteHeader({ active, action, context, showMatchLab = true }: SiteHeaderProps) {
+export function SiteHeader({ active, action, context, showMatchLab = true, marketing = false }: SiteHeaderProps) {
   return (
     <>
-      <header className="signal-masthead">
+      <header className={`signal-masthead ${marketing ? "marketing-masthead" : ""}`}>
         <Link className="signal-wordmark" href="/" aria-label="Finite Feed home" aria-current={active === "home" ? "page" : undefined}>
           <span aria-hidden="true">F/</span>
           Finite Feed
         </Link>
         <div className={`signal-masthead-context ${context ? "signal-masthead-context-title" : "signal-masthead-context-tagline"}`}>{context ?? <p>Your attention, better spent.</p>}</div>
-        <nav aria-label="Primary navigation"><PrimaryLinks active={active} showMatchLab={showMatchLab} />{action}</nav>
+        <nav aria-label="Primary navigation">{marketing ? <><a href="#how-it-works">How it works</a>{showMatchLab && <Link href="/match">Rate a match</Link>}</> : <PrimaryLinks active={active} showMatchLab={showMatchLab} />}{action}</nav>
       </header>
-      <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} showMatchLab={showMatchLab} /></nav>
+      {!marketing && <nav className="signal-mobile-nav" aria-label="Mobile navigation"><PrimaryLinks active={active} showMatchLab={showMatchLab} /></nav>}
     </>
   );
 }
@@ -37,7 +38,7 @@ export function SiteFooter() {
         <Link href="/privacy">Privacy &amp; your data</Link>
         <a href="https://github.com/NathanPannell/finite-feed/issues/new">Support</a>
       </nav>
-      <span>Private beta</span>
+      <span>Built for a finite watchlist</span>
     </footer>
   );
 }

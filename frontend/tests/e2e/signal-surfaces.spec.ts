@@ -154,7 +154,7 @@ async function mockPublicApi(page: Page) {
       ]);
     }
 
-    if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "beta@example.test", display_name: "Beta reader", telegram_connected: false, delivery_paused: false});
+    if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "reader@example.test", display_name: "Test reader", telegram_connected: false, delivery_paused: false});
     if (url.pathname === "/api/personal/account/telegram-link") return json(route, {url: "https://t.me/finitefeedbot?start=token", code: "824619", expires_at: "2026-09-06T22:10:00Z"});
     if (url.pathname === "/api/personal/account/preferences") return json(route, []);
     return json(route, {});
@@ -628,12 +628,13 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
 });
 
 
-test("public landing explains the beta and links to private sign-in without account requests", async ({ page }) => {
+test("public landing shows a real recommendation and links to sign-in without account requests", async ({ page }) => {
   let personalRequests = 0;
   await page.route("**/api/personal/**", route => { personalRequests++; return route.fulfill({status: 401,json:{detail:"Sign in"}}); });
   await page.goto("/");
   await expect(page.getByRole("heading", {name: "Your attention has better places to be."})).toBeVisible();
-  await expect(page.getByText("Illustrative interface and copy. This is not a real recommendation.")).toBeVisible();
+  await expect(page.getByRole("heading", {name: "The Creative Genius of Sneaker Design"})).toBeVisible();
+  await expect(page.getByText("TED · Salehe Bembury and Cloe Shasha Brooks")).toBeVisible();
   await expect(page.getByRole("link", {name: "Build my finite feed"}).first()).toHaveAttribute("href", "/app");
   expect(personalRequests).toBe(0);
   await page.setViewportSize({width:320,height:800});
@@ -824,11 +825,17 @@ test("completes onboarding one saved step at a time", async ({ page }) => {
   expect(calls.at(-1)?.body).toEqual({ telegram: "skipped" });
 });
 
-test("keeps the same navigation and footer across public routes", async ({ page }) => {
+test("keeps app navigation across public utility routes and a focused marketing navigation on home", async ({ page }) => {
   await page.route("**/api/personal/**", route => route.fulfill({status: 401, json: {detail: "Sign in"}}));
-  const routes = ["/", "/privacy", "/app", "/match"];
+  const routes = ["/privacy", "/app", "/match"];
 
   await page.setViewportSize({width: 1100, height: 800});
+  await page.goto("/");
+  const marketing = page.getByRole("navigation", {name: "Primary navigation"});
+  await expect(marketing.getByRole("link", {name: "How it works"})).toHaveAttribute("href", "#how-it-works");
+  await expect(marketing.getByRole("link", {name: "Rate a match"})).toHaveAttribute("href", "/match");
+  await expect(marketing.getByRole("link", {name: "Build my feed"})).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("navigation", {name: "Mobile navigation"})).toHaveCount(0);
   for (const route of routes) {
     await page.goto(route);
     const primary = page.getByRole("navigation", {name: "Primary navigation"});
@@ -837,7 +844,7 @@ test("keeps the same navigation and footer across public routes", async ({ page 
     await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/app/settings");
     const footer = page.getByRole("contentinfo");
     await expect(footer.getByRole("link", {name: "Privacy & your data"})).toHaveAttribute("href", "/privacy");
-    await expect(footer.getByText("Private beta", {exact: true})).toBeVisible();
+    await expect(footer.getByText("Built for a finite watchlist", {exact: true})).toBeVisible();
   }
 
   await page.setViewportSize({width: 320, height: 800});
