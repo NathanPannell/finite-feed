@@ -1,5 +1,18 @@
 # Deployment architecture
 
+## Branch lifecycle
+
+Feature PRs target the long-lived `staging` branch. A separate agent reviews the final head and merges passing changes. Once combined staging verification settles, a release PR promotes the tested staging candidate into long-lived `main`; only main deploys released production. Version tags identify the deployed production commit, and the frontend displays the version and environment. Keep staging fixed during release review or revalidate the changed candidate.
+
+## Permanent staging
+
+```text
+staging branch → finite-feed-staging.vercel.app → Railway staging API → Neon staging
+                                                Railway staging worker → same database
+```
+
+Staging has its own Vercel project, permanent Railway environment, and permanent Neon database/Auth branch. Its Neon branch is created once from production and subsequently retains its own data and migrations; deployments do not recopy production data. Code promotion does not promote staging database contents. PR cleanup and expiry must never remove these resources. Staging uses its own Auth endpoint and Google callback, exact frontend origins, and disabled production Telegram delivery. Google sign-in and native sessions must work here before a release is prepared.
+
 ## Production
 
 ```text
@@ -8,7 +21,7 @@ Vercel frontend ──HTTPS──> Railway API ──pooled SQL──> Neon prod
                          API migrations ──direct SQL──> Neon production
 ```
 
-GitHub Actions serializes production deployment after CI and rejects non-main or superseded source before provider changes. It uploads the checked-out source with a baked commit stamp, waits for successful Railway deployments, and verifies the API and a fresh healthy worker heartbeat at that commit. It deploys Vercel once with the API URL, verifies the production alias resolves to that deployment, updates exact CORS/Auth origins, then verifies final API/worker readiness and the production OAuth start. Sanitized deployment IDs and readiness evidence are retained as workflow artifacts.
+GitHub Actions serializes production deployment after CI and rejects non-main or superseded source before provider changes. Release verification binds the main merge to the tested staging candidate and its version. It uploads the checked-out source with a baked commit stamp, waits for successful Railway deployments, and verifies the API and a fresh healthy worker heartbeat at that commit. It deploys Vercel once with the API URL and version metadata, verifies the production alias resolves to that deployment, updates exact CORS/Auth origins, then verifies final API/worker readiness and the production OAuth start. Only successful production verification publishes the matching version tag/release. Sanitized deployment IDs and readiness evidence are retained as workflow artifacts.
 
 The API and worker images contain the same pinned Arctic Embed XS artifact and run with model-network access disabled. The worker performs the idempotent semantic backfill before ingestion and delivery. Neon stores `vector(384)` values and serves cosine nearest-neighbor queries through an HNSW index; the additive legacy vectors remain available for rollback until a later verified cleanup.
 
