@@ -262,7 +262,9 @@ jobs:
         env:
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: python3 scripts/smoke-preview-native-auth.py --preview-url "$FRONTEND_URL" --auth-only
+        run: |
+          vercel link --yes --project "$VERCEL_PROJECT_ID" --cwd frontend --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          python3 scripts/smoke-preview-native-auth.py --preview-url "$FRONTEND_URL" --auth-only
 
       - name: Post or update preview summary
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
