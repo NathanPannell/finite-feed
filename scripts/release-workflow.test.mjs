@@ -16,6 +16,7 @@ test("CI covers both long-lived branches and gates production publication after 
   assert.ok(ci.indexOf("Verify deployed frontend release metadata") < ci.indexOf("node scripts/publish-release.mjs"));
   assert.match(ci, /NEXT_PUBLIC_APP_ENV="production"/);
   assert.match(ci, /api\/version\?commit=\$EXPECTED_COMMIT_SHA/);
+  assert.match(ci, /deploy-production:[\s\S]*?actions\/checkout@[\s\S]*?fetch-depth: 2/);
 });
 
 test("production workflow accepts semantic versions using its inline validator", () => {

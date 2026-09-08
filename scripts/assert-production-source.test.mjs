@@ -47,3 +47,7 @@ test("rejects a manual dispatch from a non-main ref before querying GitHub", asy
 test("rejects a main commit without the prepared staging parent", async () => {
   await assert.rejects(assertProductionSource(environment, dependencies({ execFileSync: (_command, args) => args[0] === "rev-parse" ? expected : `${parent} ${"d".repeat(40)}` })), /prepared staging candidate/);
 });
+
+test("rejects a shallow checkout that cannot expose both merge parents", async () => {
+  await assert.rejects(assertProductionSource(environment, dependencies({ execFileSync: (_command, args) => args[0] === "rev-parse" ? expected : `${parent}` })), /two-parent merge commit/);
+});
