@@ -2,7 +2,7 @@
 
 Goal: deploy every current `staging` branch head to permanent, isolated Neon, Railway, and Vercel staging resources.
 
-Success condition: the `deploy-staging` check reuses permanent resources, rejects stale source, deploys API and worker at the exact SHA, promotes a separate Vercel staging project to its stable HTTPS origin, verifies CORS/Auth trust and Google OAuth, and never exposes production Telegram credentials.
+Success condition: the `deploy-staging` check reuses permanent resources, rejects stale source, deploys API and worker at the exact SHA, promotes a protected staging preview in the shared Vercel project to its stable HTTPS origin, verifies CORS/Auth trust and Google OAuth, and never exposes production Telegram credentials.
 
 ## Decisions
 
@@ -21,17 +21,18 @@ Success condition: the `deploy-staging` check reuses permanent resources, reject
 - The initial Railway clone transaction now overrides the worker direct database URL and API Auth/CORS/OIDC values before copied services can start; later reconciliation removes worker-only extras.
 - Added staging variable reconciliation with delivery disabled and production Telegram credentials removed.
 - Added a protected preview-target deployment in the shared Vercel project, explicit stable staging-alias promotion, version/build metadata, exact CORS allowlist, and required Google OAuth smoke.
-- Added live checks that both stable staging admin routes redirect to the exact generated deployment protected by Vercel.
+- Added anonymous checks that stable and generated admin routes remain behind Vercel protection, then authenticated automation checks for the app-level stable-to-generated admin redirects, `/match`, exact version metadata, and Google OAuth start.
 - Added exact Neon Auth trusted-domain reconciliation so inherited production and obsolete preview origins are removed only from `staging`.
-- Verified all 93 runnable JavaScript contract tests pass (one unrelated test skipped), the new workflow passes pinned actionlint 1.7.7, and YAML parsing succeeds.
+- Verified all 95 runnable JavaScript contract tests pass (one unrelated test skipped), the workflow passes pinned actionlint 1.7.7, and YAML parsing succeeds.
 
 ## Provider state
 
 - Permanent Neon branch `br-calm-night-arlz5g0l` exists as `staging` with no expiry and isolated Auth.
 - Stable `https://finite-feed-staging.vercel.app` is assigned to the existing Vercel project with `gitBranch=staging`; the production domain remains unbound to a Git branch.
 - The permanent Google callback is registered.
-- Railway `staging` remains to be created through the atomic workflow helper after this change is pushed.
+- Railway `staging` now exists and its first API/worker deployment reached the exact staging SHA before frontend verification exposed the protected-alias assumption.
+- The repaired authenticated smoke passed read-only against live staging `128d8af5b0eb76ef0ae3e74eb32dbb75dc390a02`: anonymous Vercel protection, exact app admin redirects, `/match`, version `0.1.0` staging metadata, and Google OAuth start.
 
 ## Next action
 
-Run independent review, commit the owned files, then dispatch or push the current staging head so the workflow creates Railway and verifies the live stack.
+Review and merge the staging protection repair, then rerun the exact deployment and complete final browser verification.
