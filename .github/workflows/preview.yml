@@ -256,7 +256,7 @@ jobs:
             }
 
   cleanup:
-    if: vars.BOOTSTRAP_COMPLETE == 'true' && github.event.action == 'closed' && github.event.pull_request.base.ref == 'staging' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == vars.TRUSTED_PREVIEW_ACTOR
+    if: vars.BOOTSTRAP_COMPLETE == 'true' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == vars.TRUSTED_PREVIEW_ACTOR
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

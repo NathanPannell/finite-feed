@@ -26,7 +26,8 @@ test("release preparation and validation use exact staging metadata", () => {
   assert.doesNotMatch(release, /node scripts\/prepare-release\.mjs\s*$/m);
 });
 
-test("release PRs cannot create or clean up disposable feature previews", () => {
+test("release PRs cannot create previews and close cleanup remains base-independent", () => {
   assert.match(preview, /github\.event\.pull_request\.base\.ref == 'staging'/);
-  assert.equal(preview.match(/github\.event\.pull_request\.base\.ref == 'staging'/g)?.length, 2);
+  assert.equal(preview.match(/github\.event\.pull_request\.base\.ref == 'staging'/g)?.length, 1);
+  assert.match(preview, /cleanup:\s+if: vars\.BOOTSTRAP_COMPLETE == 'true' && github\.event\.action == 'closed' && github\.event\.pull_request\.head\.repo\.full_name/);
 });
