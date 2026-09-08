@@ -1,8 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SignalShell } from "@/components/signal-shell";
+import styles from "./match-game.module.css";
 
 type MatchCard = {
   profile_id: string;
@@ -26,12 +28,15 @@ export function MatchGame() {
   const [rationale, setRationale] = useState("");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionClipped, setDescriptionClipped] = useState(false);
+  const [profileExpanded, setProfileExpanded] = useState(false);
+  const [profileClipped, setProfileClipped] = useState(false);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [liveMessage, setLiveMessage] = useState("Loading the next pair.");
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const profileRef = useRef<HTMLParagraphElement>(null);
   const viewerHeadingRef = useRef<HTMLHeadingElement>(null);
   const assessmentHeadingRef = useRef<HTMLHeadingElement>(null);
   const emptyHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -55,6 +60,8 @@ export function MatchGame() {
       setRationale("");
       setDescriptionExpanded(false);
       setDescriptionClipped(false);
+      setProfileExpanded(false);
+      setProfileClipped(false);
       setLiveMessage(nextCard ? "The next pair is ready." : "No more pairs are available for you right now.");
       return nextCard;
     } catch (loadError) {
@@ -112,6 +119,25 @@ export function MatchGame() {
     };
   }, [card, descriptionExpanded]);
 
+  useLayoutEffect(() => {
+    const profile = profileRef.current;
+    if (!profile || profileExpanded) return;
+
+    let active = true;
+    const measure = () => {
+      if (!active) return;
+      setProfileClipped(profile.scrollHeight > profile.clientHeight + 1);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(profile);
+    measure();
+    void document.fonts?.ready.then(measure);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [card, profileExpanded]);
+
   async function loadAndFocus(afterSaved = false) {
     focusTarget.current = "pair";
     return load({ afterSaved });
@@ -140,6 +166,7 @@ export function MatchGame() {
         setSelected(null);
         setRationale("");
         setDescriptionExpanded(false);
+        setProfileExpanded(false);
         setAssessment(null);
         const nextCard = await loadAndFocus();
         if (nextCard !== undefined) {
@@ -160,6 +187,7 @@ export function MatchGame() {
       setRationale("");
       setSelected(null);
       setDescriptionExpanded(false);
+      setProfileExpanded(false);
       setCard(null);
       if (result.assessment) {
         focusTarget.current = "assessment";
@@ -191,7 +219,7 @@ export function MatchGame() {
 
   return (
     <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
-      <main className="match-main">
+      <main id="main" tabIndex={-1} className="match-main">
         <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{liveMessage}</p>
         {notice && <p className="signal-notice match-notice">{notice}</p>}
         {error && <p className="signal-error match-notice" role="alert">{error}</p>}
@@ -206,38 +234,48 @@ export function MatchGame() {
             </button>
           </section>
         ) : card ? (
-          <section className="match-workspace" aria-busy={busy} aria-label="Review a synthetic viewer and candidate video">
-            <article className="match-profile">
-              <header className="match-column-heading">
+          <section className={`match-workspace ${styles.workspace}`} aria-busy={busy} aria-label="Review a synthetic viewer and candidate video">
+            <article className={`match-profile ${styles.profile}`}>
+              <header className={`match-column-heading ${styles.columnHeading}`}>
                 <h2 ref={viewerHeadingRef} tabIndex={-1}>Viewer</h2>
                 <p>Synthetic viewer profile.</p>
               </header>
-              <ul className="topic-list" aria-label="Viewer topics">
+              <ul className={`topic-list ${styles.topicList}`} aria-label="Viewer topics">
                 {card.topics.map((topic) => <li key={topic}>{topic}</li>)}
               </ul>
-              <p className="profile-summary">{card.summary}</p>
+              <p ref={profileRef} className={`profile-summary ${styles.profileSummary} ${profileExpanded ? styles.expanded : ""}`}>{card.summary}</p>
+              {(profileClipped || profileExpanded) && (
+                <button
+                  className={styles.disclosure}
+                  type="button"
+                  aria-expanded={profileExpanded}
+                  onClick={() => setProfileExpanded((expanded) => !expanded)}
+                >
+                  {profileExpanded ? "Show less profile" : "Show full profile"}
+                </button>
+              )}
             </article>
 
-            <article className="match-video">
-              <header className="match-column-heading">
+            <article className={`match-video ${styles.video}`}>
+              <header className={`match-column-heading ${styles.columnHeading}`}>
                 <h2>Video</h2>
                 <p>Assistant-curated video.</p>
               </header>
               {card.thumbnail_url ? (
                 <Image
-                  className="match-video-thumbnail"
+                  className={`match-video-thumbnail ${styles.thumbnail}`}
                   src={card.thumbnail_url}
                   alt=""
                   width={640}
                   height={360}
                 />
               ) : <div className="match-video-thumbnail match-video-thumbnail-fallback" aria-label="No video thumbnail">FF</div>}
-              <div className="match-video-copy">
-                <h3>{card.title}</h3>
-                <p ref={descriptionRef} className={`video-description${descriptionExpanded ? " is-expanded" : ""}`}>{card.description}</p>
+              <div className={`match-video-copy ${styles.videoCopy}`}>
+                <h3 className={styles.videoTitle}>{card.title}</h3>
+                <p ref={descriptionRef} className={`video-description ${styles.description} ${descriptionExpanded ? `is-expanded ${styles.expanded}` : ""}`}>{card.description}</p>
                 {(descriptionClipped || descriptionExpanded) && (
                   <button
-                    className="video-description-toggle"
+                    className={`video-description-toggle ${styles.disclosure}`}
                     type="button"
                     aria-expanded={descriptionExpanded}
                     onClick={() => setDescriptionExpanded((expanded) => !expanded)}
@@ -248,54 +286,67 @@ export function MatchGame() {
               </div>
             </article>
 
-            <aside className="match-response" aria-labelledby="match-action-title">
-              <h2 id="match-action-title">Action</h2>
-              <p className="match-action-help">Would this viewer value this video?</p>
-              <fieldset>
-                <legend className="sr-only">Your judgment</legend>
-                <div className="match-choices">
-                  <div className="match-choice-row">
-                    <button className="match-choice-yes" type="button" aria-pressed={selected === "yes"} aria-describedby="match-yes-definition" onClick={() => setSelected("yes")} disabled={busy}>Yes</button>
-                    <p id="match-yes-definition"><strong>Yes</strong> means a clear fit.</p>
-                  </div>
-                  <div className="match-choice-row">
-                    <button className="match-choice-no" type="button" aria-pressed={selected === "no"} aria-describedby="match-no-definition" onClick={() => setSelected("no")} disabled={busy}>No</button>
-                    <p id="match-no-definition"><strong>No</strong> means a clear mismatch.</p>
-                  </div>
-                  <div className="match-choice-row">
-                    <button className="match-choice-unsure" type="button" aria-pressed={selected === "unsure"} aria-describedby="match-unsure-definition" onClick={() => setSelected("unsure")} disabled={busy}>Unsure</button>
-                    <p id="match-unsure-definition"><strong>Unsure</strong> means the evidence is mixed or the title and description do not provide enough information.</p>
-                  </div>
+            <aside className={`match-response ${styles.response}`} aria-labelledby="match-action-title">
+              <h2 id="match-action-title" className={styles.judgmentTitle}>Your judgment</h2>
+              <fieldset className={styles.judgmentGroup}>
+                <legend>Does this video fit?</legend>
+                <p id="match-choice-help" className={styles.judgmentHelp}>Choose Unsure when the evidence is incomplete.</p>
+                <div className={`match-choices ${styles.choiceGrid}`}>
+                  {([
+                    ["yes", "Yes", "Clear fit"],
+                    ["no", "No", "Clear mismatch"],
+                    ["unsure", "Unsure", "Not enough evidence"],
+                  ] as const).map(([value, name, definition]) => (
+                    <label className={styles.choice} key={value}>
+                      <input
+                        className={styles.radio}
+                        type="radio"
+                        name="match-judgment"
+                        value={value}
+                        checked={selected === value}
+                        onChange={() => setSelected(value)}
+                        disabled={busy}
+                        aria-label={name}
+                        aria-describedby={`match-${value}-definition match-choice-help`}
+                      />
+                      <span className={styles.choiceName}>{name}</span>
+                      <span id={`match-${value}-definition`} className={styles.choiceDefinition}>{definition}</span>
+                      {selected === value && <span className={styles.choiceState} aria-hidden="true">Selected</span>}
+                    </label>
+                  ))}
                 </div>
               </fieldset>
-              <label htmlFor="match-reason">Reason <span>Optional. It is useful for close calls.</span></label>
+              <label className={styles.reasonLabel} htmlFor="match-reason">Reason <span>Optional. It is useful for close calls.</span></label>
               <textarea
+                className={styles.reason}
                 id="match-reason"
                 value={rationale}
                 onChange={(event) => setRationale(event.target.value)}
+                disabled={busy}
                 maxLength={1000}
                 placeholder="What made the fit clear or unclear?"
               />
-              <button className="match-save" data-state={busy ? "saving" : selected ? "ready" : "idle"} onClick={() => void submit()} disabled={busy || !selected}>
+              <button className={`match-save ${styles.save}`} data-state={busy ? "saving" : selected ? "ready" : "idle"} onClick={() => void submit()} disabled={busy || !selected}>
                 {busy ? "Saving judgment..." : "Save judgment"}
               </button>
             </aside>
           </section>
         ) : busy ? (
-          <section className="signal-empty match-empty">
+          <section className={`signal-empty match-empty ${styles.empty}`}>
             <h2>Loading the next pair.</h2>
             <p>This may take a moment.</p>
           </section>
         ) : error ? (
-          <section className="signal-empty match-empty">
+          <section className={`signal-empty match-empty ${styles.empty}`}>
             <h2>The next pair could not be loaded.</h2>
             <p>Try again to continue this review session.</p>
             <button className="signal-action" onClick={() => void loadAndFocus()}>Try again</button>
           </section>
         ) : (
-          <section className="signal-empty match-empty">
+          <section className={`signal-empty match-empty ${styles.empty}`}>
             <h2 ref={emptyHeadingRef} tabIndex={-1}>No more pairs are available for you right now.</h2>
-            <p>Thank you for reviewing these matches.</p>
+            <p>Thank you for reviewing these matches. Your judgments will help evaluate the recommendation system.</p>
+            <Link className={`signal-action ${styles.emptyAction}`} href="/match">See how Match Lab works</Link>
           </section>
         )}
       </main>

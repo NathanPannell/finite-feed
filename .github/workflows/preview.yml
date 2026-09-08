@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  NEON_PREVIEW_PARENT_BRANCH: staging
   PREVIEW_ENVIRONMENT: pr-${{ github.event.pull_request.number }}
   PREVIEW_PULL_REQUEST: ${{ github.event.pull_request.number }}
   NEON_BRANCH: preview/pr-${{ github.event.pull_request.number }}
@@ -28,15 +29,15 @@ env:
 
 jobs:
   deploy:
-    if: vars.BOOTSTRAP_COMPLETE == 'true' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == vars.TRUSTED_PREVIEW_ACTOR && github.actor == vars.TRUSTED_PREVIEW_ACTOR
+    if: vars.BOOTSTRAP_COMPLETE == 'true' && github.event.action != 'closed' && github.event.pull_request.base.ref == 'staging' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == vars.TRUSTED_PREVIEW_ACTOR && github.actor == vars.TRUSTED_PREVIEW_ACTOR
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -52,11 +53,11 @@ jobs:
 
       - name: Create or reuse Neon branch
         id: neon
-        uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6
+        uses: neondatabase/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b # v6.4.0
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch_name: ${{ env.NEON_BRANCH }}
-          parent_branch: ${{ vars.NEON_PARENT_BRANCH }}
+          parent_branch: ${{ env.NEON_PREVIEW_PARENT_BRANCH }}
           database: app
           role: app_owner
           api_key: ${{ secrets.NEON_API_KEY }}
@@ -75,10 +76,10 @@ jobs:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
         run: |
           auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
-          parent_auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "${{ vars.NEON_PARENT_BRANCH }}" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
-          google_callback="$(NEON_AUTH_BASE_URL="$auth_url" PARENT_NEON_AUTH_BASE_URL="$parent_auth_url" node scripts/validate-preview-auth-config.mjs)"
-          printf 'NEON_AUTH_BASE_URL=%s\nPARENT_NEON_AUTH_BASE_URL=%s\nGOOGLE_OAUTH_CALLBACK=%s\n' \
-            "$auth_url" "$parent_auth_url" "$google_callback" >> "$GITHUB_ENV"
+          parent_auth_url="$(neon neon-auth status --project-id "${{ vars.NEON_PROJECT_ID }}" --branch "$NEON_PREVIEW_PARENT_BRANCH" --output json --no-color | jq -er '.base_url | select(startswith("https://"))')"
+          NEON_AUTH_BASE_URL="$auth_url" PARENT_NEON_AUTH_BASE_URL="$parent_auth_url" node scripts/validate-preview-auth-config.mjs >/dev/null
+          printf 'NEON_AUTH_BASE_URL=%s\nPARENT_NEON_AUTH_BASE_URL=%s\n' \
+            "$auth_url" "$parent_auth_url" >> "$GITHUB_ENV"
 
       - name: Create or update isolated Railway environment
         env:
@@ -106,26 +107,7 @@ jobs:
             MATCH_LAB_COOKIE_SECRET="$(openssl rand -hex 32)"
             echo "Using an ephemeral Match Lab signing secret for this preview deployment."
           fi
-          railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_BASE_ENVIRONMENT_ID"
-          if railway environment list --json | jq -e --arg name "$PREVIEW_ENVIRONMENT" '.. | objects | select(.name? == $name)' >/dev/null; then
-            echo "Railway environment already exists; updating it in place."
-          else
-            railway environment new "$PREVIEW_ENVIRONMENT" \
-              --copy "$RAILWAY_BASE_ENVIRONMENT_ID" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.DATABASE_URL_UNPOOLED.value "$PREVIEW_DATABASE_URL_UNPOOLED" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.PREVIEW_DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.PREVIEW_DATABASE_URL_UNPOOLED.value "$PREVIEW_DATABASE_URL_UNPOOLED" \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.DELIVERY_ENABLED.value false \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value disabled-in-preview \
-              --service-config "$RAILWAY_API_SERVICE_ID" variables.TELEGRAM_PRODUCTION_CHAT_ID.value disabled-in-preview \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.DATABASE_URL_UNPOOLED.value "$PREVIEW_DATABASE_URL_UNPOOLED" \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.PREVIEW_DATABASE_URL.value "$PREVIEW_DATABASE_URL" \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.DELIVERY_ENABLED.value false \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.TELEGRAM_PRODUCTION_BOT_TOKEN.value disabled-in-preview \
-              --service-config "$RAILWAY_WORKER_SERVICE_ID" variables.TELEGRAM_PRODUCTION_CHAT_ID.value disabled-in-preview
-          fi
+          node scripts/create-railway-preview-environment.mjs
 
           node scripts/set-railway-variables.mjs preview
 
@@ -172,6 +154,9 @@ jobs:
         run: |
           preview_url="$(vercel deploy --yes --target preview --cwd frontend \
             --build-env NEXT_PUBLIC_API_BASE_URL="$API_URL" \
+            --build-env NEXT_PUBLIC_APP_VERSION="$(tr -d '[:space:]' < VERSION)" \
+            --build-env NEXT_PUBLIC_APP_ENV="preview" \
+            --build-env NEXT_PUBLIC_APP_COMMIT="$HEAD_SHA" \
             --build-env RAILWAY_API_BASE_URL="$API_URL" \
             --env RAILWAY_API_BASE_URL="$API_URL" \
             --env NEON_AUTH_BASE_URL="$NEON_AUTH_BASE_URL" \
@@ -239,33 +224,17 @@ jobs:
           vercel curl /api/match/annotations/stats --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
             --fail --silent --show-error -c "$cookie_file" -b "$cookie_file" | jq -e '.completed >= 1' >/dev/null
 
-      - name: Verify Google OAuth accepts the preview callback
-        env:
-          FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          oauth_start_file="$(mktemp)"
-          trap 'rm -f "$oauth_start_file"' EXIT
-          vercel curl /api/auth/sign-in/social --deployment "$FRONTEND_URL" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" -- \
-            --fail --silent --show-error \
-            --request POST \
-            -H 'Content-Type: application/json' \
-            -H "Origin: $FRONTEND_URL" \
-            --data "$(jq -nc --arg callback "$FRONTEND_URL/auth/callback" '{provider:"google",callbackURL:$callback,disableRedirect:true}')" \
-            -o "$oauth_start_file"
-          node scripts/verify-google-oauth-start.mjs \
-            --payload-file "$oauth_start_file" \
-            --expected-callback "$NEON_AUTH_BASE_URL/callback/google"
-
       - name: Verify isolated native account sessions
         timeout-minutes: 5
         env:
           FRONTEND_URL: ${{ steps.vercel.outputs.preview_url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: python3 scripts/smoke-preview-native-auth.py --preview-url "$FRONTEND_URL" --auth-only
+        run: |
+          python3 scripts/write-vercel-project-link.py --frontend-dir frontend --org-id "$VERCEL_ORG_ID" --project-id "$VERCEL_PROJECT_ID"
+          python3 scripts/smoke-preview-native-auth.py --preview-url "$FRONTEND_URL" --auth-only
 
       - name: Post or update preview summary
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           API_URL: ${{ steps.railway.outputs.api_url }}
           PREVIEW_URL: ${{ steps.vercel.outputs.preview_url }}
@@ -274,7 +243,7 @@ jobs:
         with:
           script: |
             const marker = '<!-- full-stack-preview -->';
-            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth callback: \`${process.env.GOOGLE_OAUTH_CALLBACK}\`\n\nRegister this callback once for this Neon branch. A new Vercel deployment URL does not change it.\n\nAccounts created in this preview, including email/password accounts, are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
+            const body = `${marker}\nFull-stack preview is ready.\n\nFrontend: ${process.env.PREVIEW_URL}\n\nAPI readiness: ${process.env.API_URL}/ready\n\nDatabase: Neon branch \`${process.env.NEON_BRANCH}\`\n\nGoogle OAuth is optional for previews and is not a readiness check. Production OAuth remains required and verified by the production deployment.\n\nAccounts created in this preview, including email/password accounts, are isolated to this branch and are removed when the branch closes or expires at \`${process.env.BRANCH_EXPIRES_AT}\`.\n\nVercel deployment: \`${process.env.VERCEL_DEPLOYMENT_ID}\``;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
               issue_number: context.issue.number,
@@ -291,8 +260,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Require the PR to remain closed
@@ -303,7 +272,7 @@ jobs:
         run: npm install --global @railway/cli@5.47.2
 
       - name: Recover legacy recorded Vercel deployment IDs
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const comments = await github.paginate(github.rest.issues.listComments, {

@@ -46,6 +46,82 @@ def test_model_rationale_is_trimmed_to_one_sentence():
         client.close()
 
 
+@pytest.mark.parametrize("failure", ["no_key", "quota", "http", "timeout", "malformed"])
+def test_recommendation_provider_failures_persist_nearest_cosine_match(monkeypatch, failure):
+    import os
+    import psycopg
+    from psycopg.rows import dict_row
+    from backend.app import recommendations as recs
+    from backend.app.settings import Settings
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    user_id, profile_id = uuid4(), uuid4()
+    nearest_id, composite_id = uuid4(), uuid4()
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        channel_id = conn.execute("SELECT id FROM tracked_channels LIMIT 1").fetchone()["id"]
+        try:
+            conn.execute("UPDATE tracked_channels SET is_active=TRUE WHERE id=%s", (channel_id,))
+            conn.execute("INSERT INTO app_users(id,display_name) VALUES (%s,'Fallback choice')", (user_id,))
+            conn.execute(
+                "INSERT INTO preference_versions(id,user_id,version,preference_statement,rendered_markdown,source) "
+                "VALUES (%s,%s,1,'precise preference','precise preference','onboarding')",
+                (profile_id, user_id),
+            )
+            conn.execute("INSERT INTO user_channel_follows(user_id,channel_id) VALUES (%s,%s)", (user_id, channel_id))
+            for video_id, title in ((nearest_id, "Nearest"), (composite_id, "Composite")):
+                conn.execute(
+                    "INSERT INTO videos(id,youtube_video_id,tracked_channel_id,channel_name,title,description,youtube_url) "
+                    "VALUES (%s,%s,%s,'test',%s,%s,%s)",
+                    (video_id, str(video_id), channel_id, title, title, f"https://youtu.be/{video_id}"),
+                )
+            conn.commit()
+            shortlist = [
+                recs.ScoredVideo({"id": composite_id, "youtube_video_id": str(composite_id), "title": "Composite", "speaker": None, "channel_name": "test", "description": "Composite", "published_at": None}, 0.70, 1.0, 0.99),
+                recs.ScoredVideo({"id": nearest_id, "youtube_video_id": str(nearest_id), "title": "Nearest", "speaker": None, "channel_name": "test", "description": "Nearest", "published_at": None}, 0.91, 0.0, 0.65),
+            ]
+            monkeypatch.setattr(recs, "retrieve_shortlist", lambda *args, **kwargs: shortlist)
+            if failure != "quota":
+                monkeypatch.setattr(recs, "reserve_request", lambda connection, *args: connection.commit())
+
+            def fail(*args):
+                if failure == "http":
+                    request = httpx.Request("POST", "https://example.test/chat/completions")
+                    raise httpx.HTTPStatusError("failed", request=request, response=httpx.Response(503, request=request))
+                if failure == "timeout":
+                    raise httpx.ReadTimeout("timed out")
+                raise ValueError("malformed")
+
+            provider_calls = []
+            def client(*args):
+                provider_calls.append(args)
+                return SimpleNamespace(choose=fail, close=lambda: None)
+            monkeypatch.setattr(recs, "OpenRouterClient", client)
+            encoder = SimpleNamespace(model_name="test", model_revision="test", dimensions=384)
+            settings = Settings(
+                _env_file=None, OPENROUTER_API_KEY="" if failure == "no_key" else "test",
+                MODEL_DAILY_REQUEST_LIMIT=0 if failure == "quota" else 40,
+            )
+            recommendation_id = recs.generate_recommendation(conn, settings, user_id, True, encoder)
+            row = conn.execute(
+                "SELECT video_id,rationale,evidence FROM recommendations WHERE id=%s", (recommendation_id,),
+            ).fetchone()
+            assert row["video_id"] == nearest_id
+            assert "cosine similarity" in row["rationale"]
+            assert row["evidence"]["reranker_fallback"] is True
+            assert row["evidence"]["reranker_error"] == ("missing_api_key" if failure == "no_key" else {
+                "quota": "request_budget_exhausted", "http": "HTTPStatusError",
+                "timeout": "ReadTimeout", "malformed": "ValueError",
+            }[failure])
+            assert bool(provider_calls) is (failure not in {"no_key", "quota"})
+        finally:
+            conn.rollback()
+            conn.execute("DELETE FROM app_users WHERE id=%s", (user_id,))
+            conn.execute("DELETE FROM videos WHERE id=ANY(%s)", ([nearest_id, composite_id],))
+            conn.commit()
+
+
 def test_dst_repeated_hour_and_pause():
     user = {"timezone": "America/Los_Angeles", "cadence_days": [0], "delivery_hour": 1}
     first = datetime(2026, 11, 1, 8, 15, tzinfo=UTC)

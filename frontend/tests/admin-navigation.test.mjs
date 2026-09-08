@@ -4,6 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("../components/site-chrome.tsx", import.meta.url), "utf8");
 const proxySource = await readFile(new URL("../app/api/admin/[...path]/route.ts", import.meta.url), "utf8");
+const routeGateSource = await readFile(new URL("../proxy.ts", import.meta.url), "utf8");
 
 test("admin navigation uses full-document anchors for cross-origin SSO", () => {
   assert.doesNotMatch(source, /<Link[^>]+href="\/admin"/);
@@ -11,8 +12,21 @@ test("admin navigation uses full-document anchors for cross-origin SSO", () => {
   assert.equal([...source.matchAll(/<PrimaryLinks active=/g)].length, 2);
 });
 
+test("route gate covers pages and APIs under admin while public routes pass through", () => {
+  assert.match(routeGateSource, /pathname\.startsWith\("\/admin"\) \|\| request\.nextUrl\.pathname\.startsWith\("\/api\/admin"\)/);
+  assert.match(routeGateSource, /if \(!isAdmin\) \{\s+return NextResponse\.next\(\);/);
+  assert.match(routeGateSource, /appEnvironment: process\.env\.NEXT_PUBLIC_APP_ENV/);
+});
+
 test("admin proxy allows every dashboard overview request", () => {
   for (const route of ["summary", "activity", "performance"]) {
     assert.match(proxySource, new RegExp(`\\["${route}", new Set\\(\\["GET"\\]\\)\\]`));
   }
+});
+
+test("admin proxy allows reading and updating homepage feature visibility", () => {
+  assert.match(
+    proxySource,
+    /\["feature-flags\/match-lab-homepage", new Set\(\["GET", "PATCH"\]\)\]/,
+  );
 });

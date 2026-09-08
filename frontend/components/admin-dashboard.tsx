@@ -7,11 +7,13 @@ import {
   RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { SignalShell } from "@/components/signal-shell";
 import { AdminApiError, adminRequest, JsonRecord, pageResult, PageResult } from "@/lib/admin-api";
+import styles from "./admin-dashboard.module.css";
 
 type Tab = "channels" | "videos" | "recommendations";
 type DetailState = { kind: Tab; item: JsonRecord } | null;
@@ -121,8 +123,44 @@ function requestMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function DetailsValue({ data }: { data: unknown }) {
+const detailPriority: Record<Tab, string[]> = {
+  channels: ["name", "canonical_url", "is_active", "sync_status", "last_sync_completed_at", "max_video_age_days", "ingested_video_count"],
+  videos: ["title", "channel_name", "youtube_url", "published_at", "duration_seconds", "view_count", "embedding_model", "recommendation_count"],
+  recommendations: ["recipient_name", "video_title", "channel_name", "rationale", "delivery_state", "rating", "created_at", "delivered_at", "clicked_at"],
+};
+
+const detailLabels: Record<string, string> = {
+  canonical_url: "YouTube channel",
+  is_active: "Tracking",
+  sync_status: "Latest sync",
+  last_sync_completed_at: "Last synced",
+  max_video_age_days: "Video window",
+  ingested_video_count: "Stored videos",
+  youtube_url: "YouTube video",
+  published_at: "Published",
+  duration_seconds: "Duration",
+  view_count: "Views",
+  embedding_model: "Search index",
+  recommendation_count: "Recommendations",
+  recipient_name: "Recipient",
+  video_title: "Video",
+  delivery_state: "Delivery",
+  created_at: "Created",
+  delivered_at: "Delivered",
+  clicked_at: "Clicked",
+};
+
+function detailLabel(key: string) {
+  return detailLabels[key] || key.replaceAll("_", " ");
+}
+
+function DetailsValue({ data, field }: { data: unknown; field?: string }) {
   if (data === null || data === undefined || data === "") return <span className="admin-null">Not recorded</span>;
+  if (field === "is_active") return <Status>{data ? "Active" : "Paused"}</Status>;
+  if (typeof data === "boolean") return <span>{data ? "Yes" : "No"}</span>;
+  if (field === "duration_seconds") return <span>{duration(data)}</span>;
+  if (field && /(_at|_date)$/.test(field)) return <time title={String(data)}>{localTime(data)}</time>;
+  if (field && /(_count|view_count)$/.test(field) && Number.isFinite(Number(data))) return <span>{Number(data).toLocaleString()}</span>;
   if (typeof data === "object") {
     return <details><summary>Inspect structured value</summary><pre>{JSON.stringify(data, null, 2)}</pre></details>;
   }
@@ -142,7 +180,16 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'));
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => {
+          if (!element.getClientRects().length || getComputedStyle(element).visibility === "hidden") return false;
+          let closedDetails = element.parentElement?.closest("details:not([open])");
+          while (closedDetails) {
+            if (!closedDetails.querySelector(":scope > summary")?.contains(element)) return false;
+            closedDetails = closedDetails.parentElement?.closest("details:not([open])");
+          }
+          return true;
+        });
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -164,6 +211,13 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
   }, [close, closeRef, state]);
 
   if (!state) return null;
+  const entries = Object.entries(state.item).filter(([key]) => state.kind !== "channels" || !["user_id", "owner_name"].includes(key));
+  const preferred = detailPriority[state.kind];
+  const primaryEntries = preferred.flatMap((key) => {
+    const entry = entries.find(([candidate]) => candidate === key);
+    return entry ? [entry] : [];
+  });
+  const diagnosticEntries = entries.filter(([key]) => !preferred.includes(key));
   return (
     <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close()}>
       <section ref={dialogRef} className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="record-title">
@@ -172,9 +226,13 @@ function RecordModal({ state, close, closeRef }: { state: DetailState; close: ()
           <button ref={closeRef} className="admin-icon-button" onClick={close} aria-label="Close details"><Icon name="close" /></button>
         </header>
         <div className="admin-detail-list">
-          {Object.entries(state.item).filter(([key]) => state.kind !== "channels" || !["user_id", "owner_name"].includes(key)).map(([key, data]) => (
-            <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd><DetailsValue data={data} /></dd></div>
+          {primaryEntries.map(([key, data]) => (
+            <div key={key}><dt>{detailLabel(key)}</dt><dd><DetailsValue data={data} field={key} /></dd></div>
           ))}
+          {diagnosticEntries.length > 0 && <details className="admin-diagnostics">
+            <summary>Technical details <span>{diagnosticEntries.length}</span></summary>
+            <dl>{diagnosticEntries.map(([key, data]) => <div key={key}><dt>{detailLabel(key)}</dt><dd><DetailsValue data={data} field={key} /></dd></div>)}</dl>
+          </details>}
         </div>
       </section>
     </div>
@@ -257,6 +315,13 @@ function PerformanceChart({ data }: { data: JsonRecord[] }) {
       </svg>
       <div className="chart-axis"><span>{firstDay}</span><span>{lastDay}</span></div>
     </figure>
+    <div className="admin-performance-table-wrap">
+      <table className="admin-performance-table">
+        <caption>Daily feedback data</caption>
+        <thead><tr><th>Date</th><th>Useful</th><th>Not useful</th><th>Sent</th><th>Useful share</th></tr></thead>
+        <tbody>{data.map((item) => <tr key={text(item, "day")}><td><time dateTime={text(item, "day")}>{compactDay(value(item, "day"))}</time></td><td>{numberValue(item, "up_count")}</td><td>{numberValue(item, "down_count")}</td><td>{numberValue(item, "sent_count")}</td><td>{Math.round(numberValue(item, "up_share") * 100)}%</td></tr>)}</tbody>
+      </table>
+    </div>
   </div>;
 }
 
@@ -299,6 +364,13 @@ export function AdminDashboard() {
   const [listError, setListError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeError, setNoticeError] = useState(false);
+  const [matchLabHomepageVisible, setMatchLabHomepageVisible] = useState(true);
+  const [savedMatchLabHomepageVisible, setSavedMatchLabHomepageVisible] = useState(true);
+  const [featureFlagLoading, setFeatureFlagLoading] = useState(true);
+  const [featureFlagSaving, setFeatureFlagSaving] = useState(false);
+  const [featureFlagMessage, setFeatureFlagMessage] = useState("");
+  const [featureFlagError, setFeatureFlagError] = useState("");
   const [detail, setDetail] = useState<DetailState>(null);
   const [page, setPage] = useState<Record<Tab, number>>({ channels: 1, videos: 1, recommendations: 1 });
   const [searchDraft, setSearchDraft] = useState("");
@@ -326,12 +398,40 @@ export function AdminDashboard() {
   const triggerRef = useRef<HTMLElement | null>(null);
   const modalCloseRef = useRef<HTMLButtonElement>(null);
   const latestResolve = useRef(0);
+  const listGeneration = useRef(0);
+  const listController = useRef<AbortController | null>(null);
+  const pendingTrackingFocus = useRef<string | null>(null);
+  const listKey = JSON.stringify([tab, page, search, channelSort, showInactive, videoSort, videoChannel, videoEmbedding, videoRecommended, videoPublishedAfter, videoIngestedAfter, recommendationSort, deliveryState, rating, videoSearchMode]);
+  const activeListKey = useRef(listKey);
+
+  useLayoutEffect(() => {
+    activeListKey.current = listKey;
+    listGeneration.current += 1;
+    listController.current?.abort();
+    return () => { listGeneration.current += 1; listController.current?.abort(); };
+  }, [listKey]);
+
+  useEffect(() => {
+    if (!pendingTrackingFocus.current) return;
+    if (tab !== "channels") { pendingTrackingFocus.current = null; return; }
+    if (listLoading || mutationId) return;
+    const action = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-tracking-channel]"))
+      .find((button) => button.dataset.trackingChannel === pendingTrackingFocus.current);
+    action?.focus();
+    pendingTrackingFocus.current = null;
+  }, [listLoading, mutationId, tab]);
+
+  const announce = useCallback((message: string, error = false) => {
+    setNotice(message);
+    setNoticeError(error);
+  }, []);
 
   const changeTab = useCallback((nextTab: Tab) => {
     setTab(nextTab);
     setSearchDraft(search[nextTab]);
     setList(emptyPage);
-  }, [search]);
+    announce("");
+  }, [announce, search]);
 
   const loadOverview = useCallback(async () => {
     setOverviewLoading(true);
@@ -352,10 +452,31 @@ export function AdminDashboard() {
     }
   }, []);
 
+  const loadFeatureFlag = useCallback(async () => {
+    setFeatureFlagLoading(true);
+    setFeatureFlagError("");
+    try {
+      const payload = await adminRequest<JsonRecord>("feature-flags/match-lab-homepage");
+      const enabled = booleanValue(payload, "enabled");
+      setMatchLabHomepageVisible(enabled);
+      setSavedMatchLabHomepageVisible(enabled);
+    } catch (error) {
+      setFeatureFlagError(requestMessage(error, "Homepage visibility could not be loaded."));
+    } finally {
+      setFeatureFlagLoading(false);
+    }
+  }, []);
+
   const loadList = useCallback(async () => {
-    if (tab === "videos" && videoSearchMode === "vector") return;
-    setListLoading(true);
+    // A mutation begun on another tab must not reload its old query afterward.
+    if (activeListKey.current !== listKey) return;
+    const generation = ++listGeneration.current;
+    listController.current?.abort();
     setListError("");
+    if (tab === "videos" && videoSearchMode === "vector") { setListLoading(false); return; }
+    const controller = new AbortController();
+    listController.current = controller;
+    setListLoading(true);
     const params = new URLSearchParams({ page: String(page[tab]), page_size: String(pageSize) });
     if (search[tab]) params.set("search", search[tab]);
     if (tab === "channels") {
@@ -382,19 +503,25 @@ export function AdminDashboard() {
       if (rating) params.set("rating", rating);
     }
     try {
-      const payload = await adminRequest<unknown>(`${tab}?${params}`);
+      const payload = await adminRequest<unknown>(`${tab}?${params}`, undefined, controller.signal);
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setList(pageResult<JsonRecord>(payload, page[tab], pageSize));
     } catch (error) {
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setListError(requestMessage(error, `The ${tab} list is unavailable.`));
     } finally {
-      setListLoading(false);
+      if (generation === listGeneration.current && !controller.signal.aborted) setListLoading(false);
     }
-  }, [channelSort, deliveryState, page, rating, recommendationSort, search, showInactive, tab, videoChannel, videoEmbedding, videoIngestedAfter, videoPublishedAfter, videoRecommended, videoSearchMode, videoSort]);
+  }, [channelSort, deliveryState, listKey, page, rating, recommendationSort, search, showInactive, tab, videoChannel, videoEmbedding, videoIngestedAfter, videoPublishedAfter, videoRecommended, videoSearchMode, videoSort]);
 
   useEffect(() => {
     const task = window.setTimeout(() => void loadOverview(), 0);
     return () => window.clearTimeout(task);
   }, [loadOverview]);
+  useEffect(() => {
+    const task = window.setTimeout(() => void loadFeatureFlag(), 0);
+    return () => window.clearTimeout(task);
+  }, [loadFeatureFlag]);
   useEffect(() => {
     const task = window.setTimeout(() => void loadList(), 0);
     return () => window.clearTimeout(task);
@@ -433,15 +560,36 @@ export function AdminDashboard() {
       const full = await adminRequest<JsonRecord>(`${kind}/${encodeURIComponent(id)}`);
       setDetail((current) => current && text(current.item, "id") === id ? { kind, item: full } : current);
     } catch (error) {
-      if (!(error instanceof AdminApiError && error.status === 404)) setNotice(requestMessage(error, "Some record details could not be loaded."));
+      if (!(error instanceof AdminApiError && error.status === 404)) announce(requestMessage(error, "Some record details could not be loaded."), true);
     }
   }
 
   async function refresh() {
     setRefreshing(true);
-    setNotice("");
-    await Promise.all([loadOverview(), loadList()]);
+    announce("");
+    await Promise.all([loadOverview(), loadList(), loadFeatureFlag()]);
     setRefreshing(false);
+  }
+
+  async function saveFeatureFlag(event: FormEvent) {
+    event.preventDefault();
+    setFeatureFlagSaving(true);
+    setFeatureFlagError("");
+    setFeatureFlagMessage("");
+    try {
+      const payload = await adminRequest<JsonRecord>("feature-flags/match-lab-homepage", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: matchLabHomepageVisible }),
+      });
+      const enabled = booleanValue(payload, "enabled");
+      setMatchLabHomepageVisible(enabled);
+      setSavedMatchLabHomepageVisible(enabled);
+      setFeatureFlagMessage(enabled ? "Match Lab links are visible on the home page." : "Match Lab links are hidden from the home page.");
+    } catch (error) {
+      setFeatureFlagError(requestMessage(error, "Homepage visibility did not save."));
+    } finally {
+      setFeatureFlagSaving(false);
+    }
   }
 
   function applySearch(event: FormEvent) {
@@ -450,18 +598,45 @@ export function AdminDashboard() {
     setSearch((current) => ({ ...current, [tab]: searchDraft.trim() }));
   }
 
+  function clearFilters() {
+    setSearchDraft("");
+    setSearch((current) => ({ ...current, [tab]: "" }));
+    setPage((current) => ({ ...current, [tab]: 1 }));
+    if (tab === "channels") setShowInactive(false);
+    if (tab === "videos") {
+      setVideoSearchMode("text");
+      setVectorPhrase("");
+      setVideoChannel("");
+      setVideoEmbedding("");
+      setVideoRecommended("");
+      setVideoPublishedAfter("");
+      setVideoIngestedAfter("");
+    }
+    if (tab === "recommendations") {
+      setDeliveryState("");
+      setRating("");
+    }
+    announce(`${tab[0].toUpperCase()}${tab.slice(1)} filters cleared.`);
+  }
+
   async function vectorSearch(event: FormEvent) {
     event.preventDefault();
     if (!vectorPhrase.trim()) return;
+    const generation = ++listGeneration.current;
+    listController.current?.abort();
+    const controller = new AbortController();
+    listController.current = controller;
     setListLoading(true);
     setListError("");
     try {
-      const payload = await adminRequest<unknown>("videos/vector-search", { method: "POST", body: JSON.stringify({ phrase: vectorPhrase.trim(), limit: 20 }) });
+      const payload = await adminRequest<unknown>("videos/vector-search", { method: "POST", body: JSON.stringify({ phrase: vectorPhrase.trim(), limit: 20 }) }, controller.signal);
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setList(pageResult<JsonRecord>(payload, 1, 20));
     } catch (error) {
+      if (generation !== listGeneration.current || controller.signal.aborted) return;
       setListError(requestMessage(error, "Vector search is unavailable."));
     } finally {
-      setListLoading(false);
+      if (generation === listGeneration.current && !controller.signal.aborted) setListLoading(false);
     }
   }
 
@@ -469,15 +644,15 @@ export function AdminDashboard() {
     event.preventDefault();
     if (!resolvedChannel) return;
     setMutationId("add");
-    setNotice("");
+    announce("");
     try {
       const result = await adminRequest<JsonRecord>("channels", { method: "POST", body: JSON.stringify({ url: channelUrl, max_video_age_days: maxAge }) });
-      setNotice(booleanValue(result, "reactivated") ? "Channel restored and tracking resumed." : "Channel added. Recent uploads will be checked first.");
+      announce(booleanValue(result, "reactivated") ? "Channel restored and tracking resumed." : "Channel added. Recent uploads will be checked first.");
       setChannelUrl("");
       setResolvedChannel(null);
       await Promise.all([loadList(), loadOverview()]);
     } catch (error) {
-      setNotice(requestMessage(error, "The channel could not be added."));
+      announce(requestMessage(error, "The channel could not be added."), true);
     } finally {
       setMutationId("");
     }
@@ -489,14 +664,16 @@ export function AdminDashboard() {
     const restoring = patch.is_active === true;
     setMutationId(id);
     if ("is_active" in patch) {
+      pendingTrackingFocus.current = id;
       setList((current) => ({ ...current, items: current.items.map((row) => text(row, "id") === id ? { ...row, ...patch } : row) }));
     }
     try {
       await adminRequest(`channels/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
-      setNotice("max_video_age_days" in patch ? "Maximum video age updated." : restoring ? "Tracking restored." : "Tracking stopped. Existing history was preserved.");
+      announce("max_video_age_days" in patch ? "Maximum video age updated." : restoring ? "Tracking restored." : "Tracking paused. Existing history was preserved.");
       await Promise.all([loadList(), loadOverview()]);
     } catch (error) {
-      setNotice(requestMessage(error, "The channel update did not save."));
+      const reason = requestMessage(error, "The channel update did not save.");
+      announce(`${reason} The previous tracking state was restored.`, true);
       await loadList();
     } finally {
       setMutationId("");
@@ -521,15 +698,62 @@ export function AdminDashboard() {
     setResolveState("loading");
   }
 
+  const hasActiveFilters = Boolean(
+    search[tab]
+    || searchDraft.trim()
+    || (tab === "channels" && showInactive)
+    || (tab === "videos" && (videoSearchMode === "vector" || vectorPhrase.trim() || videoChannel || videoEmbedding || videoRecommended || videoPublishedAfter || videoIngestedAfter))
+    || (tab === "recommendations" && (deliveryState || rating)),
+  );
+  const tabLabel = tabs.find((item) => item.id === tab)?.label || tab;
+
   return (
     <SignalShell active="admin" className="admin-shell">
-
-      <main className="admin-main">
+      <main id="main" tabIndex={-1} className={`${styles.adminMain} admin-main`}>
         <header className="admin-header">
           <button className="admin-refresh" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </header>
 
-        {notice && <p className="admin-notice" role="status">{notice}</p>}
+        {notice && <p className={`admin-notice ${noticeError ? "error" : ""}`} role={noticeError ? "alert" : "status"}>{notice}</p>}
+
+        <section className="admin-records" aria-labelledby="records-heading">
+          <div className="admin-tabs" role="tablist" aria-label="Operations records">
+            {tabs.map((item, index) => <button key={item.id} id={`tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} onClick={() => changeTab(item.id)} onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const offset = event.key === "ArrowRight" ? 1 : -1; const next = tabs[(index + offset + tabs.length) % tabs.length].id; changeTab(next); window.setTimeout(() => document.getElementById(`tab-${next}`)?.focus(), 0); }}>{item.label}</button>)}
+          </div>
+
+          <div className="admin-tab-panel" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+          <div className="admin-records-heading"><h2 id="records-heading">{tabLabel}</h2><span>{listLoading ? "Loading" : `${list.total.toLocaleString()} records`}</span></div>
+
+            <div className="admin-controls" key={tab}>
+              {tab === "videos" && <label className="admin-control compact-control"><span>Search mode</span><select value={videoSearchMode} onChange={(event) => { setVideoSearchMode(event.target.value as "text" | "vector"); setList(emptyPage); }}>{/* options are intentionally explicit */}<option value="text">Text</option><option value="vector">Meaning</option></select></label>}
+              <form className="admin-search" onSubmit={videoSearchMode === "vector" && tab === "videos" ? vectorSearch : applySearch}>
+                <Icon name="search" /><label className="sr-only" htmlFor="admin-search">Search {tab}</label><input id="admin-search" value={tab === "videos" && videoSearchMode === "vector" ? vectorPhrase : searchDraft} onChange={(event) => tab === "videos" && videoSearchMode === "vector" ? setVectorPhrase(event.target.value) : setSearchDraft(event.target.value)} placeholder={tab === "videos" && videoSearchMode === "vector" ? "Describe an idea to retrieve" : `Search ${tab}`} /><button>{tab === "videos" && videoSearchMode === "vector" ? "Search meaning" : "Search"}</button>
+              </form>
+              {tab === "channels" && <><label className="admin-control"><span>Sort</span><select value={channelSort} onChange={(event) => setChannelSort(event.target.value)}><option value="name:asc">Name</option><option value="last_sync_started_at:desc">Last sync</option><option value="created_at:desc">Recently added</option><option value="latest_video_published_at:desc">Latest video</option></select></label><label className="admin-check"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /><span>Show inactive</span></label></>}
+              {tab === "videos" && videoSearchMode === "text" && <VideoFilters values={{ videoSort, videoChannel, videoEmbedding, videoRecommended, videoPublishedAfter, videoIngestedAfter }} setters={{ setVideoSort, setVideoChannel, setVideoEmbedding, setVideoRecommended, setVideoPublishedAfter, setVideoIngestedAfter }} channels={summary} />}
+              {tab === "recommendations" && <><label className="admin-control"><span>State</span><select value={deliveryState} onChange={(event) => setDeliveryState(event.target.value)}><option value="">All</option><option value="queued">Queued</option><option value="delivered">Delivered</option></select></label><label className="admin-control"><span>Rating</span><select value={rating} onChange={(event) => setRating(event.target.value)}><option value="">All</option><option value="up">Up</option><option value="down">Down</option><option value="unrated">Unrated</option></select></label><label className="admin-control admin-sort-control"><span>Sort</span><select value={recommendationSort} onChange={(event) => setRecommendationSort(event.target.value)}><option value="created_at:desc">Newest</option><option value="created_at:asc">Oldest</option><option value="delivered_at:desc">Delivery time</option><option value="clicked_at:desc">Click time</option><option value="rating:asc">Rating</option></select></label></>}
+              <ColumnChooser tab={tab} hidden={hiddenColumns[tab]} setHidden={(next) => setHiddenColumns((current) => ({ ...current, [tab]: next }))} />
+              {hasActiveFilters && <button className="admin-clear-filters" type="button" onClick={clearFilters}>Clear filters</button>}
+            </div>
+
+            {tab === "channels" && <details className="admin-add-channel"><summary>Add a tracked channel <span>Resolve a YouTube URL before saving</span></summary><ChannelResolver url={channelUrl} setUrl={onChannelUrlChange} maxAge={maxAge} setMaxAge={setMaxAge} state={resolveState} error={resolveError} resolved={resolvedChannel} submit={addChannel} busy={mutationId === "add"} /></details>}
+
+            <p className="sr-only" role="status" aria-live="polite">{listLoading ? `Loading ${tab}.` : !listError ? `${list.total} ${tab} loaded.` : ""}</p>
+            {listError ? <ErrorState message={listError} retry={() => void loadList()} /> : listLoading || list.items.length ? <RecordTable tab={tab} data={list} loading={listLoading} mutationId={mutationId} open={openDetail} patchChannel={patchChannel} hiddenColumns={hiddenColumns[tab]} /> : <EmptyState title={tab === "videos" && videoSearchMode === "vector" && !vectorPhrase ? "Search by meaning" : hasActiveFilters ? `No matching ${tab}` : `No ${tab} yet`} message={tab === "videos" && videoSearchMode === "vector" ? "Enter a phrase to rank compatible stored vectors." : hasActiveFilters ? "Clear filters to return to the full record set." : "Refresh after the next worker run."} />}
+            {!listError && !!list.items.length && <Pagination data={list} go={(next) => setPage((current) => ({ ...current, [tab]: next }))} />}
+          </div>
+        </section>
+
+        <section className="admin-feature" aria-labelledby="feature-heading">
+          <div className="admin-section-heading"><h2 id="feature-heading">Feature visibility</h2></div>
+          <form className="admin-feature-setting" onSubmit={saveFeatureFlag} aria-busy={featureFlagLoading || featureFlagSaving}>
+            <div><h3>Match Lab on the home page</h3><p>Hide the public links while keeping the Match Lab available at its direct URL.</p></div>
+            <label className="admin-check"><input type="checkbox" checked={matchLabHomepageVisible} disabled={featureFlagLoading || featureFlagSaving || Boolean(featureFlagError)} onChange={(event) => { setMatchLabHomepageVisible(event.target.checked); setFeatureFlagMessage(""); }} /><span>Show Match Lab links</span></label>
+            <button className="admin-primary" disabled={featureFlagLoading || featureFlagSaving || Boolean(featureFlagError) || matchLabHomepageVisible === savedMatchLabHomepageVisible}>{featureFlagSaving ? "Saving…" : "Save"}</button>
+          </form>
+          <p className={`admin-feature-feedback ${featureFlagError ? "error-text" : ""}`} aria-live="polite">{featureFlagLoading ? "Loading homepage visibility…" : featureFlagError || featureFlagMessage}</p>
+          {featureFlagError && <button className="admin-text-button" onClick={() => void loadFeatureFlag()}>Try again</button>}
+        </section>
 
         <section className="admin-overview" aria-labelledby="health-heading">
           <div className="admin-section-heading"><h2 id="health-heading">System health</h2></div>
@@ -549,35 +773,8 @@ export function AdminDashboard() {
         </section>
 
         <section className="admin-performance" aria-labelledby="performance-heading">
-          <div className="admin-section-heading"><h2 id="performance-heading">Performance</h2></div>
-          {!overviewError && <PerformanceChart data={performance} />}
-        </section>
-
-        <section className="admin-records" aria-labelledby="records-heading">
-          <div className="admin-tabs" role="tablist" aria-label="Operations records">
-            {tabs.map((item, index) => <button key={item.id} id={`tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} onClick={() => changeTab(item.id)} onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const offset = event.key === "ArrowRight" ? 1 : -1; const next = tabs[(index + offset + tabs.length) % tabs.length].id; changeTab(next); window.setTimeout(() => document.getElementById(`tab-${next}`)?.focus(), 0); }}>{item.label}</button>)}
-          </div>
-
-          <div className="admin-tab-panel" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-          <div className="admin-records-heading"><h2 id="records-heading">{tabs.find((item) => item.id === tab)?.label}</h2><span>{list.total.toLocaleString()} records</span></div>
-
-            {tab === "channels" && <ChannelResolver url={channelUrl} setUrl={onChannelUrlChange} maxAge={maxAge} setMaxAge={setMaxAge} state={resolveState} error={resolveError} resolved={resolvedChannel} submit={addChannel} busy={mutationId === "add"} />}
-
-            <div className="admin-controls" key={tab}>
-              {tab === "videos" && <label className="admin-control compact-control"><span>Search mode</span><select value={videoSearchMode} onChange={(event) => { setVideoSearchMode(event.target.value as "text" | "vector"); setList(emptyPage); }}>{/* options are intentionally explicit */}<option value="text">Text</option><option value="vector">Meaning</option></select></label>}
-              <form className="admin-search" onSubmit={videoSearchMode === "vector" && tab === "videos" ? vectorSearch : applySearch}>
-                <Icon name="search" /><label className="sr-only" htmlFor="admin-search">Search {tab}</label><input id="admin-search" value={tab === "videos" && videoSearchMode === "vector" ? vectorPhrase : searchDraft} onChange={(event) => tab === "videos" && videoSearchMode === "vector" ? setVectorPhrase(event.target.value) : setSearchDraft(event.target.value)} placeholder={tab === "videos" && videoSearchMode === "vector" ? "Describe an idea to retrieve" : `Search ${tab}`} /><button>{tab === "videos" && videoSearchMode === "vector" ? "Search meaning" : "Search"}</button>
-              </form>
-              {tab === "channels" && <><label className="admin-control"><span>Sort</span><select value={channelSort} onChange={(event) => setChannelSort(event.target.value)}><option value="name:asc">Name</option><option value="last_sync_started_at:desc">Last sync</option><option value="created_at:desc">Recently added</option><option value="latest_video_published_at:desc">Latest video</option></select></label><label className="admin-check"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /><span>Show inactive</span></label></>}
-              {tab === "videos" && videoSearchMode === "text" && <VideoFilters values={{ videoSort, videoChannel, videoEmbedding, videoRecommended, videoPublishedAfter, videoIngestedAfter }} setters={{ setVideoSort, setVideoChannel, setVideoEmbedding, setVideoRecommended, setVideoPublishedAfter, setVideoIngestedAfter }} channels={summary} />}
-              <ColumnChooser tab={tab} hidden={hiddenColumns[tab]} setHidden={(next) => setHiddenColumns((current) => ({ ...current, [tab]: next }))} />
-              {tab === "recommendations" && <><label className="admin-control"><span>State</span><select value={deliveryState} onChange={(event) => setDeliveryState(event.target.value)}><option value="">All</option><option value="queued">Queued</option><option value="delivered">Delivered</option></select></label><label className="admin-control"><span>Rating</span><select value={rating} onChange={(event) => setRating(event.target.value)}><option value="">All</option><option value="up">Up</option><option value="down">Down</option><option value="unrated">Unrated</option></select></label><label className="admin-control"><span>Sort</span><select value={recommendationSort} onChange={(event) => setRecommendationSort(event.target.value)}><option value="created_at:desc">Newest</option><option value="created_at:asc">Oldest</option><option value="delivered_at:desc">Delivery time</option><option value="clicked_at:desc">Click time</option><option value="rating:asc">Rating</option></select></label></>}
-            </div>
-
-            {listError ? <ErrorState message={listError} retry={() => void loadList()} /> : <RecordTable tab={tab} data={list} loading={listLoading} mutationId={mutationId} open={openDetail} patchChannel={patchChannel} hiddenColumns={hiddenColumns[tab]} />}
-            {!listError && !listLoading && !list.items.length && <EmptyState title={tab === "videos" && videoSearchMode === "vector" && !vectorPhrase ? "Search by meaning" : `No ${tab} found`} message={tab === "videos" && videoSearchMode === "vector" ? "Enter a phrase to rank compatible stored vectors." : "Adjust the filters or refresh after the next worker run."} />}
-            {!listError && !!list.items.length && <Pagination data={list} go={(next) => setPage((current) => ({ ...current, [tab]: next }))} />}
-          </div>
+          <h2 className="sr-only" id="performance-heading">Performance</h2>
+          <details><summary>Performance <span>{performance.length ? "Daily feedback and useful share" : "No feedback data yet"}</span></summary>{!overviewError && <PerformanceChart data={performance} />}</details>
         </section>
       </main>
       <RecordModal state={detail} close={closeDetail} closeRef={modalCloseRef} />
@@ -631,7 +828,7 @@ function ColumnChooser({ tab, hidden, setHidden }: { tab: Tab; hidden: string[];
 }
 function RecordTable({ tab, data, loading, mutationId, open, patchChannel, hiddenColumns }: { tab: Tab; data: PageResult; loading: boolean; mutationId: string; open: (kind: Tab, item: JsonRecord, trigger: HTMLElement) => void; patchChannel: (item: JsonRecord, patch: JsonRecord) => void; hiddenColumns: string[] }) {
   const columns = tab === "channels" ? 6 : tab === "videos" ? 8 : 7;
-  return <div className="admin-table-wrap" tabIndex={0} aria-label={tab + " records table, scroll for more columns"}><table className={["admin-table", tab, ...hiddenColumns.map((column) => "hide-" + column)].join(" ")}><thead><tr>
+  return <div className="admin-table-wrap" tabIndex={0} aria-label={tab + " records"}><table className={["admin-table", tab, ...hiddenColumns.map((column) => "hide-" + column)].join(" ")}><thead><tr>
     {tab === "channels" && <><th>Channel</th><th>Tracking</th><th>Video window</th><th className="optional-column col-channel-videos">Videos</th><th>Last sync</th><th><span className="sr-only">Actions</span></th></>}
     {tab === "videos" && <><th>Video</th><th>Channel</th><th>Published</th><th className="optional-column col-video-ingested">Ingested</th><th className="optional-column col-video-duration">Duration</th><th className="optional-column col-video-views">Views</th><th>Embedding</th><th><span className="sr-only">Actions</span></th></>}
     {tab === "recommendations" && <><th>Recipient</th><th>Video</th><th className="optional-column col-recommendation-rationale">Rationale</th><th>Delivery</th><th>Rating</th><th className="optional-column col-recommendation-timeline">Timeline</th><th><span className="sr-only">Actions</span></th></>}
@@ -640,15 +837,27 @@ function RecordTable({ tab, data, loading, mutationId, open, patchChannel, hidde
 
 function RecordRow({ tab, item, busy, open, patchChannel }: { tab: Tab; item: JsonRecord; busy: boolean; open: (kind: Tab, item: JsonRecord, trigger: HTMLElement) => void; patchChannel: (item: JsonRecord, patch: JsonRecord) => void }) {
   const active = value(item, "is_active", "active") !== false;
+  const [confirmingPause, setConfirmingPause] = useState(false);
+  const cancelPauseRef = useRef<HTMLButtonElement>(null);
+  const trackingRef = useRef<HTMLButtonElement>(null);
+  const cancelledPause = useRef(false);
+  useEffect(() => {
+    if (confirmingPause) cancelPauseRef.current?.focus();
+    else if (cancelledPause.current) {
+      trackingRef.current?.focus();
+      cancelledPause.current = false;
+    }
+  }, [confirmingPause]);
+  const channelName = text(item, "name") || "this channel";
   if (tab === "channels") return <tr className={!active ? "inactive-row" : ""}>
-    <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span>{text(item, "name").slice(0, 1)}</span>}<div><strong>{text(item, "name")}</strong><a href={text(item, "url", "canonical_url")} target="_blank" rel="noreferrer">Open YouTube</a></div></div></td>
-    <td><Status>{active ? "Active" : "Stopped"}</Status></td>
-    <td><ChannelAgeControl key={`${text(item, "id")}:${numberValue(item, "max_video_age_days")}`} item={item} save={patchChannel} /></td>
-    <td className="optional-column col-channel-videos">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td className="admin-last-sync"><time title={text(item, "last_sync_completed_at", "last_ingestion_at")}>{compactDateTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "Not recorded")}</time>{text(item, "sync_error", "last_sync_error") && <small className="error-text">Sync issue</small>}</td>
-    <td className="admin-row-actions"><button className={`admin-text-button ${active ? "stop" : "restore"}`} disabled={busy} onClick={() => void patchChannel(item, { is_active: !active })}>{busy ? "Saving…" : active ? "Stop" : "Restore"}</button><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
+    <td className="channel-primary"><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span>{text(item, "name").slice(0, 1)}</span>}<div><strong>{text(item, "name")}</strong><a href={text(item, "url", "canonical_url")} target="_blank" rel="noreferrer">Open YouTube</a></div></div></td>
+    <td className="channel-status"><Status>{active ? "Active" : "Paused"}</Status></td>
+    <td className="channel-window"><ChannelAgeControl key={`${text(item, "id")}:${numberValue(item, "max_video_age_days")}`} item={item} save={patchChannel} /></td>
+    <td className="channel-videos optional-column col-channel-videos">{numberValue(item, "ingested_video_count", "video_count").toLocaleString()}</td><td className="channel-sync admin-last-sync"><time title={text(item, "last_sync_completed_at", "last_ingestion_at")}>{compactDateTime(value(item, "last_sync_completed_at", "last_ingestion_at"), "Not recorded")}</time>{text(item, "sync_error", "last_sync_error") && <small className="error-text">Sync issue</small>}</td>
+    <td className="channel-actions admin-row-actions">{confirmingPause && active ? <div className="admin-pause-confirmation" role="group" aria-label={`Pause tracking for ${channelName}`}><span>Pause tracking for <strong>{channelName}</strong>?</span><button className="admin-text-button stop" disabled={busy} onClick={() => { setConfirmingPause(false); void patchChannel(item, { is_active: false }); }}>Pause</button><button ref={cancelPauseRef} className="admin-text-button" disabled={busy} onClick={() => { cancelledPause.current = true; setConfirmingPause(false); }}>Cancel</button></div> : <button ref={trackingRef} data-tracking-channel={text(item, "id")} className={`admin-text-button ${active ? "stop" : "restore"}`} disabled={busy} onClick={() => active ? setConfirmingPause(true) : void patchChannel(item, { is_active: true })}>{busy ? "Saving…" : active ? "Pause tracking" : "Restore tracking"}</button>}<button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   if (tab === "videos") return <tr>
-    <td><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span /> }<div><strong>{text(item, "title")}</strong><a href={text(item, "youtube_url", "url")} target="_blank" rel="noreferrer">Watch video</a></div></div></td><td>{text(item, "channel_name")}</td><td><time title={text(item, "published_at")}>{localTime(value(item, "published_at"), "—")}</time></td><td className="optional-column col-video-ingested"><time title={text(item, "created_at", "ingested_at")}>{localTime(value(item, "ingested_at", "created_at"), "—")}</time></td><td className="optional-column col-video-duration">{duration(value(item, "duration_seconds"))}</td><td className="optional-column col-video-views">{compactNumber(value(item, "view_count", "views"))}</td><td>{value(item, "similarity") !== null && <strong>{numberValue(item, "similarity").toFixed(3) + " semantic similarity"}</strong>}<Status>{booleanValue(item, "has_embedding") || Boolean(value(item, "embedding_model")) ? text(item, "embedding_model") || "Embedded" : "Missing"}</Status><small>{numberValue(item, "recommendation_count")} recommendations</small></td><td><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
+    <td className="video-primary"><div className="admin-record-title">{text(item, "thumbnail_url", "thumbnail") ? <img src={text(item, "thumbnail_url", "thumbnail")} alt="" /> : <span /> }<div><strong>{text(item, "title")}</strong><a href={text(item, "youtube_url", "url")} target="_blank" rel="noreferrer">Watch video</a></div></div></td><td className="video-channel">{text(item, "channel_name")}</td><td className="video-published"><time title={text(item, "published_at")}>{localTime(value(item, "published_at"), "—")}</time></td><td className="video-ingested optional-column col-video-ingested"><time title={text(item, "created_at", "ingested_at")}>{localTime(value(item, "ingested_at", "created_at"), "—")}</time></td><td className="video-duration optional-column col-video-duration">{duration(value(item, "duration_seconds"))}</td><td className="video-views optional-column col-video-views">{compactNumber(value(item, "view_count", "views"))}</td><td className="video-index">{value(item, "similarity") !== null && <strong>{numberValue(item, "similarity").toFixed(3) + " semantic similarity"}</strong>}<Status>{booleanValue(item, "has_embedding") || Boolean(value(item, "embedding_model")) ? text(item, "embedding_model") || "Embedded" : "Missing"}</Status><small>{numberValue(item, "recommendation_count")} recommendations</small></td><td className="video-actions"><button className="admin-details-button" onClick={(event) => void open(tab, item, event.currentTarget)}>Details</button></td>
   </tr>;
   const delivered = Boolean(value(item, "delivered_at"));
   const videoDetails = [

@@ -35,7 +35,7 @@ export const metadata: Metadata = {
 export default function MatchPage() {
   return (
     <SignalShell active="match" className="match-page" mastheadTitle="Does this belong?">
-      <main className="match-main">
+      <main id="main" tabIndex={-1} className="match-main">
         <section className={`match-intro ${styles.intro}`} aria-labelledby="match-intro-title">
           <div className="match-intro-lead">
             <h2 id="match-intro-title">Does this video fit?</h2>

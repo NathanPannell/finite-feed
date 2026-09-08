@@ -47,6 +47,37 @@ def test_custom_model_pin_is_not_changed_and_exhaustion_is_not_retried():
         client.close()
 
 
+def test_missing_video_id_is_malformed_instead_of_an_abstention():
+    client = OpenRouterClient("test", "custom/model", "https://example.com", "https://example.com")
+    client.client.close()
+    client.client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={
+        "model": "custom/model",
+        "choices": [{"message": {"content": '{"rationale":"No selection field."}'}}],
+    })), base_url="https://example.com")
+    try:
+        with pytest.raises(ValueError, match="omitted its video selection"):
+            client.choose("useful talks", [{"video_id": "nearest"}])
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("content", [
+    '{"video_id":null,"rationale":null}',
+    '{"video_id":null,"rationale":{"text":"no"}}',
+])
+def test_non_string_rationale_is_malformed(content):
+    client = OpenRouterClient("test", "custom/model", "https://example.com", "https://example.com")
+    client.client.close()
+    client.client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={
+        "model": "custom/model", "choices": [{"message": {"content": content}}],
+    })), base_url="https://example.com")
+    try:
+        with pytest.raises(ValueError, match="omitted its rationale"):
+            client.choose("useful talks", [{"video_id": "nearest"}])
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize("error, expected", [
     ({"message": "Rate limit exceeded: free-models-per-day. SECRET"}, "provider_daily_limit"),
     ({"message": "Daily request limit reached SECRET"}, "provider_daily_limit"),

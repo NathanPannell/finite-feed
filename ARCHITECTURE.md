@@ -1,5 +1,18 @@
 # Deployment architecture
 
+## Branch lifecycle
+
+Feature PRs target the long-lived `staging` branch. A separate agent reviews the final head and merges passing changes. Once combined staging verification settles, a release PR promotes the tested staging candidate into long-lived `main`; only main deploys released production. Version tags identify the deployed production commit, and the frontend displays the version and environment. Keep staging fixed during release review or revalidate the changed candidate.
+
+## Permanent staging
+
+```text
+staging branch → finite-feed-staging.vercel.app → Railway staging API → Neon staging
+                                                Railway staging worker → same database
+```
+
+Staging shares production's Vercel project but uses preview deployments and the stable `finite-feed-staging.vercel.app` domain bound to the staging Git branch. Vercel Authentication protects the stable and generated preview domains; team members sign in to Vercel before using staging. Automation uses the project's masked protection-bypass credential to verify the app behind that gate without weakening project protection. Its permanent Railway environment and Neon database/Auth branch are separate from production. Its Neon branch is created once from production and subsequently retains its own data and migrations; deployments do not recopy production data. Code promotion does not promote staging database contents. PR cleanup and expiry must never remove these resources. Staging uses its own Auth endpoint and Google callback, exact frontend origins, and disabled production Telegram delivery. Google sign-in and native sessions must work here before a release is prepared. After Vercel authentication, admin routes on the stable staging domain redirect to the exact generated deployment.
+
 ## Production
 
 ```text
@@ -8,7 +21,7 @@ Vercel frontend ──HTTPS──> Railway API ──pooled SQL──> Neon prod
                          API migrations ──direct SQL──> Neon production
 ```
 
-GitHub Actions serializes production deployment after CI and rejects non-main or superseded source before provider changes. It uploads the checked-out source with a baked commit stamp, waits for successful Railway deployments, and verifies the API and a fresh healthy worker heartbeat at that commit. It deploys Vercel once with the API URL, verifies the production alias resolves to that deployment, updates exact CORS/Auth origins, then verifies final API/worker readiness and the production OAuth start. Sanitized deployment IDs and readiness evidence are retained as workflow artifacts.
+GitHub Actions serializes production deployment after CI and rejects non-main or superseded source before provider changes. Release verification binds the main merge to the tested staging candidate and its version. It uploads the checked-out source with a baked commit stamp, waits for successful Railway deployments, and verifies the API and a fresh healthy worker heartbeat at that commit. It deploys Vercel once with the API URL and version metadata, verifies the production alias resolves to that deployment, updates exact CORS/Auth origins, then verifies final API/worker readiness and the production OAuth start. Only successful production verification publishes the matching version tag/release. Sanitized deployment IDs and readiness evidence are retained as workflow artifacts.
 
 The API and worker images contain the same pinned Arctic Embed XS artifact and run with model-network access disabled. The worker performs the idempotent semantic backfill before ingestion and delivery. Neon stores `vector(384)` values and serves cosine nearest-neighbor queries through an HNSW index; the additive legacy vectors remain available for rollback until a later verified cleanup.
 
@@ -20,7 +33,7 @@ Vercel preview ──HTTPS──> Railway API (pr-N) ──pooled SQL──> Neo
                           API migrations ──direct SQL────────> same branch
 ```
 
-The workflow creates or reuses deterministic `pr-N` resources and explicitly checks out the PR head; ordinary CI still tests the merge result. It gives the pooled preview URL to both services and retains the direct migration URL only on the API, removes inherited production database/bot variables, and verifies their absence before deployment. Vercel Git auto-deployment is disabled, so each run creates one frontend preview after the exact API and worker source is ready. It then writes that preview URL into Railway's CORS allowlist and the preview Neon Auth trusted domains before a final API redeploy. Before declaring the preview ready, it starts Google OAuth through the deployed frontend and verifies that Google accepts the exact branch-specific Neon Auth callback.
+The workflow creates or reuses deterministic `pr-N` resources and explicitly checks out the PR head; ordinary CI still tests the merge result. It gives the pooled preview URL to both services and retains the direct migration URL only on the API, removes inherited production database/bot variables, and verifies their absence before deployment. Vercel Git auto-deployment is disabled, so each run creates one frontend preview after the exact API and worker source is ready. It then writes that preview URL into Railway's CORS allowlist and the preview Neon Auth trusted domains before a final API redeploy. Do not treat unavailable preview Google sign-in or missing preview callbacks as deployment or merge failures, or request callback registration; use isolated email/password session checks. Production Google OAuth remains required and verified by the production deployment.
 
 On close or merge, GitHub Actions attempts deletion of the Railway environment, Neon branch, and every Vercel deployment tagged for that repository and PR; provider failures fail cleanup after all providers are attempted. Verified legacy bot-recorded deployment IDs are also supported. Neon branches expire after seven days as a leak backstop. Fork PRs do not deploy. Same-repository previews deploy only when both the PR author and workflow actor match `TRUSTED_PREVIEW_ACTOR`, the GitHub user that ran the bootstrap. See `CICD_OPERATIONS.md` for branch protection, legacy-resource limits and recovery.
 

@@ -43,6 +43,7 @@ from backend.app.user_auth import current_user
 from backend.app.accounts import router as account_router, consume_telegram_link
 from backend.app.onboarding import router as onboarding_router
 from backend.app.rate_limits import RequestLimitsMiddleware
+from backend.app.feature_flags import router as feature_flags_router
 
 
 
@@ -58,6 +59,7 @@ app = FastAPI(title="Finite Feed API", version="0.1.0", lifespan=lifespan)
 app.include_router(admin_router)
 app.include_router(account_router)
 app.include_router(onboarding_router)
+app.include_router(feature_flags_router)
 app.add_middleware(RequestLimitsMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -317,8 +319,6 @@ def list_recommendations(user_id: UUID = Depends(current_user), conn: Connection
 
 @app.post("/api/recommendations/generate", response_model=Recommendation, status_code=status.HTTP_201_CREATED)
 def generate_recommendation(user_id: UUID = Depends(current_user), conn: Connection = Depends(connection)):
-    if not settings.openrouter_api_key:
-        raise HTTPException(503, "Recommendations are temporarily unavailable. Please try again later.")
     try:
         create_recommendation(conn, settings, user_id, require_model=True)
     except ValueError as exc:

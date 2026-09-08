@@ -154,7 +154,7 @@ async function mockPublicApi(page: Page) {
       ]);
     }
 
-    if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "beta@example.test", display_name: "Beta reader", telegram_connected: false, delivery_paused: false});
+    if (url.pathname === "/api/personal/account") return json(route, {id: "test-account", email: "reader@example.test", display_name: "Test reader", telegram_connected: false, delivery_paused: false});
     if (url.pathname === "/api/personal/account/telegram-link") return json(route, {url: "https://t.me/finitefeedbot?start=token", code: "824619", expires_at: "2026-09-06T22:10:00Z"});
     if (url.pathname === "/api/personal/account/preferences") return json(route, []);
     return json(route, {});
@@ -194,7 +194,7 @@ test("saves delivery schedule and resolves a URL-only source", async ({ page }) 
   await expect(page.getByRole("status", { name: "1 pick" })).toBeVisible();
   await page.getByRole("button", { name: "Increase picks" }).click();
   await expect(page.getByRole("status", { name: "2 picks" })).toBeVisible();
-  await page.getByRole("button", { name: "Save preferences" }).click();
+  await page.getByRole("button", { name: "Save delivery preferences" }).click();
   expect(captured.profilePayload()).toEqual({ cadence_days: [2, 5], recommendation_count: 2, timezone: "America/Los_Angeles", delivery_hour: 9 });
 
   const sourceUrl = "https://youtu.be/practical";
@@ -225,15 +225,15 @@ test("saves preference memory with an optimistic version and no delivery fields"
   const captured = await mockPublicApi(page);
   await page.goto("/app/settings");
 
-  await page.getByRole("button", { name: "Shape memory" }).click();
+  await page.getByRole("button", { name: "Edit interests" }).click();
   await page.getByLabel("Your interests and exclusions").fill("Systems thinking with practical evidence.");
-  await page.getByRole("button", { name: "Save memory" }).click();
+  await page.getByRole("button", { name: "Save interests" }).click();
 
   expect(captured.memoryPayload()).toEqual({
     preference_statement: "Systems thinking with practical evidence.",
     expected_version: 4,
   });
-  await expect(page.getByText("Preference memory saved.")).toBeVisible();
+  await expect(page.getByText("Your interests were saved.")).toBeVisible();
 });
 
 test("shows invalid, lookup failure, duplicate, and removable-default source states", async ({ page }) => {
@@ -253,6 +253,7 @@ test("shows invalid, lookup failure, duplicate, and removable-default source sta
   await expect(page.getByRole("button", { name: "Add source" })).toBeDisabled();
 
   await page.getByRole("button", { name: "Remove TED" }).click();
+  await page.getByRole("button", { name: "Remove source", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove TED" })).toHaveCount(0);
 });
 
@@ -327,13 +328,12 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
     }
     await expect(page.getByText("Synthetic viewer profile.")).toBeVisible();
     await expect(page.getByText("Assistant-curated video.")).toBeVisible();
-    await expect(page.getByText("Yes means a clear fit.")).toBeVisible();
-    await expect(page.getByText("No means a clear mismatch.")).toBeVisible();
-    await expect(page.getByText(/Unsure means the evidence is mixed/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your judgment" })).toBeVisible();
+    await expect(page.getByText("Choose Unsure when the evidence is incomplete.")).toBeVisible();
 
     const geometry = await page.locator(".match-choices").evaluate((choices) => ({
       documentTop: choices.getBoundingClientRect().top + window.scrollY,
-      firstChoiceBottom: choices.querySelector("button")?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
+      firstChoiceBottom: choices.querySelector("label")?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
       navigationTop: document.querySelector(".signal-mobile-nav")?.getBoundingClientRect().top ?? 0,
       scrollWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -341,7 +341,7 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
     expect(geometry.documentTop).toBeLessThanOrEqual(viewport.height);
     expect(geometry.firstChoiceBottom).toBeLessThanOrEqual(geometry.navigationTop);
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);
-    await expect(page.getByRole("button", { name: "Yes", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Yes", exact: true })).toBeVisible();
 
     const toggle = page.getByRole("button", { name: "Show full description" });
     await expect(toggle).toBeVisible();
@@ -360,7 +360,7 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
     await expect(page.getByRole("button", { name: "Show full description" })).toBeFocused();
 
     for (let index = 0; index < cards.length; index += 1) {
-      await page.getByRole("button", { name: index === 1 ? "Unsure" : "Yes", exact: true }).click();
+      await page.getByRole("radio", { name: index === 1 ? "Unsure" : "Yes", exact: true }).click();
       const reason = page.getByLabel("Reason Optional. It is useful for close calls.");
       await reason.fill(`Reason for pair ${index + 1}`);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -369,13 +369,13 @@ test("keeps the review decision in reach and completes three mobile pairs", asyn
         const viewer = page.getByRole("heading", { name: "Viewer" });
         await expect(viewer).toBeFocused();
         await expect(viewer).toBeInViewport();
-        const nextPairControls = await page.getByRole("button", { name: "Yes", exact: true }).evaluate((firstChoice) => ({
-          firstChoiceBottom: firstChoice.getBoundingClientRect().bottom,
+        const nextPairControls = await page.getByRole("radio", { name: "Yes", exact: true }).evaluate((firstChoice) => ({
+          firstChoiceBottom: firstChoice.closest("label")?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY,
           navigationTop: document.querySelector(".signal-mobile-nav")?.getBoundingClientRect().top ?? 0,
         }));
         expect(nextPairControls.firstChoiceBottom).toBeLessThanOrEqual(nextPairControls.navigationTop);
-        await expect(page.getByRole("button", { name: "Yes", exact: true })).toHaveAttribute("aria-pressed", "false");
-        await expect(page.getByRole("button", { name: "Unsure", exact: true })).toHaveAttribute("aria-pressed", "false");
+        await expect(page.getByRole("radio", { name: "Yes", exact: true })).not.toBeChecked();
+        await expect(page.getByRole("radio", { name: "Unsure", exact: true })).not.toBeChecked();
         await expect(page.getByLabel("Reason Optional. It is useful for close calls.")).toHaveValue("");
         await expect(page.getByRole("button", { name: "Show full description" })).toHaveAttribute("aria-expanded", "false");
       }
@@ -405,8 +405,9 @@ test("preserves the desktop review columns", async ({ page }) => {
     videoTop: video.getBoundingClientRect().top,
     actionTop: action.getBoundingClientRect().top,
   }));
-  expect(geometry.evidenceShare).toBeGreaterThan(.74);
-  expect(geometry.actionShare).toBeLessThan(.26);
+  expect(geometry.evidenceShare).toBeGreaterThan(.68);
+  expect(geometry.actionShare).toBeGreaterThan(.26);
+  expect(geometry.actionShare).toBeLessThan(.32);
   expect(Math.max(geometry.viewerTop, geometry.videoTop, geometry.actionTop) - Math.min(geometry.viewerTop, geometry.videoTop, geometry.actionTop)).toBeLessThanOrEqual(1);
 });
 
@@ -441,7 +442,7 @@ test("uses plain loading and retry states and announces saving", async ({ page }
   await page.getByRole("button", { name: "Try again" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "A recovered pair" })).toBeVisible();
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByRole("button", { name: "Save judgment" }).click({ noWaitAfter: true });
   await expect(page.locator(".sr-only[role='status']")).toHaveText("Saving judgment.");
 });
@@ -472,7 +473,7 @@ test("keeps a saved answer when loading the following pair fails", async ({ page
   });
 
   await page.goto("/match/review");
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByLabel("Reason Optional. It is useful for close calls.").fill("This answer should be saved once.");
   await page.getByRole("button", { name: "Save judgment" }).click();
   await expect(page.locator(".signal-notice.match-notice")).toHaveText("Answer saved.");
@@ -483,7 +484,7 @@ test("keeps a saved answer when loading the following pair fails", async ({ page
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "The pair after retry" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Viewer" })).toBeFocused();
-  await expect(page.getByRole("button", { name: "Yes", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("radio", { name: "Yes", exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Reason Optional. It is useful for close calls.")).toHaveValue("");
   expect(postRequests).toBe(1);
 });
@@ -521,7 +522,7 @@ test("keeps a debug assessment until explicit keyboard advancement", async ({ pa
 
   await page.goto("/match/review");
   await expect(page.getByText("Model assessment · debug")).toHaveCount(0);
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByRole("button", { name: "Save judgment" }).click();
   await expect(page.getByRole("heading", { name: "Predicted fit: yes" })).toBeVisible();
   await expect(page.getByText(/Close call.*Direct evidence/)).toBeVisible();
@@ -565,7 +566,7 @@ test("replaces an unavailable pair after a 409 and clears its unsaved judgment",
 
   await page.goto("/match/review");
   await expect(page.getByRole("heading", { name: "The stale pair" })).toBeVisible();
-  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).click();
   await page.getByLabel("Reason Optional. It is useful for close calls.").fill("This rationale belongs only to the stale pair.");
   await page.getByRole("button", { name: "Save judgment" }).click();
 
@@ -574,7 +575,7 @@ test("replaces an unavailable pair after a 409 and clears its unsaved judgment",
   await expect(page.getByRole("heading", { name: "A fresh pair to review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Viewer" })).toBeFocused();
   await expect(page.getByRole("heading", { name: "Viewer" })).toBeInViewport();
-  await expect(page.getByRole("button", { name: "Yes", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("radio", { name: "Yes", exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Reason Optional. It is useful for close calls.")).toHaveValue("");
   expect(annotationBody).toEqual({
     profile_id: "profile-1",
@@ -584,9 +585,13 @@ test("replaces an unavailable pair after a 409 and clears its unsaved judgment",
   });
 });
 
-test("preserves a judgment after a retryable 500 and resubmits the same payload", async ({ page }) => {
+test("locks and preserves a judgment after a delayed retryable 500", async ({ page }) => {
   const annotationBodies: Record<string, unknown>[] = [];
   let saved = false;
+  let releaseFirstPost!: () => void;
+  const firstPostHeld = new Promise<void>((resolve) => {
+    releaseFirstPost = resolve;
+  });
   await page.route("**/api/match/annotations**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -603,6 +608,7 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
     if (url.pathname === "/api/match/annotations" && request.method() === "POST") {
       annotationBodies.push(request.postDataJSON());
       if (annotationBodies.length === 1) {
+        await firstPostHeld;
         return route.fulfill({ status: 500, json: { detail: "Temporary failure" } });
       }
       saved = true;
@@ -612,14 +618,20 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
   });
 
   await page.goto("/match/review");
-  await page.getByRole("button", { name: "No", exact: true }).click();
+  await page.getByRole("radio", { name: "No", exact: true }).click();
   const reason = page.getByLabel("Reason Optional. It is useful for close calls.");
-  await reason.fill("The evidence does not support this viewer's stated interest.");
+  const originalRationale = "The evidence does not support this viewer's stated interest.";
+  await reason.fill(originalRationale);
   await page.getByRole("button", { name: "Save judgment" }).click();
 
+  await expect(page.locator(".sr-only[role='status']")).toHaveText("Saving judgment.");
+  await expect(reason).toBeDisabled();
+  await expect(reason).toHaveValue(originalRationale);
+  releaseFirstPost();
   await expect(page.locator(".match-notice[role='alert']")).toHaveText("Your answer was not saved. Try again.");
-  await expect(page.getByRole("button", { name: "No", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(reason).toHaveValue("The evidence does not support this viewer's stated interest.");
+  await expect(page.getByRole("radio", { name: "No", exact: true })).toBeChecked();
+  await expect(reason).toBeEnabled();
+  await expect(reason).toHaveValue(originalRationale);
   await page.getByRole("button", { name: "Save judgment" }).click();
 
   await expect(page.getByRole("heading", { name: "No more pairs are available for you right now." })).toBeVisible();
@@ -628,12 +640,13 @@ test("preserves a judgment after a retryable 500 and resubmits the same payload"
 });
 
 
-test("public landing explains the beta and links to private sign-in without account requests", async ({ page }) => {
+test("public landing shows a real recommendation and links to sign-in without account requests", async ({ page }) => {
   let personalRequests = 0;
   await page.route("**/api/personal/**", route => { personalRequests++; return route.fulfill({status: 401,json:{detail:"Sign in"}}); });
   await page.goto("/");
   await expect(page.getByRole("heading", {name: "Your attention has better places to be."})).toBeVisible();
-  await expect(page.getByText("Illustrative interface and copy. This is not a real recommendation.")).toBeVisible();
+  await expect(page.getByRole("heading", {name: "The Creative Genius of Sneaker Design"})).toBeVisible();
+  await expect(page.getByText("TED · Salehe Bembury and Cloe Shasha Brooks")).toBeVisible();
   await expect(page.getByRole("link", {name: "Build my finite feed"}).first()).toHaveAttribute("href", "/app");
   expect(personalRequests).toBe(0);
   await page.setViewportSize({width:320,height:800});
@@ -721,7 +734,7 @@ test("resumes saved onboarding copy, retries synthesis, and accepts a profile ed
   await expect(page.locator(".onboarding-error")).toContainText("temporarily unavailable");
   await expect(page.getByLabel("In your own words")).toHaveValue(state.open_response);
   await page.getByRole("button", { name: "Build my profile" }).click();
-  await page.getByRole("button", { name: "I’d like to make a change" }).click();
+  await page.getByRole("button", { name: "Edit profile" }).click();
   await page.getByLabel("Edit preference profile").fill("I want rigorous systems thinking grounded in evidence. Skip empty hype and broad motivational talks.");
   await page.getByRole("button", { name: "Save my changes" }).click();
   expect(profilePayload).toEqual({ action: "change", profile: "I want rigorous systems thinking grounded in evidence. Skip empty hype and broad motivational talks." });
@@ -811,11 +824,11 @@ test("completes onboarding one saved step at a time", async ({ page }) => {
   await page.getByLabel("In your own words").fill("I want careful technology and science explanations. I value practical detail and want to avoid breathless hype.");
   await page.getByRole("button", { name: "Build my profile" }).click();
   await expect(page.getByText(/You want rigorous explanations/)).toBeVisible();
-  await page.getByRole("button", { name: "Okay" }).click();
+  await page.getByRole("button", { name: "Use this profile" }).click();
   await expect(page.getByRole("heading", { name: "Set a pace that feels useful." })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByText("Coming soon")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Email & SMS" })).toBeVisible();
+  await expect(page.getByText("Email and SMS delivery isn’t available yet.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Email/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Use dashboard only" }).click();
   await expect(page).toHaveURL(/\/app$/);
 
@@ -824,20 +837,26 @@ test("completes onboarding one saved step at a time", async ({ page }) => {
   expect(calls.at(-1)?.body).toEqual({ telegram: "skipped" });
 });
 
-test("keeps the same navigation and footer across public routes", async ({ page }) => {
+test("keeps app navigation across public utility routes and a focused marketing navigation on home", async ({ page }) => {
   await page.route("**/api/personal/**", route => route.fulfill({status: 401, json: {detail: "Sign in"}}));
-  const routes = ["/", "/privacy", "/app", "/match"];
+  const routes = ["/privacy", "/app", "/match"];
 
   await page.setViewportSize({width: 1100, height: 800});
+  await page.goto("/");
+  const marketing = page.getByRole("navigation", {name: "Primary navigation"});
+  await expect(marketing.getByRole("link", {name: "How it works"})).toHaveAttribute("href", "#how-it-works");
+  await expect(marketing.getByRole("link", {name: "Rate a match"})).toHaveAttribute("href", "/match");
+  await expect(marketing.getByRole("link", {name: "Build my feed"})).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("navigation", {name: "Mobile navigation"})).toHaveCount(0);
   for (const route of routes) {
     await page.goto(route);
     const primary = page.getByRole("navigation", {name: "Primary navigation"});
     await expect(primary.getByRole("link", {name: "My feed", exact: true})).toHaveAttribute("href", "/app");
     await expect(primary.getByRole("link", {name: "Match Lab", exact: true})).toHaveAttribute("href", "/match");
-    await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/app/settings");
+    await expect(primary.getByRole("link", {name: "Settings", exact: true})).toHaveAttribute("href", "/settings");
     const footer = page.getByRole("contentinfo");
     await expect(footer.getByRole("link", {name: "Privacy & your data"})).toHaveAttribute("href", "/privacy");
-    await expect(footer.getByText("Private beta", {exact: true})).toBeVisible();
+    await expect(footer.getByText("Built for a finite watchlist", {exact: true})).toBeVisible();
   }
 
   await page.setViewportSize({width: 320, height: 800});
