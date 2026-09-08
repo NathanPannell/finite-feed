@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -15,6 +16,17 @@ test("CI covers both long-lived branches and gates production publication after 
   assert.ok(ci.indexOf("Verify deployed frontend release metadata") < ci.indexOf("node scripts/publish-release.mjs"));
   assert.match(ci, /NEXT_PUBLIC_APP_ENV="production"/);
   assert.match(ci, /api\/version\?commit=\$EXPECTED_COMMIT_SHA/);
+});
+
+test("production workflow accepts semantic versions using its inline validator", () => {
+  const validator = ci.match(/node -e '([^']+)' "\$APP_VERSION"/)?.[1];
+  assert.ok(validator, "production version validator is present");
+  for (const version of ["0.1.0", "1.0.0", "12.34.56"]) {
+    assert.equal(spawnSync(process.execPath, ["-e", validator, version]).status, 0, version);
+  }
+  for (const version of ["v0.1.0", "01.0.0", "0.1", "0.1.0.0"]) {
+    assert.notEqual(spawnSync(process.execPath, ["-e", validator, version]).status, 0, version);
+  }
 });
 
 test("release preparation and validation use exact staging metadata", () => {

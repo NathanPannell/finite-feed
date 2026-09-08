@@ -164,7 +164,7 @@ jobs:
       - name: Resolve production release metadata
         run: |
           APP_VERSION="$(tr -d '[:space:]' < VERSION)"
-          node -e 'if (!/^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$/.test(process.argv[1])) process.exit(1)' "$APP_VERSION"
+          node -e 'if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(process.argv[1])) process.exit(1)' "$APP_VERSION"
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
       - name: Install deployment CLIs
         run: npm install --global @railway/cli@5.47.2 neon@4.13.1 vercel@50.1.3
