@@ -13,6 +13,9 @@ test("preview deploys the checked-out PR head through exact-source helpers", () 
 });
 
 test("a new Railway copy receives safe preview values before it can deploy", () => {
+  assert.match(workflow, /NEON_PREVIEW_PARENT_BRANCH: staging/);
+  assert.match(workflow, /parent_branch: \$\{\{ env\.NEON_PREVIEW_PARENT_BRANCH \}\}/);
+  assert.match(workflow, /--branch "\$NEON_PREVIEW_PARENT_BRANCH"/);
   assert.match(workflow, /node scripts\/create-railway-preview-environment\.mjs/);
   const args = previewEnvironmentCreateArgs({
     PREVIEW_ENVIRONMENT: "pr-21", PREVIEW_PULL_REQUEST: "21",

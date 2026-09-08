@@ -45,11 +45,33 @@ test("production custom aliases redirect while the protected host is allowed", (
   );
 });
 
+test("stable staging alias redirects admin routes to its protected generated deployment", () => {
+  const input = {
+    appEnvironment: "staging",
+    nodeEnv: "production",
+    vercelEnv: "preview",
+    vercelUrl: "finite-staging-generated.vercel.app",
+  };
+  assert.deepEqual(
+    adminRouteDecision({ ...input, requestHostname: "finite-feed-staging.vercel.app" }),
+    { kind: "redirect", host: "finite-staging-generated.vercel.app" },
+  );
+  assert.deepEqual(
+    adminRouteDecision({ ...input, requestHostname: "FINITE-STAGING-GENERATED.VERCEL.APP" }),
+    { kind: "allow" },
+  );
+  assert.deepEqual(
+    adminRouteDecision({ ...input, vercelUrl: "", requestHostname: "finite-feed-staging.vercel.app" }),
+    { kind: "deny" },
+  );
+});
+
 test("preview deployments remain available behind Vercel protection", () => {
   assert.deepEqual(
     adminRouteDecision({
       nodeEnv: "production",
       vercelEnv: "preview",
+      appEnvironment: "preview",
       requestHostname: "preview.vercel.app",
     }),
     { kind: "allow" },

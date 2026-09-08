@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ReactNode } from "react";
+import { appVersion, appVersionLabel } from "@/lib/app-version";
 
 type SiteHeaderProps = {
   active?: "home" | "feed" | "match" | "admin" | "settings" | "privacy";
@@ -39,7 +40,10 @@ export function SiteFooter() {
         <Link href="/privacy">Privacy &amp; your data</Link>
         <Link href="/privacy#help">Support</Link>
       </nav>
-      <span>Built for a finite watchlist</span>
+      <div className="site-footer-status">
+        <span>Built for a finite watchlist</span>
+        <span className="site-footer-build" aria-label={`Build ${appVersion.environment} ${appVersion.version} commit ${appVersion.commit}`}>{appVersionLabel()}</span>
+      </div>
     </footer>
   );
 }

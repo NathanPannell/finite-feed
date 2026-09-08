@@ -4,6 +4,7 @@ export type AdminRouteDecision =
   | { kind: "redirect"; host: string };
 
 export function adminRouteDecision(input: {
+  appEnvironment?: string;
   nodeEnv?: string;
   vercelEnv?: string;
   vercelUrl?: string;
@@ -12,10 +13,14 @@ export function adminRouteDecision(input: {
   if (input.nodeEnv === "development" || input.nodeEnv === "test") {
     return { kind: "allow" };
   }
-  if (input.vercelEnv === "preview" || input.vercelEnv === "development") {
+  if (input.vercelEnv === "development") {
     return { kind: "allow" };
   }
-  if (input.vercelEnv !== "production") {
+
+  const protectedAlias = input.vercelEnv === "production"
+    || (input.vercelEnv === "preview" && input.appEnvironment === "staging");
+  if (!protectedAlias) {
+    if (input.vercelEnv === "preview" && input.appEnvironment !== "staging") return { kind: "allow" };
     return { kind: "deny" };
   }
 

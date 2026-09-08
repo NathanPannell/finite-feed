@@ -1,6 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
+    target-branch: staging
     directory: /
     schedule:
       interval: weekly
@@ -8,6 +9,7 @@ updates:
       actions:
         patterns: ['*']
   - package-ecosystem: npm
+    target-branch: staging
     directories: ['/', '/frontend']
     schedule:
       interval: weekly
@@ -15,6 +17,7 @@ updates:
       npm:
         patterns: ['*']
   - package-ecosystem: pip
+    target-branch: staging
     directory: /backend
     schedule:
       interval: weekly
@@ -22,6 +25,7 @@ updates:
       python:
         patterns: ['*']
   - package-ecosystem: docker
+    target-branch: staging
     directory: /backend
     schedule:
       interval: weekly

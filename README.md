@@ -2,6 +2,12 @@
 
 Finite Feed reduces fire-hose YouTube channels to one unusually valuable recommendation at a time. The first dogfood release targets TED and TEDx, learns from explicit preferences and feedback, and makes every recommendation decision inspectable.
 
+## Development and releases
+
+Feature PRs target `staging` and are reviewed and merged by a different agent. Staging deploys to the permanent test site at `https://finite-feed-staging.vercel.app`, with its own long-lived Neon database/Auth branch and Railway services. Google sign-in works on staging and production; disposable PR previews use isolated email/password verification and do not require Google callbacks.
+
+After combined staging tests and browser verification pass, prepare a versioned release PR from `staging` to `main`. Production changes only when that release is merged, and successful deployment publishes the version tag and displays version metadata in the frontend. See [CICD_OPERATIONS.md](CICD_OPERATIONS.md) for review, release, and environment ownership rules.
+
 ## What is implemented
 
 - Google and email/password sign-in with isolated accounts, self-service settings, Telegram linking, export and deletion.
