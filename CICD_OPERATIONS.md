@@ -10,7 +10,7 @@ After the combined staging deployment settles, verify its exact API/worker commi
 
 Staging uses a permanent Neon database/Auth branch and permanent Railway API/worker environment. PR closure and expiry cleanup must never delete or reset them. Its credentials, accounts, and data remain separate from production, and its worker must not send production Telegram messages. Register the persistent staging Google callback once; disposable PR Google callbacks remain optional.
 
-Staging deploys as a preview in the existing `finite-feed` Vercel project, with `finite-feed-staging.vercel.app` assigned to Git branch `staging`. Production retains `finite-feed-rho.vercel.app`. The public staging domain redirects administrator routes to the protected generated deployment. Frontend `/api/version` and the footer identify the version, environment, and commit.
+Staging deploys as a preview in the existing `finite-feed` Vercel project, with `finite-feed-staging.vercel.app` assigned to Git branch `staging`. Production retains `finite-feed-rho.vercel.app`. Vercel Authentication protects all staging preview domains; team members pass that gate before using the stable site. Deployment automation retrieves and masks the existing project bypass, then verifies the app's administrator redirect, public-route behavior, version metadata, and Google start flow behind the gate. Frontend `/api/version` and the footer identify the version, environment, and commit.
 
 ## Preparing a numbered release
 

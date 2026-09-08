@@ -29,10 +29,23 @@ test("staging resources are permanent, deterministic, and isolated", () => {
   assert.match(workflow, /vercel deploy --target preview/);
   assert.match(workflow, /vercel alias set "\$deployment_url" "\$staging_host"/);
   assert.match(workflow, /Stable staging URL did not resolve to this deployment/);
-  assert.match(workflow, /for admin_path in \/admin \/api\/admin\/summary/);
-  assert.match(workflow, /"\$STAGING_FRONTEND_URL\$admin_path"/);
+  assert.match(workflow, /for admin_origin in "\$deployment_url" "\$STAGING_FRONTEND_URL"/);
+  assert.match(workflow, /validate-vercel-auth-location\.mjs "\$auth_location"/);
   assert.match(workflow, /"\$stable_admin_location" == "\$deployment_url\$admin_path"/);
   assert.match(workflow, /reconcile-neon-staging-domains\.mjs/);
+});
+
+test("protected staging uses a masked existing automation bypass for exact app smoke", () => {
+  const selection = workflow.indexOf('.value.scope == "automation-bypass"');
+  const masking = workflow.indexOf('echo "::add-mask::$bypass_secret"');
+  const firstUse = workflow.indexOf('x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET');
+  assert.ok(selection >= 0 && masking > selection && firstUse > masking);
+  assert.match(workflow, /\.version == \$version and \.environment == "staging" and \.commit == \$commit/);
+  assert.match(workflow, /Authenticated staging \/match did not return HTTP 200/);
+  assert.match(workflow, /Verify Google OAuth accepts permanent staging callback/);
+  assert.match(workflow, /-H "x-vercel-protection-bypass: \$VERCEL_AUTOMATION_BYPASS_SECRET"/);
+  assert.doesNotMatch(workflow, /x-vercel-protection-bypass=.*\?/);
+  assert.doesNotMatch(workflow, /VERCEL_AUTOMATION_BYPASS_SECRET.*GITHUB_OUTPUT/);
 });
 
 test("staging pins service and frontend source and requires Google OAuth", () => {
